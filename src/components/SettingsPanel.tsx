@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { KimiError, activeAiProviderLabel, testAiConnection } from '../kimi';
+import { getServerAiProxyUrl, getServerQuoteProxyUrl, hasServerGateway, serverGatewayLabel } from '../runtimeConfig';
 import type { AiProvider, AppSettings, QuoteProvider } from '../types';
 
 interface SettingsPanelProps {
@@ -13,6 +14,7 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
   const [testingAi, setTestingAi] = useState(false);
   const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string; hint?: string } | null>(null);
   const aiLabel = activeAiProviderLabel(draft);
+  const serverGatewayEnabled = hasServerGateway();
 
   function save() {
     onSave(draft);
@@ -37,6 +39,11 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
   return (
     <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
       <h3 className="text-sm font-semibold">设置</h3>
+      {serverGatewayEnabled && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+          已启用 {serverGatewayLabel()}：截图和行情请求先经过你的阿里云服务器，手机不再直接连接 AI 接口。
+        </div>
+      )}
       <Field label="AI 识别服务">
         <select
           value={draft.aiProvider}
@@ -85,7 +92,9 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
               className={inputCls}
             />
             <p className="mt-1 text-xs text-slate-500">
-              直连智谱失败时再填。README 里的 Worker 模板已支持 /zhipu/chat/completions。
+              {serverGatewayEnabled
+                ? `当前会自动使用服务器转发（${getServerAiProxyUrl('zhipu')}），无需填写。只有要换其他代理时才填。`
+                : '直连智谱失败时再填。README 里的 Worker 模板已支持 /zhipu/chat/completions。'}
             </p>
           </Field>
         </>
@@ -124,7 +133,9 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
               className={inputCls}
             />
             <p className="mt-1 text-xs text-slate-500">
-              浏览器直连 Moonshot 可能超时。如仍出现 Load failed，部署 README 中的 Worker 代理并填入此处。
+              {serverGatewayEnabled
+                ? `当前会自动使用服务器转发（${getServerAiProxyUrl('kimi')}），无需填写。`
+                : '浏览器直连 Moonshot 可能超时。如仍出现 Load failed，部署 README 中的 Worker 代理并填入此处。'}
             </p>
           </Field>
         </>
@@ -183,8 +194,10 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
                 placeholder="https://your-worker.workers.dev/quotes"
                 className={inputCls}
               />
-              <p className="mt-1 text-xs text-slate-500">
-                使用 README 中的 Cloudflare Worker 模板可代理 Yahoo/NASDAQ 免费报价，URL 填到 /quotes。
+            <p className="mt-1 text-xs text-slate-500">
+                {serverGatewayEnabled
+                  ? `本部署可直接使用服务器免费行情地址（${getServerQuoteProxyUrl()}）。`
+                  : '使用 README 中的 Cloudflare Worker 模板可代理 Yahoo/NASDAQ 免费报价，URL 填到 /quotes。'}
               </p>
             </Field>
           )}

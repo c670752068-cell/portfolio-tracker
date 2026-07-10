@@ -10,10 +10,11 @@ import type {
   PortfolioMetrics,
   RiskFinding,
 } from './types';
+import { getServerAiProxyUrl, serverGatewayLabel } from './runtimeConfig';
 
 const KIMI_ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
 const ZHIPU_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
-const REQUEST_TIMEOUT_MS = 90_000;
+const REQUEST_TIMEOUT_MS = 180_000;
 const PING_TIMEOUT_MS = 20_000;
 const KIMI_VISION_MODELS = new Set([
   'kimi-k2.6',
@@ -69,6 +70,7 @@ interface AiRuntimeConfig {
   apiKey: string;
   model: string;
   usesProxy: boolean;
+  usesServerGateway: boolean;
 }
 
 export function activeAiProviderLabel(settings: AppSettings): string {
@@ -224,7 +226,10 @@ async function requestAi(
         model: config.model,
         messages,
         temperature: temperatureForModel(config.provider, config.model),
-        max_tokens: options.maxTokens ?? 8000,
+        max_tokens: options.maxTokens ?? 3500,
+        // Screenshot extraction only needs structured facts. Explicitly disabling
+        // reasoning on GLM avoids a slow, unnecessary thinking pass.
+        ...(config.provider === 'zhipu' ? { thinking: { type: 'disabled' } } : {}),
       }),
       signal: controller.signal,
     });
@@ -247,9 +252,15 @@ async function requestAi(
     throw new KimiError(`响应非 JSON（HTTP ${response.status}）`);
   }
   if (!response.ok) {
+    const providerMessage = data.error?.message ?? data.error?.code ?? `HTTP ${response.status}`;
+    const isRateLimited = response.status === 429
+      || data.error?.code === '1302'
+      || /rate.?limit|速率限制|请求过于频繁/i.test(providerMessage);
     throw new KimiError(
-      data.error?.message ?? data.error?.code ?? `HTTP ${response.status}`,
-      response.status === 401
+      providerMessage,
+      isRateLimited
+        ? '这是 API 账户/模型的并发或频率限制，不是域名、VPN 或截图问题。请等待 60 秒后只重试一次；不要连续点击“连接测试”和“解析”。服务器已按 Key 串行转发，仍持续出现时需在智谱控制台查看该模型的速率权益或换一个有可用额度的 Key。'
+        : response.status === 401
         ? '请检查 API Key 是否正确、是否过期，或确认该 Key 有视觉模型权限。'
         : response.status === 400 && data.error?.message?.toLowerCase().includes('image')
           ? `模型或接口没有接受图片输入。请使用 ${config.provider === 'zhipu' ? 'glm-4.6v-flash / glm-5v-turbo' : 'kimi-k2.6'}。`
@@ -265,29 +276,36 @@ function getAiRuntimeConfig(settings: AppSettings): AiRuntimeConfig {
   const provider = settings.aiProvider === 'kimi' ? 'kimi' : 'zhipu';
   if (provider === 'kimi') {
     const proxy = settings.proxyUrl.trim();
+    const serverProxy = getServerAiProxyUrl(provider);
     return {
       provider,
       label: 'Kimi',
-      endpoint: proxy || KIMI_ENDPOINT,
+      endpoint: proxy || serverProxy || KIMI_ENDPOINT,
       directEndpoint: KIMI_ENDPOINT,
       apiKey: settings.kimiApiKey,
       model: settings.kimiModel || 'kimi-k2.6',
-      usesProxy: Boolean(proxy),
+      usesProxy: Boolean(proxy || serverProxy),
+      usesServerGateway: Boolean(!proxy && serverProxy),
     };
   }
   const proxy = settings.zhipuProxyUrl.trim();
+  const serverProxy = getServerAiProxyUrl(provider);
   return {
     provider,
     label: '智谱 GLM',
-    endpoint: proxy || ZHIPU_ENDPOINT,
+    endpoint: proxy || serverProxy || ZHIPU_ENDPOINT,
     directEndpoint: ZHIPU_ENDPOINT,
     apiKey: settings.zhipuApiKey,
     model: settings.zhipuModel || 'glm-4.6v-flash',
-    usesProxy: Boolean(proxy),
+    usesProxy: Boolean(proxy || serverProxy),
+    usesServerGateway: Boolean(!proxy && serverProxy),
   };
 }
 
 function networkHint(config: AiRuntimeConfig): string {
+  if (config.usesServerGateway) {
+    return `${serverGatewayLabel()}没有在限定时间内返回。服务器已接管手机到模型的长连接；请稍后只重试一次。若持续失败，错误通常是 API 账户限流或模型服务端拥堵，而不是手机 VPN。`;
+  }
   if (config.usesProxy) {
     return `你的 ${config.label} 代理没有成功转发请求。请检查代理 URL、允许域名，以及代理是否能访问 ${config.directEndpoint}。`;
   }

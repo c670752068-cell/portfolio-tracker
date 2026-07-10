@@ -1,4 +1,5 @@
 import type { AppSettings, PortfolioState } from './types';
+import { getServerQuoteProxyUrl } from './runtimeConfig';
 
 const PORTFOLIO_KEY = 'portfolio-tracker:portfolio-v1';
 const SETTINGS_KEY = 'portfolio-tracker:settings-v1';
@@ -9,7 +10,9 @@ const emptyPortfolio: PortfolioState = {
   updatedAt: new Date(0).toISOString(),
 };
 
-const defaultSettings: AppSettings = {
+function buildDefaultSettings(): AppSettings {
+  const quoteProxyUrl = getServerQuoteProxyUrl();
+  return {
   aiProvider: 'zhipu',
   kimiApiKey: '',
   kimiModel: 'kimi-k2.6',
@@ -17,11 +20,14 @@ const defaultSettings: AppSettings = {
   zhipuApiKey: '',
   zhipuModel: 'glm-4.6v-flash',
   zhipuProxyUrl: '',
-  quoteProvider: 'none',
+  quoteProvider: quoteProxyUrl ? 'proxy' : 'none',
   quoteApiKey: '',
-  quoteProxyUrl: '',
+  quoteProxyUrl,
   autoRefreshQuotes: true,
-};
+  };
+}
+
+const defaultSettings = buildDefaultSettings();
 
 export function loadPortfolio(): PortfolioState {
   try {
@@ -56,6 +62,10 @@ export function loadSettings(): AppSettings {
       kimiModel: oldTextOnlyModels.has(parsed.kimiModel ?? '') ? defaultSettings.kimiModel : parsed.kimiModel ?? defaultSettings.kimiModel,
       aiProvider: parsed.aiProvider === 'kimi' || parsed.aiProvider === 'zhipu' ? parsed.aiProvider : defaultSettings.aiProvider,
       zhipuModel: parsed.zhipuModel ?? defaultSettings.zhipuModel,
+      // A server deployment provides its own same-origin quotes endpoint. Existing
+      // browser data is never overwritten when the user already chose a provider.
+      quoteProvider: parsed.quoteProvider ?? defaultSettings.quoteProvider,
+      quoteProxyUrl: parsed.quoteProxyUrl ?? defaultSettings.quoteProxyUrl,
     };
   } catch {
     return defaultSettings;

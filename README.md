@@ -62,6 +62,19 @@ npm run preview  # 本地预览生产构建
 
 API Key 只存在你**本机浏览器的 localStorage**，绝不会进入 Git 提交、绝不会上传 GitHub。解析时，浏览器会把 Key 和图片发送给当前选择的 AI API（或你配置的代理）；图片不会保存到本应用的 localStorage 或 JSON 备份中。
 
+### 自用 VPS 部署（手机不直连 AI）
+
+项目包含一套不保存 API Key 的 VPS 网关。网页、网关放在同一台服务器后，手机请求会先到服务器，再由服务器访问智谱/Kimi；网关会按 Key 串行处理，避免误触“测试连接”与“解析截图”造成并发限流。
+
+部署完成后，部署版本会自动使用同源 `/api/zhipu/chat/completions` 与 `/api/quotes`，无需在设置中手填代理 URL。具体故障结论、IP/域名/HTTPS 取舍见 [AI_IMPORT_DEPLOYMENT_ANALYSIS.md](docs/AI_IMPORT_DEPLOYMENT_ANALYSIS.md)。
+
+服务器文件：
+
+- `deploy/aliyun-gateway.mjs`：AI 与免费行情网关；不存储 API Key。
+- `deploy/portfolio-tracker.nginx.conf`：静态网页 + 同源 API 反向代理。
+- `deploy/runtime-config.us-vps.js`：让美国 VPS 的自托管网页自动使用同源网关。
+- `deploy/deploy-us-vps.sh`：不触碰既有 Nginx/StockPulse 的独立 8788 端口部署脚本。
+
 「设置」里有 **测试 AI 连接**按钮。它只发送一条短文本，不发送截图；如果这里都失败，说明当前手机网络、Key 或代理配置还没通。
 
 > `kimi-k2.6` / `kimi-k2.5` 请求会使用模型要求的 `temperature: 1`。智谱默认使用 OpenAI 兼容的 `/api/paas/v4/chat/completions` 接口。
