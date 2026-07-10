@@ -10,9 +10,13 @@ const emptyPortfolio: PortfolioState = {
 };
 
 const defaultSettings: AppSettings = {
+  aiProvider: 'zhipu',
   kimiApiKey: '',
   kimiModel: 'kimi-k2.6',
   proxyUrl: '',
+  zhipuApiKey: '',
+  zhipuModel: 'glm-4.6v-flash',
+  zhipuProxyUrl: '',
   quoteProvider: 'none',
   quoteApiKey: '',
   quoteProxyUrl: '',
@@ -50,6 +54,8 @@ export function loadSettings(): AppSettings {
       ...parsed,
       // Existing users need a vision model for the new screenshot-import flow.
       kimiModel: oldTextOnlyModels.has(parsed.kimiModel ?? '') ? defaultSettings.kimiModel : parsed.kimiModel ?? defaultSettings.kimiModel,
+      aiProvider: parsed.aiProvider === 'kimi' || parsed.aiProvider === 'zhipu' ? parsed.aiProvider : defaultSettings.aiProvider,
+      zhipuModel: parsed.zhipuModel ?? defaultSettings.zhipuModel,
     };
   } catch {
     return defaultSettings;

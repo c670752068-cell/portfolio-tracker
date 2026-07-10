@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { AppSettings, QuoteProvider } from '../types';
+import { KimiError, activeAiProviderLabel, testAiConnection } from '../kimi';
+import type { AiProvider, AppSettings, QuoteProvider } from '../types';
 
 interface SettingsPanelProps {
   settings: AppSettings;
@@ -9,6 +10,9 @@ interface SettingsPanelProps {
 export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saved, setSaved] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string; hint?: string } | null>(null);
+  const aiLabel = activeAiProviderLabel(draft);
 
   function save() {
     onSave(draft);
@@ -16,45 +20,131 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
     setTimeout(() => setSaved(false), 1500);
   }
 
+  async function testConnection() {
+    setTestingAi(true);
+    setAiTestResult(null);
+    try {
+      const message = await testAiConnection(draft);
+      setAiTestResult({ ok: true, message });
+    } catch (error: unknown) {
+      if (error instanceof KimiError) setAiTestResult({ ok: false, message: error.message, hint: error.hint });
+      else setAiTestResult({ ok: false, message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setTestingAi(false);
+    }
+  }
+
   return (
     <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
       <h3 className="text-sm font-semibold">设置</h3>
-      <Field label="Kimi API Key（Moonshot）">
-        <input
-          type="password"
-          value={draft.kimiApiKey}
-          onChange={(e) => setDraft({ ...draft, kimiApiKey: e.target.value })}
-          placeholder="sk-..."
-          className={inputCls}
-        />
-        <p className="mt-1 text-xs text-slate-500">
-          仅保存在本机浏览器（localStorage）。解析图片时，Key 与图片会发送给 Kimi API（或你填写的代理），不会进入 GitHub 仓库。
-        </p>
-      </Field>
-      <Field label="Kimi 视觉模型">
+      <Field label="AI 识别服务">
         <select
-          value={draft.kimiModel}
-          onChange={(e) => setDraft({ ...draft, kimiModel: e.target.value })}
+          value={draft.aiProvider}
+          onChange={(e) => { setDraft({ ...draft, aiProvider: e.target.value as AiProvider }); setAiTestResult(null); }}
           className={inputCls}
         >
-          <option value="kimi-k2.6">kimi-k2.6（推荐：图片识别 + 组合分析）</option>
-          <option value="kimi-k2.5">kimi-k2.5</option>
-          <option value="moonshot-v1-8k-vision-preview">moonshot-v1-8k-vision-preview</option>
-          <option value="moonshot-v1-32k-vision-preview">moonshot-v1-32k-vision-preview</option>
-          <option value="moonshot-v1-128k-vision-preview">moonshot-v1-128k-vision-preview</option>
+          <option value="zhipu">智谱 GLM（推荐：先用这个识别截图）</option>
+          <option value="kimi">Kimi / Moonshot（备用）</option>
         </select>
-      </Field>
-      <Field label="代理 URL（可选，处理 CORS）">
-        <input
-          value={draft.proxyUrl}
-          onChange={(e) => setDraft({ ...draft, proxyUrl: e.target.value })}
-          placeholder="https://your-worker.workers.dev/v1/chat/completions"
-          className={inputCls}
-        />
         <p className="mt-1 text-xs text-slate-500">
-          浏览器直连 Moonshot 可能被 CORS 或网络拦截。如仍出现 Load failed，部署 README 中的 Cloudflare Worker 代理并填入此处。该代理需要把本网站域名加入允许列表。
+          当前默认切到智谱。你手机上的 Kimi 已经表现为 90 秒超时，说明不是图片压缩问题，优先用智谱更稳。
         </p>
       </Field>
+      {draft.aiProvider === 'zhipu' ? (
+        <>
+          <Field label="智谱 API Key（BigModel）">
+            <input
+              type="password"
+              value={draft.zhipuApiKey}
+              onChange={(e) => setDraft({ ...draft, zhipuApiKey: e.target.value })}
+              placeholder="填入智谱开放平台 API Key"
+              className={inputCls}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              仅保存在本机浏览器（localStorage）。解析图片时，Key 与图片会发送给智谱 API（或你填写的代理），不会进入 GitHub 仓库。
+            </p>
+          </Field>
+          <Field label="智谱视觉模型">
+            <select
+              value={draft.zhipuModel}
+              onChange={(e) => setDraft({ ...draft, zhipuModel: e.target.value })}
+              className={inputCls}
+            >
+              <option value="glm-4.6v-flash">glm-4.6v-flash（推荐：免费/较快）</option>
+              <option value="glm-4v-flash">glm-4v-flash（轻量免费）</option>
+              <option value="glm-5v-turbo">glm-5v-turbo（更强，可能更贵）</option>
+              <option value="glm-4.6v">glm-4.6v（更强）</option>
+              <option value="glm-4.1v-thinking-flash">glm-4.1v-thinking-flash</option>
+            </select>
+          </Field>
+          <Field label="智谱代理 URL（可选）">
+            <input
+              value={draft.zhipuProxyUrl}
+              onChange={(e) => setDraft({ ...draft, zhipuProxyUrl: e.target.value })}
+              placeholder="https://your-worker.workers.dev/zhipu/chat/completions"
+              className={inputCls}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              直连智谱失败时再填。README 里的 Worker 模板已支持 /zhipu/chat/completions。
+            </p>
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label="Kimi API Key（Moonshot）">
+            <input
+              type="password"
+              value={draft.kimiApiKey}
+              onChange={(e) => setDraft({ ...draft, kimiApiKey: e.target.value })}
+              placeholder="sk-..."
+              className={inputCls}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              仅保存在本机浏览器（localStorage）。解析图片时，Key 与图片会发送给 Kimi API（或你填写的代理），不会进入 GitHub 仓库。
+            </p>
+          </Field>
+          <Field label="Kimi 视觉模型">
+            <select
+              value={draft.kimiModel}
+              onChange={(e) => setDraft({ ...draft, kimiModel: e.target.value })}
+              className={inputCls}
+            >
+              <option value="kimi-k2.6">kimi-k2.6（图片识别 + 组合分析）</option>
+              <option value="kimi-k2.5">kimi-k2.5</option>
+              <option value="moonshot-v1-8k-vision-preview">moonshot-v1-8k-vision-preview</option>
+              <option value="moonshot-v1-32k-vision-preview">moonshot-v1-32k-vision-preview</option>
+              <option value="moonshot-v1-128k-vision-preview">moonshot-v1-128k-vision-preview</option>
+            </select>
+          </Field>
+          <Field label="Kimi 代理 URL（可选）">
+            <input
+              value={draft.proxyUrl}
+              onChange={(e) => setDraft({ ...draft, proxyUrl: e.target.value })}
+              placeholder="https://your-worker.workers.dev/v1/chat/completions"
+              className={inputCls}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              浏览器直连 Moonshot 可能超时。如仍出现 Load failed，部署 README 中的 Worker 代理并填入此处。
+            </p>
+          </Field>
+        </>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={testConnection}
+          disabled={testingAi}
+          className="rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+        >
+          {testingAi ? '测试中…' : `测试 ${aiLabel} 连接`}
+        </button>
+        {aiTestResult && (
+          <span className={`text-xs ${aiTestResult.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`}>
+            {aiTestResult.ok ? aiTestResult.message : `失败：${aiTestResult.message}`}
+          </span>
+        )}
+      </div>
+      {aiTestResult?.hint && <p className="text-xs text-amber-600 dark:text-amber-300">{aiTestResult.hint}</p>}
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <h4 className="mb-2 text-sm font-semibold">每日行情同步</h4>
         <div className="space-y-3">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KimiError, analyzeWithKimi } from '../kimi';
+import { KimiError, activeAiApiKey, activeAiProviderLabel, analyzeWithAi } from '../kimi';
 import type { AppSettings, PortfolioMetrics, RiskFinding } from '../types';
 
 interface AnalysisPanelProps {
@@ -12,13 +12,14 @@ export function AnalysisPanel({ settings, metrics, localFindings }: AnalysisPane
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [result, setResult] = useState<string>('');
+  const aiLabel = activeAiProviderLabel(settings);
 
   async function run() {
     setLoading(true);
     setError(null);
     setResult('');
     try {
-      const content = await analyzeWithKimi(settings, metrics, localFindings);
+      const content = await analyzeWithAi(settings, metrics, localFindings);
       setResult(content);
     } catch (err: unknown) {
       if (err instanceof KimiError) {
@@ -37,18 +38,18 @@ export function AnalysisPanel({ settings, metrics, localFindings }: AnalysisPane
   return (
     <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">Kimi 组合风险解读</h3>
+        <h3 className="text-sm font-semibold">{aiLabel} 组合风险解读</h3>
         <button
           onClick={run}
           disabled={disabled}
           className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
-          {loading ? '分析中…' : '调用 Kimi 分析'}
+          {loading ? '分析中…' : `调用 ${aiLabel} 分析`}
         </button>
       </div>
-      {!settings.kimiApiKey && (
+      {!activeAiApiKey(settings).trim() && (
         <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-100">
-          未配置 Kimi API Key。请到「设置」中填入 Moonshot API Key。仅保存在本机浏览器，不会上传仓库。
+          未配置 {aiLabel} API Key。请到「设置」中填入 API Key。仅保存在本机浏览器，不会上传仓库。
         </div>
       )}
       <p className="text-xs leading-relaxed text-slate-500">

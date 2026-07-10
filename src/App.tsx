@@ -90,6 +90,7 @@ export default function App() {
     error: '',
     summary: '',
   });
+  const [lastImport, setLastImport] = useState<ImportedPortfolio | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const holdingsRef = useRef(portfolio.holdings);
   const quoteRefreshInFlightRef = useRef(false);
@@ -216,6 +217,7 @@ export default function App() {
       cash: [...current.cash, ...result.cash],
       updatedAt: new Date().toISOString(),
     }));
+    setLastImport(result);
     setTab('dashboard');
   }
 
@@ -244,6 +246,7 @@ export default function App() {
             canRefreshQuotes={portfolio.holdings.length > 0 && canSyncQuotes(settings)}
             onRefreshQuotes={() => refreshQuotes('manual')}
           />
+          {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} />}
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
             <h3 className="mb-2 text-sm font-semibold">资产占比</h3>
             <AllocationChart metrics={metrics} />
@@ -289,6 +292,34 @@ export default function App() {
       <footer className="mt-8 text-center text-xs text-slate-400">
         数据保存在浏览器 localStorage；清除浏览器数据会丢失。风险结果仅作教育与信息展示，不构成投资建议；建议定期导出 JSON 备份。
       </footer>
+    </div>
+  );
+}
+
+function ImportResultNotice({ result, onClose }: { result: ImportedPortfolio; onClose: () => void }) {
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold">截图识别已自动导入</div>
+          <p className="mt-1 text-xs">
+            {result.sourceSummary}；新增 {result.holdings.length} 个持仓、{result.cash.length} 个现金条目。请在下方总览先看组合结构，如数值不对可到「持仓」里编辑或删除。
+          </p>
+        </div>
+        <button type="button" onClick={onClose} className="text-xs text-emerald-700 hover:underline dark:text-emerald-200">关闭</button>
+      </div>
+      {result.issues.length > 0 && (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-100">
+          <div className="font-semibold">下一步建议补充</div>
+          <ul className="mt-1 list-disc space-y-1 pl-4">
+            {result.issues.map((issue, index) => (
+              <li key={`${issue.field}-${index}`}>
+                <span className="font-medium">{issue.priority === 'required' ? '需补充：' : '建议补充：'}{issue.field}</span> — {issue.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

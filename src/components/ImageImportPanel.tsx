@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { KimiError, parsePortfolioImages } from '../kimi';
+import { KimiError, activeAiApiKey, activeAiProviderLabel, parsePortfolioImages } from '../kimi';
 import { formatMoney } from '../format';
 import type { AppSettings, ImportedPortfolio } from '../types';
 
@@ -21,6 +21,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
   const [result, setResult] = useState<ImportedPortfolio | null>(null);
   const [prepareSummary, setPrepareSummary] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const aiLabel = activeAiProviderLabel(settings);
 
   function addFiles(nextList: FileList | null) {
     if (!nextList) return;
@@ -46,8 +47,8 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
   }
 
   async function parse() {
-    if (!settings.kimiApiKey.trim()) {
-      setError({ message: '请先保存 Kimi API Key。', hint: '图片解析使用 Kimi K2.6 视觉模型；Key 只保存在当前浏览器。' });
+    if (!activeAiApiKey(settings).trim()) {
+      setError({ message: `请先保存 ${aiLabel} API Key。`, hint: `当前图片解析服务是 ${aiLabel}；Key 只保存在当前浏览器。` });
       return;
     }
     if (files.length === 0) {
@@ -62,8 +63,11 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
       const images = await Promise.all(files.map(prepareImageForVision));
       const originalBytes = files.reduce((sum, file) => sum + file.size, 0);
       const preparedBytes = images.reduce((sum, image) => sum + image.bytes, 0);
-      setPrepareSummary(`已将截图从 ${formatBytes(originalBytes)} 压缩到 ${formatBytes(preparedBytes)} 后发送给 AI。`);
-      setResult(await parsePortfolioImages(settings, images));
+      setPrepareSummary(`已将截图从 ${formatBytes(originalBytes)} 压缩到 ${formatBytes(preparedBytes)} 后发送给 ${aiLabel}。`);
+      const parsed = await parsePortfolioImages(settings, images);
+      setResult(parsed);
+      setFiles([]);
+      onConfirm(parsed);
     } catch (caught: unknown) {
       if (caught instanceof KimiError) setError({ message: caught.message, hint: caught.hint });
       else setError({ message: caught instanceof Error ? caught.message : String(caught) });
@@ -72,26 +76,17 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
     }
   }
 
-  function confirm() {
-    if (!result) return;
-    onConfirm(result);
-    setFiles([]);
-    setResult(null);
-    setError(null);
-    setPrepareSummary('');
-  }
-
   return (
     <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/40 p-3 dark:border-indigo-900/70 dark:bg-indigo-950/20">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-indigo-950 dark:text-indigo-100">截图导入持仓</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-            上传完整持仓页，再附期权详情页和现金/购买力页。AI 会先生成预览与数据缺口，再由你确认写入持仓。
+            上传完整持仓页，再附期权详情页和现金/购买力页。识别成功后会自动写入并跳到总览；缺什么数据会在总览提示。
           </p>
         </div>
         <button onClick={onOpenSettings} className="text-xs font-medium text-indigo-700 hover:underline dark:text-indigo-300">
-          配置 Kimi Key
+          配置 AI Key
         </button>
       </div>
 
@@ -114,9 +109,9 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
 
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={parse} disabled={loading || files.length === 0} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400">
-          {loading ? '正在压缩并识别…' : '解析并预览'}
+          {loading ? '正在压缩并识别…' : '解析并导入'}
         </button>
-        <span className="text-xs text-slate-500">截图只会随本次请求发送到 Kimi，不会保存到本地或导出 JSON。</span>
+        <span className="text-xs text-slate-500">截图只会随本次请求发送到 {aiLabel}，不会保存到本地或导出 JSON。</span>
       </div>
       {prepareSummary && <p className="text-xs text-slate-500 dark:text-slate-400">{prepareSummary}</p>}
 
@@ -130,8 +125,8 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
       {result && (
         <div className="space-y-3 rounded-lg border border-indigo-200 bg-white p-3 dark:border-indigo-800 dark:bg-slate-900">
           <div>
-            <h3 className="text-sm font-semibold">识别预览（尚未写入）</h3>
-            <p className="mt-1 text-xs text-slate-500">{result.sourceSummary}。请核对后确认；确认后仍可在持仓表中编辑。</p>
+            <h3 className="text-sm font-semibold">识别预览</h3>
+            <p className="mt-1 text-xs text-slate-500">{result.sourceSummary}。已自动导入；如需修正，可在持仓表中编辑或删除。</p>
           </div>
           {result.holdings.length > 0 && (
             <div className="overflow-x-auto rounded border border-slate-200 dark:border-slate-700">
@@ -162,8 +157,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
             </div>
           )}
           <div className="flex flex-wrap gap-2">
-            <button onClick={confirm} className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500">确认导入 {result.holdings.length} 个持仓</button>
-            <button onClick={() => setResult(null)} className="rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100">取消预览</button>
+            <button onClick={() => setResult(null)} className="rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100">关闭预览</button>
           </div>
         </div>
       )}

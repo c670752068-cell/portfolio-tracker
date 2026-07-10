@@ -6,6 +6,8 @@ export type QuoteProvider = 'none' | 'finnhub' | 'fmp' | 'alphavantage' | 'proxy
 
 export type QuoteSource = QuoteProvider | 'delta_estimate';
 
+export type AiProvider = 'zhipu' | 'kimi';
+
 export interface QuoteSnapshot {
   symbol: string;
   price: number;
@@ -67,9 +69,13 @@ export interface PortfolioState {
 }
 
 export interface AppSettings {
+  aiProvider: AiProvider;
   kimiApiKey: string;
   kimiModel: string;
   proxyUrl: string;
+  zhipuApiKey: string;
+  zhipuModel: string;
+  zhipuProxyUrl: string;
   quoteProvider: QuoteProvider;
   quoteApiKey: string;
   quoteProxyUrl: string;

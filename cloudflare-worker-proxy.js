@@ -1,14 +1,16 @@
-// Cloudflare Worker：Moonshot Kimi API + Yahoo/NASDAQ 免费行情 CORS 代理
+// Cloudflare Worker：Moonshot Kimi API + 智谱 GLM API + Yahoo/NASDAQ 免费行情 CORS 代理
 // 用途：
 //   1. 浏览器无法直连 https://api.moonshot.cn 时，通过该 Worker 中转 Kimi。
-//   2. GitHub Pages 前端无法直连行情 API 时，通过 /quotes?symbols=MSFT,IGV 获取免费行情。
-// 部署步骤见 README.md「Kimi CORS 代理」和「行情同步」小节。
+//   2. 浏览器无法直连 https://open.bigmodel.cn 时，通过 /zhipu/chat/completions 中转智谱。
+//   3. GitHub Pages 前端无法直连行情 API 时，通过 /quotes?symbols=MSFT,IGV 获取免费行情。
+// 部署步骤见 README.md「AI 代理」和「每日行情同步」小节。
 //
 // 安全：
 //   - 不在 Worker 里存 API Key，Key 由前端请求头 Authorization 透传。
 //   - 建议在 Cloudflare 仪表板里给该 Worker 加自定义域名 + 速率限制。
 
 const UPSTREAM = 'https://api.moonshot.cn';
+const ZHIPU_UPSTREAM = 'https://open.bigmodel.cn/api/paas/v4';
 const ALLOWED_ORIGINS = [
   // 本项目 GitHub Pages：
   'https://c670752068-cell.github.io',
@@ -44,7 +46,9 @@ export default {
       return jsonResponse(await fetchQuotes(url.searchParams.get('symbols') ?? ''), cors);
     }
 
-    const upstream = UPSTREAM + url.pathname + url.search;
+    const upstream = url.pathname.startsWith('/zhipu/')
+      ? ZHIPU_UPSTREAM + url.pathname.replace(/^\/zhipu/, '') + url.search
+      : UPSTREAM + url.pathname + url.search;
 
     const upstreamReq = new Request(upstream, {
       method: request.method,

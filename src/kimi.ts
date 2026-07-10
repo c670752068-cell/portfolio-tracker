@@ -1,4 +1,5 @@
 import type {
+  AiProvider,
   AppSettings,
   AssetType,
   CashPosition,
@@ -10,30 +11,40 @@ import type {
   RiskFinding,
 } from './types';
 
-const DEFAULT_ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
+const KIMI_ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
+const ZHIPU_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 const REQUEST_TIMEOUT_MS = 90_000;
-const VISION_MODELS = new Set([
+const PING_TIMEOUT_MS = 20_000;
+const KIMI_VISION_MODELS = new Set([
   'kimi-k2.6',
   'kimi-k2.5',
   'moonshot-v1-8k-vision-preview',
   'moonshot-v1-32k-vision-preview',
   'moonshot-v1-128k-vision-preview',
 ]);
+const ZHIPU_VISION_MODELS = new Set([
+  'glm-4.6v-flash',
+  'glm-4.6v',
+  'glm-5v-turbo',
+  'glm-4v-flash',
+  'glm-4.1v-thinking-flash',
+  'glm-4.1v-thinking-flashx',
+]);
 
 type TextPart = { type: 'text'; text: string };
 type ImagePart = { type: 'image_url'; image_url: { url: string } };
-type KimiContent = string | Array<TextPart | ImagePart>;
+type AiContent = string | Array<TextPart | ImagePart>;
 
-interface KimiMessage {
+interface AiMessage {
   role: 'system' | 'user' | 'assistant';
-  content: KimiContent;
+  content: AiContent;
 }
 
-interface KimiResponse {
+interface AiResponse {
   choices?: Array<{
     message?: { content?: string };
   }>;
-  error?: { message?: string };
+  error?: { message?: string; code?: string };
 }
 
 export interface ImageForImport {
@@ -50,7 +61,25 @@ export class KimiError extends Error {
   }
 }
 
-function buildAnalysisPrompt(metrics: PortfolioMetrics, localFindings: RiskFinding[]): KimiMessage[] {
+interface AiRuntimeConfig {
+  provider: AiProvider;
+  label: string;
+  endpoint: string;
+  directEndpoint: string;
+  apiKey: string;
+  model: string;
+  usesProxy: boolean;
+}
+
+export function activeAiProviderLabel(settings: AppSettings): string {
+  return getAiRuntimeConfig(settings).label;
+}
+
+export function activeAiApiKey(settings: AppSettings): string {
+  return getAiRuntimeConfig(settings).apiKey;
+}
+
+function buildAnalysisPrompt(metrics: PortfolioMetrics, localFindings: RiskFinding[]): AiMessage[] {
   const summary = {
     valuationCurrency: 'USD',
     totalValue: round(metrics.totalValue),
@@ -103,13 +132,25 @@ function buildAnalysisPrompt(metrics: PortfolioMetrics, localFindings: RiskFindi
   ];
 }
 
-export async function analyzeWithKimi(
+export async function analyzeWithAi(
   settings: AppSettings,
   metrics: PortfolioMetrics,
   localFindings: RiskFinding[],
 ): Promise<string> {
-  const data = await requestKimi(settings, buildAnalysisPrompt(metrics, localFindings));
+  const data = await requestAi(settings, buildAnalysisPrompt(metrics, localFindings));
   return data;
+}
+
+export const analyzeWithKimi = analyzeWithAi;
+
+export async function testAiConnection(settings: AppSettings): Promise<string> {
+  const label = activeAiProviderLabel(settings);
+  const content = await requestAi(
+    settings,
+    [{ role: 'user', content: '只回复 OK，用于测试 API 连接。' }],
+    { maxTokens: 16, timeoutMs: PING_TIMEOUT_MS },
+  );
+  return `${label} 连接成功：${content.slice(0, 40) || 'OK'}`;
 }
 
 export async function parsePortfolioImages(
@@ -117,10 +158,18 @@ export async function parsePortfolioImages(
   images: ImageForImport[],
 ): Promise<ImportedPortfolio> {
   if (images.length === 0) throw new KimiError('请先选择至少一张持仓或期权详情截图。');
-  if (!VISION_MODELS.has(settings.kimiModel)) {
+  const provider = settings.aiProvider ?? 'zhipu';
+  const model = provider === 'kimi' ? settings.kimiModel : settings.zhipuModel;
+  if (provider === 'kimi' && !KIMI_VISION_MODELS.has(model)) {
     throw new KimiError(
       '当前选择的模型不支持图片识别',
       '请到「设置」把模型改为 kimi-k2.6 或任一 vision-preview 模型后保存。',
+    );
+  }
+  if (provider === 'zhipu' && !ZHIPU_VISION_MODELS.has(model)) {
+    throw new KimiError(
+      '当前选择的智谱模型不支持图片识别',
+      '请到「设置」把智谱模型改为 glm-4.6v-flash、glm-5v-turbo 或 glm-4v-flash 后保存。',
     );
   }
 
@@ -144,75 +193,113 @@ export async function parsePortfolioImages(
     },
     ...imageParts,
   ];
-  const raw = await requestKimi(settings, [
+  const raw = await requestAi(settings, [
     { role: 'system', content: '你是金融截图数据录入助手。仅提取用户截图明确可见的数据；不提供投资建议。' },
     { role: 'user', content },
   ]);
   return normalizeImportedPortfolio(raw);
 }
 
-async function requestKimi(settings: AppSettings, messages: KimiMessage[]): Promise<string> {
-  if (!settings.kimiApiKey.trim()) {
-    throw new KimiError('未配置 Kimi API Key', '请在「设置」中填入 Moonshot API Key。');
+async function requestAi(
+  settings: AppSettings,
+  messages: AiMessage[],
+  options: { maxTokens?: number; timeoutMs?: number } = {},
+): Promise<string> {
+  const config = getAiRuntimeConfig(settings);
+  if (!config.apiKey.trim()) {
+    throw new KimiError(`未配置 ${config.label} API Key`, `请在「设置」中填入 ${config.label} API Key。`);
   }
-  const endpoint = settings.proxyUrl.trim() || DEFAULT_ENDPOINT;
-  const isDirectMoonshot = !settings.proxyUrl.trim();
-  const model = settings.kimiModel || 'kimi-k2.6';
   let response: Response;
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    response = await fetch(endpoint, {
+    response = await fetch(config.endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${settings.kimiApiKey.trim()}`,
+        Authorization: `Bearer ${config.apiKey.trim()}`,
       },
       body: JSON.stringify({
-        model,
+        model: config.model,
         messages,
-        temperature: temperatureForModel(model),
-        max_tokens: 8000,
+        temperature: temperatureForModel(config.provider, config.model),
+        max_tokens: options.maxTokens ?? 8000,
       }),
       signal: controller.signal,
     });
   } catch (error: unknown) {
     const message = error instanceof DOMException && error.name === 'AbortError'
-      ? `请求超过 ${Math.round(REQUEST_TIMEOUT_MS / 1000)} 秒`
+      ? `请求超过 ${Math.round(timeoutMs / 1000)} 秒`
       : error instanceof Error ? error.message : String(error);
     throw new KimiError(
       `网络请求失败：${message}`,
-      isDirectMoonshot
-        ? '请求还没到 Kimi，多数是浏览器 CORS、网络拦截或截图体积过大。当前版本已自动压缩截图；如果仍失败，请在「设置」填入 Cloudflare Worker 或 Vercel 代理 URL。VPN/Clash 不能直接嵌入 GitHub Pages 网页。'
-        : '你的代理没有成功转发请求。请检查代理 URL 是否以 /v1/chat/completions 结尾、是否允许本网站域名、以及 Worker/Vercel 是否能访问 Moonshot API。',
+      networkHint(config),
     );
   } finally {
     window.clearTimeout(timeoutId);
   }
 
-  let data: KimiResponse;
+  let data: AiResponse;
   try {
-    data = (await response.json()) as KimiResponse;
+    data = (await response.json()) as AiResponse;
   } catch {
     throw new KimiError(`响应非 JSON（HTTP ${response.status}）`);
   }
   if (!response.ok) {
     throw new KimiError(
-      data.error?.message ?? `HTTP ${response.status}`,
+      data.error?.message ?? data.error?.code ?? `HTTP ${response.status}`,
       response.status === 401
         ? '请检查 API Key 是否正确、是否过期，或确认该 Key 有视觉模型权限。'
         : response.status === 400 && data.error?.message?.toLowerCase().includes('image')
-          ? '模型或接口没有接受图片输入。请使用 kimi-k2.6；如果仍失败，再考虑换支持视觉的其他模型/服务。'
+          ? `模型或接口没有接受图片输入。请使用 ${config.provider === 'zhipu' ? 'glm-4.6v-flash / glm-5v-turbo' : 'kimi-k2.6'}。`
           : undefined,
     );
   }
   const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new KimiError('Kimi 返回为空，请重试或减少截图数量。');
+  if (!content) throw new KimiError(`${config.label} 返回为空，请重试或减少截图数量。`);
   return content;
 }
 
-function temperatureForModel(model: string): number {
-  return model.startsWith('kimi-k2') ? 1 : 0.1;
+function getAiRuntimeConfig(settings: AppSettings): AiRuntimeConfig {
+  const provider = settings.aiProvider === 'kimi' ? 'kimi' : 'zhipu';
+  if (provider === 'kimi') {
+    const proxy = settings.proxyUrl.trim();
+    return {
+      provider,
+      label: 'Kimi',
+      endpoint: proxy || KIMI_ENDPOINT,
+      directEndpoint: KIMI_ENDPOINT,
+      apiKey: settings.kimiApiKey,
+      model: settings.kimiModel || 'kimi-k2.6',
+      usesProxy: Boolean(proxy),
+    };
+  }
+  const proxy = settings.zhipuProxyUrl.trim();
+  return {
+    provider,
+    label: '智谱 GLM',
+    endpoint: proxy || ZHIPU_ENDPOINT,
+    directEndpoint: ZHIPU_ENDPOINT,
+    apiKey: settings.zhipuApiKey,
+    model: settings.zhipuModel || 'glm-4.6v-flash',
+    usesProxy: Boolean(proxy),
+  };
+}
+
+function networkHint(config: AiRuntimeConfig): string {
+  if (config.usesProxy) {
+    return `你的 ${config.label} 代理没有成功转发请求。请检查代理 URL、允许域名，以及代理是否能访问 ${config.directEndpoint}。`;
+  }
+  if (config.provider === 'zhipu') {
+    return '请求还没成功返回。多数是手机网络到智谱接口不稳、浏览器拦截或服务端处理超时。可先在「设置」点连接测试；如果仍失败，请填入 Cloudflare Worker / Vercel 代理 URL。';
+  }
+  return '请求还没成功返回。当前压缩已生效，若仍超时，多数是 Kimi 视觉请求处理慢或手机网络到 Moonshot 不稳。建议切换到智谱 GLM，或填入 Cloudflare Worker / Vercel 代理 URL。VPN/Clash 不能直接嵌入 GitHub Pages 网页。';
+}
+
+function temperatureForModel(provider: AiProvider, model: string): number {
+  if (provider === 'kimi' && model.startsWith('kimi-k2')) return 1;
+  return 0.1;
 }
 
 function normalizeImportedPortfolio(raw: string): ImportedPortfolio {
@@ -220,9 +307,9 @@ function normalizeImportedPortfolio(raw: string): ImportedPortfolio {
   try {
     data = JSON.parse(extractJsonObject(raw));
   } catch {
-    throw new KimiError('Kimi 的识别结果不是可读取的 JSON', '请重试；若仍失败，可减少截图数量或改用清晰的原始截图。');
+    throw new KimiError('AI 的识别结果不是可读取的 JSON', '请重试；若仍失败，可减少截图数量或改用清晰的原始截图。');
   }
-  if (!isRecord(data)) throw new KimiError('Kimi 的识别结果格式不正确');
+  if (!isRecord(data)) throw new KimiError('AI 的识别结果格式不正确');
   const issues = asIssues(data.issues);
   const holdings = Array.isArray(data.holdings)
     ? data.holdings.map((holding) => normalizeHolding(holding, issues)).filter((holding): holding is ImportedPortfolio['holdings'][number] => holding !== null)
