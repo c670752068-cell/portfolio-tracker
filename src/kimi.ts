@@ -11,6 +11,7 @@ import type {
 } from './types';
 
 const DEFAULT_ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
+const REQUEST_TIMEOUT_MS = 90_000;
 const VISION_MODELS = new Set([
   'kimi-k2.6',
   'kimi-k2.5',
@@ -155,8 +156,11 @@ async function requestKimi(settings: AppSettings, messages: KimiMessage[]): Prom
     throw new KimiError('未配置 Kimi API Key', '请在「设置」中填入 Moonshot API Key。');
   }
   const endpoint = settings.proxyUrl.trim() || DEFAULT_ENDPOINT;
+  const isDirectMoonshot = !settings.proxyUrl.trim();
   const model = settings.kimiModel || 'kimi-k2.6';
   let response: Response;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     response = await fetch(endpoint, {
       method: 'POST',
@@ -170,13 +174,20 @@ async function requestKimi(settings: AppSettings, messages: KimiMessage[]): Prom
         temperature: temperatureForModel(model),
         max_tokens: 8000,
       }),
+      signal: controller.signal,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof DOMException && error.name === 'AbortError'
+      ? `请求超过 ${Math.round(REQUEST_TIMEOUT_MS / 1000)} 秒`
+      : error instanceof Error ? error.message : String(error);
     throw new KimiError(
       `网络请求失败：${message}`,
-      '浏览器直连 Moonshot API 可能被 CORS 拦截。请在「设置」填入 Cloudflare Worker 或 Vercel 代理 URL，代理必须允许本网站域名。',
+      isDirectMoonshot
+        ? '请求还没到 Kimi，多数是浏览器 CORS、网络拦截或截图体积过大。当前版本已自动压缩截图；如果仍失败，请在「设置」填入 Cloudflare Worker 或 Vercel 代理 URL。VPN/Clash 不能直接嵌入 GitHub Pages 网页。'
+        : '你的代理没有成功转发请求。请检查代理 URL 是否以 /v1/chat/completions 结尾、是否允许本网站域名、以及 Worker/Vercel 是否能访问 Moonshot API。',
     );
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 
   let data: KimiResponse;
@@ -188,7 +199,11 @@ async function requestKimi(settings: AppSettings, messages: KimiMessage[]): Prom
   if (!response.ok) {
     throw new KimiError(
       data.error?.message ?? `HTTP ${response.status}`,
-      response.status === 401 ? '请检查 API Key 是否正确、是否过期，或确认该 Key 有视觉模型权限。' : undefined,
+      response.status === 401
+        ? '请检查 API Key 是否正确、是否过期，或确认该 Key 有视觉模型权限。'
+        : response.status === 400 && data.error?.message?.toLowerCase().includes('image')
+          ? '模型或接口没有接受图片输入。请使用 kimi-k2.6；如果仍失败，再考虑换支持视觉的其他模型/服务。'
+          : undefined,
     );
   }
   const content = data.choices?.[0]?.message?.content;

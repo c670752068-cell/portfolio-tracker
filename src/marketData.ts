@@ -20,7 +20,7 @@ export function canSyncQuotes(settings: AppSettings): boolean {
 }
 
 export function quoteSyncSetupHint(settings: AppSettings): string {
-  if (settings.quoteProvider === 'none') return '未开启行情源。可在设置里选择 Finnhub、FMP、Alpha Vantage 或自建代理。';
+  if (settings.quoteProvider === 'none') return '未开启行情源。可在设置里选择 Finnhub、FMP、Alpha Vantage 或自建免费行情代理。';
   if (settings.quoteProvider === 'proxy' && !settings.quoteProxyUrl.trim()) return '请填写行情代理 URL。';
   if (settings.quoteProvider !== 'proxy' && !settings.quoteApiKey.trim()) return '请填写行情 API Key。';
   return '';

@@ -1,7 +1,7 @@
-// Cloudflare Worker：Moonshot Kimi API + NASDAQ 行情 CORS 代理
+// Cloudflare Worker：Moonshot Kimi API + Yahoo/NASDAQ 免费行情 CORS 代理
 // 用途：
 //   1. 浏览器无法直连 https://api.moonshot.cn 时，通过该 Worker 中转 Kimi。
-//   2. GitHub Pages 前端无法直连 NASDAQ API 时，通过 /quotes?symbols=MSFT,IGV 获取行情。
+//   2. GitHub Pages 前端无法直连行情 API 时，通过 /quotes?symbols=MSFT,IGV 获取免费行情。
 // 部署步骤见 README.md「Kimi CORS 代理」和「行情同步」小节。
 //
 // 安全：
@@ -64,11 +64,60 @@ export default {
 
 async function fetchQuotes(symbolsParam) {
   const symbols = uniqueSymbols(symbolsParam);
-  const rows = await Promise.all(symbols.map(fetchNasdaqQuote));
+  const rows = await Promise.all(symbols.map(fetchFreeQuote));
   return {
     quotes: rows.filter((row) => row.ok).map((row) => row.quote),
     failedSymbols: rows.filter((row) => !row.ok).map((row) => ({ symbol: row.symbol, reason: row.reason })),
   };
+}
+
+async function fetchFreeQuote(symbol) {
+  const yahoo = await fetchYahooQuote(symbol);
+  if (yahoo.ok) return yahoo;
+  const nasdaq = await fetchNasdaqQuote(symbol);
+  if (nasdaq.ok) return nasdaq;
+  return { ok: false, symbol, reason: `Yahoo: ${yahoo.reason}; NASDAQ: ${nasdaq.reason}` };
+}
+
+async function fetchYahooQuote(symbol) {
+  try {
+    const yahooSymbol = toYahooSymbol(symbol);
+    const upstream = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=5d&interval=1d`;
+    const resp = await fetch(upstream, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'Mozilla/5.0',
+      },
+    });
+    if (!resp.ok) return { ok: false, symbol, reason: `Yahoo HTTP ${resp.status}` };
+    const data = await resp.json();
+    const result = data?.chart?.result?.[0];
+    const meta = result?.meta ?? {};
+    const price = parseNumber(meta.regularMarketPrice) ?? lastNumber(result?.indicators?.quote?.[0]?.close);
+    if (!price) return { ok: false, symbol, reason: 'Yahoo 未返回有效价格' };
+    const previousClose = parseNumber(meta.chartPreviousClose);
+    const change = previousClose == null ? null : price - previousClose;
+    const timestamp = meta.regularMarketTime
+      ? new Date(Number(meta.regularMarketTime) * 1000).toISOString()
+      : lastTimestamp(result?.timestamp);
+    return {
+      ok: true,
+      symbol,
+      quote: {
+        symbol,
+        price,
+        previousClose,
+        change,
+        changePercent: previousClose ? change / previousClose : null,
+        currency: meta.currency || 'USD',
+        timestamp,
+        source: 'proxy',
+        isRealtime: false,
+      },
+    };
+  } catch (error) {
+    return { ok: false, symbol, reason: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 async function fetchNasdaqQuote(symbol) {
@@ -110,6 +159,10 @@ function uniqueSymbols(raw) {
   return [...new Set(raw.split(',').map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))].slice(0, 50);
 }
 
+function toYahooSymbol(symbol) {
+  return symbol.replace('.', '-');
+}
+
 function parseNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value !== 'string') return null;
@@ -120,6 +173,21 @@ function parseNumber(value) {
 function parsePercent(value) {
   const parsed = parseNumber(value);
   return parsed == null ? null : parsed / 100;
+}
+
+function lastNumber(values) {
+  if (!Array.isArray(values)) return null;
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    const parsed = parseNumber(values[index]);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function lastTimestamp(values) {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const last = Number(values[values.length - 1]);
+  return Number.isFinite(last) ? new Date(last * 1000).toISOString() : null;
 }
 
 function jsonResponse(payload, cors) {

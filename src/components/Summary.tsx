@@ -55,7 +55,7 @@ export function Summary({ metrics, rates, rateError, quoteStatus, canRefreshQuot
         <div>
           <span className="font-medium text-slate-700 dark:text-slate-200">行情同步：</span>
           <span className="text-slate-500 dark:text-slate-400">
-            {quoteStatus.loading ? '正在刷新…' : quoteStatus.summary || (canRefreshQuotes ? '可刷新股票/ETF 当前价' : '未配置行情源')}
+            {quoteStatus.loading ? '正在刷新…' : quoteStatus.summary || (canRefreshQuotes ? '北京时间每天 7 点后自动刷新一次' : '未配置行情源')}
           </span>
           {quoteStatus.lastSyncedAt && <span className="ml-2 text-slate-400">{new Date(quoteStatus.lastSyncedAt).toLocaleString()}</span>}
           {quoteStatus.error && <span className="ml-2 text-amber-600 dark:text-amber-300">{quoteStatus.error}</span>}
@@ -66,7 +66,7 @@ export function Summary({ metrics, rates, rateError, quoteStatus, canRefreshQuot
           disabled={quoteStatus.loading || !canRefreshQuotes}
           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
-          {quoteStatus.loading ? '刷新中' : '刷新行情'}
+          {quoteStatus.loading ? '刷新中' : '手动刷新'}
         </button>
       </div>
     </div>

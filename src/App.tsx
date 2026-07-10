@@ -16,6 +16,11 @@ import type { AppSettings, CashPosition, ExchangeRates, Holding, ImportedPortfol
 import './App.css';
 
 type Tab = 'dashboard' | 'holdings' | 'analysis' | 'settings';
+type QuoteRefreshReason = 'manual' | 'daily';
+
+const DAILY_QUOTE_SYNC_KEY = 'portfolio-tracker:daily-quote-sync-key-v1';
+const BEIJING_TIME_ZONE = 'Asia/Shanghai';
+const BEIJING_QUOTE_REFRESH_HOUR = 7;
 
 interface QuoteStatus {
   loading: boolean;
@@ -31,6 +36,49 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function getBeijingQuoteTargetDate(now = new Date()): string {
+  const parts = getBeijingDateParts(now);
+  if (parts.hour >= BEIJING_QUOTE_REFRESH_HOUR) return parts.date;
+  return formatBeijingDate(new Date(Date.parse(`${parts.date}T00:00:00+08:00`) - 24 * 60 * 60 * 1000));
+}
+
+function getMsUntilNextBeijingSeven(now = new Date()): number {
+  const parts = getBeijingDateParts(now);
+  const todaySeven = Date.parse(`${parts.date}T${String(BEIJING_QUOTE_REFRESH_HOUR).padStart(2, '0')}:00:00+08:00`);
+  const nextSeven = todaySeven > now.getTime() ? todaySeven : todaySeven + 24 * 60 * 60 * 1000;
+  return Math.max(60 * 1000, nextSeven - now.getTime());
+}
+
+function getBeijingDateParts(date: Date): { date: string; hour: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BEIJING_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    date: `${lookup.year}-${lookup.month}-${lookup.day}`,
+    hour: Number(lookup.hour ?? 0),
+  };
+}
+
+function formatBeijingDate(date: Date): string {
+  return getBeijingDateParts(date).date;
+}
+
+function buildDailyQuoteSyncKey(targetDate: string, holdings: Holding[], settings: AppSettings): string {
+  const symbols = holdings
+    .map((holding) => (holding.assetType === 'option' ? holding.option?.underlying || holding.symbol : holding.symbol))
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter(Boolean)
+    .sort()
+    .join(',');
+  return `${targetDate}|${settings.quoteProvider}|${symbols}`;
+}
+
 export default function App() {
   const [portfolio, setPortfolio] = useState<PortfolioState>(() => loadPortfolio());
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
@@ -44,6 +92,7 @@ export default function App() {
   });
   const [tab, setTab] = useState<Tab>('dashboard');
   const holdingsRef = useRef(portfolio.holdings);
+  const quoteRefreshInFlightRef = useRef(false);
 
   useEffect(() => {
     savePortfolio(portfolio);
@@ -65,7 +114,8 @@ export default function App() {
     return () => { active = false; };
   }, []);
 
-  const refreshQuotes = useCallback(async () => {
+  const refreshQuotes = useCallback(async (reason: QuoteRefreshReason = 'manual', dailySyncKey?: string, dailyTargetDate?: string) => {
+    if (quoteRefreshInFlightRef.current) return;
     const currentHoldings = holdingsRef.current;
     if (currentHoldings.length === 0) {
       setQuoteStatus((status) => ({ ...status, error: '', summary: '暂无持仓可同步。' }));
@@ -76,6 +126,7 @@ export default function App() {
       setQuoteStatus((status) => ({ ...status, loading: false, error: setupHint, summary: '' }));
       return;
     }
+    quoteRefreshInFlightRef.current = true;
     setQuoteStatus((status) => ({ ...status, loading: true, error: '' }));
     try {
       const result = await syncHoldingsWithQuotes(currentHoldings, settings);
@@ -86,11 +137,16 @@ export default function App() {
         updatedAt: result.updatedAt,
       }));
       const failedText = result.failedSymbols.length > 0 ? `，${result.failedSymbols.length} 个失败` : '';
+      const nextDailySyncKey = dailySyncKey ?? buildDailyQuoteSyncKey(getBeijingQuoteTargetDate(), currentHoldings, settings);
+      localStorage.setItem(DAILY_QUOTE_SYNC_KEY, nextDailySyncKey);
+      const prefix = reason === 'daily'
+        ? `每日快照（北京时间 ${dailyTargetDate ?? getBeijingQuoteTargetDate()}）`
+        : '已手动刷新';
       setQuoteStatus({
         loading: false,
         lastSyncedAt: result.updatedAt,
         error: result.failedSymbols.length > 0 ? result.failedSymbols.map((item) => `${item.symbol}: ${item.reason}`).join('；') : '',
-        summary: `已刷新 ${result.updatedSymbols.length}/${result.requestedSymbols.length} 个标的${failedText}`,
+        summary: `${prefix} ${result.updatedSymbols.length}/${result.requestedSymbols.length} 个标的${failedText}`,
       });
     } catch (error) {
       setQuoteStatus((status) => ({
@@ -98,22 +154,39 @@ export default function App() {
         loading: false,
         error: error instanceof Error ? error.message : String(error),
       }));
+    } finally {
+      quoteRefreshInFlightRef.current = false;
     }
   }, [settings]);
 
   useEffect(() => {
     if (!settings.autoRefreshQuotes || !canSyncQuotes(settings)) return undefined;
-    if (holdingsRef.current.length > 0) void refreshQuotes();
-    const timer = window.setInterval(() => {
-      void refreshQuotes();
-    }, 15 * 60 * 1000);
-    return () => window.clearInterval(timer);
-  }, [refreshQuotes, settings, settings.autoRefreshQuotes, settings.quoteApiKey, settings.quoteProvider, settings.quoteProxyUrl]);
+    let timer: number | undefined;
+    let cancelled = false;
 
-  useEffect(() => {
-    if (!settings.autoRefreshQuotes || !canSyncQuotes(settings) || portfolio.holdings.length === 0) return;
-    if (!quoteStatus.lastSyncedAt && !quoteStatus.loading) void refreshQuotes();
-  }, [portfolio.holdings.length, quoteStatus.lastSyncedAt, quoteStatus.loading, refreshQuotes, settings]);
+    const runIfDue = () => {
+      if (cancelled || holdingsRef.current.length === 0) return;
+      const targetDate = getBeijingQuoteTargetDate();
+      const syncKey = buildDailyQuoteSyncKey(targetDate, holdingsRef.current, settings);
+      if (localStorage.getItem(DAILY_QUOTE_SYNC_KEY) !== syncKey) {
+        void refreshQuotes('daily', syncKey, targetDate);
+      }
+    };
+
+    const scheduleNextCheck = () => {
+      timer = window.setTimeout(() => {
+        runIfDue();
+        scheduleNextCheck();
+      }, getMsUntilNextBeijingSeven() + 1000);
+    };
+
+    runIfDue();
+    scheduleNextCheck();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [portfolio.holdings.length, refreshQuotes, settings, settings.autoRefreshQuotes, settings.quoteApiKey, settings.quoteProvider, settings.quoteProxyUrl]);
 
   const metrics = useMemo(() => computeMetrics(portfolio, rates), [portfolio, rates]);
   const findings = useMemo(() => analyzePortfolio(metrics), [metrics]);
@@ -169,7 +242,7 @@ export default function App() {
             rateError={rateError}
             quoteStatus={quoteStatus}
             canRefreshQuotes={portfolio.holdings.length > 0 && canSyncQuotes(settings)}
-            onRefreshQuotes={refreshQuotes}
+            onRefreshQuotes={() => refreshQuotes('manual')}
           />
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
             <h3 className="mb-2 text-sm font-semibold">资产占比</h3>

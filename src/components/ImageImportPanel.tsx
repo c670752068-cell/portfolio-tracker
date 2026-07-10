@@ -5,6 +5,8 @@ import type { AppSettings, ImportedPortfolio } from '../types';
 
 const MAX_FILES = 8;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_SIDE = 1600;
+const JPEG_QUALITY = 0.82;
 
 interface ImageImportPanelProps {
   settings: AppSettings;
@@ -17,12 +19,14 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [result, setResult] = useState<ImportedPortfolio | null>(null);
+  const [prepareSummary, setPrepareSummary] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   function addFiles(nextList: FileList | null) {
     if (!nextList) return;
     setError(null);
     setResult(null);
+    setPrepareSummary('');
     const valid = Array.from(nextList).filter((file) => {
       if (!file.type.startsWith('image/')) return false;
       if (file.size > MAX_FILE_BYTES) return false;
@@ -53,8 +57,12 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
     setLoading(true);
     setError(null);
     setResult(null);
+    setPrepareSummary('正在压缩截图，减少移动端网络失败…');
     try {
-      const images = await Promise.all(files.map(async (file) => ({ name: file.name, dataUrl: await readAsDataUrl(file) })));
+      const images = await Promise.all(files.map(prepareImageForVision));
+      const originalBytes = files.reduce((sum, file) => sum + file.size, 0);
+      const preparedBytes = images.reduce((sum, image) => sum + image.bytes, 0);
+      setPrepareSummary(`已将截图从 ${formatBytes(originalBytes)} 压缩到 ${formatBytes(preparedBytes)} 后发送给 AI。`);
       setResult(await parsePortfolioImages(settings, images));
     } catch (caught: unknown) {
       if (caught instanceof KimiError) setError({ message: caught.message, hint: caught.hint });
@@ -70,6 +78,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
     setFiles([]);
     setResult(null);
     setError(null);
+    setPrepareSummary('');
   }
 
   return (
@@ -88,7 +97,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
 
       <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-indigo-300 bg-white px-3 py-5 text-center text-sm text-indigo-800 hover:bg-indigo-50 dark:border-indigo-700 dark:bg-slate-900 dark:text-indigo-200">
         <span className="font-medium">选择持仓截图（最多 {MAX_FILES} 张，每张 ≤ 10MB）</span>
-        <span className="mt-1 text-xs text-slate-500">支持 JPG、PNG、WEBP、GIF；可一次选择多张</span>
+        <span className="mt-1 text-xs text-slate-500">支持 JPG、PNG、WEBP、GIF；发送前会自动压缩到最长边 {MAX_IMAGE_SIDE}px</span>
         <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="hidden" onChange={(event) => addFiles(event.target.files)} />
       </label>
 
@@ -97,7 +106,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
           {files.map((file, index) => (
             <span key={`${file.name}-${file.size}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white px-2 py-1 text-xs text-slate-700 shadow-sm dark:bg-slate-800 dark:text-slate-200">
               <span className="truncate">{file.name}</span>
-              <button aria-label={`移除 ${file.name}`} onClick={() => { setFiles(files.filter((_, itemIndex) => itemIndex !== index)); setResult(null); }} className="font-bold text-slate-400 hover:text-rose-600">×</button>
+              <button aria-label={`移除 ${file.name}`} onClick={() => { setFiles(files.filter((_, itemIndex) => itemIndex !== index)); setResult(null); setPrepareSummary(''); }} className="font-bold text-slate-400 hover:text-rose-600">×</button>
             </span>
           ))}
         </div>
@@ -105,10 +114,11 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
 
       <div className="flex flex-wrap items-center gap-2">
         <button onClick={parse} disabled={loading || files.length === 0} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400">
-          {loading ? '正在识别截图…' : '解析并预览'}
+          {loading ? '正在压缩并识别…' : '解析并预览'}
         </button>
         <span className="text-xs text-slate-500">截图只会随本次请求发送到 Kimi，不会保存到本地或导出 JSON。</span>
       </div>
+      {prepareSummary && <p className="text-xs text-slate-500 dark:text-slate-400">{prepareSummary}</p>}
 
       {error && (
         <div role="alert" className="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-800 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-100">
@@ -161,6 +171,54 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
   );
 }
 
+interface PreparedImage {
+  name: string;
+  dataUrl: string;
+  bytes: number;
+}
+
+async function prepareImageForVision(file: File): Promise<PreparedImage> {
+  try {
+    const dataUrl = await compressImage(file);
+    return { name: file.name, dataUrl, bytes: estimateDataUrlBytes(dataUrl) };
+  } catch {
+    const dataUrl = await readAsDataUrl(file);
+    return { name: file.name, dataUrl, bytes: estimateDataUrlBytes(dataUrl) };
+  }
+}
+
+async function compressImage(file: File): Promise<string> {
+  const image = await loadImage(file);
+  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('无法创建图片压缩画布');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+}
+
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`无法载入图片：${file.name}`));
+    };
+    image.src = url;
+  });
+}
+
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -168,6 +226,16 @@ function readAsDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(String(reader.result));
     reader.readAsDataURL(file);
   });
+}
+
+function estimateDataUrlBytes(dataUrl: string): number {
+  const base64 = dataUrl.split(',')[1] ?? '';
+  return Math.round(base64.length * 0.75);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
 function assetLabel(type: string | undefined): string {
