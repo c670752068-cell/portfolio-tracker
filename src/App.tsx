@@ -3,13 +3,15 @@ import { AllocationChart } from './components/AllocationChart';
 import { AnalysisPanel } from './components/AnalysisPanel';
 import { CashEditor } from './components/CashEditor';
 import { HoldingsTable } from './components/HoldingsTable';
+import { ImageImportPanel } from './components/ImageImportPanel';
 import { RiskList } from './components/RiskList';
 import { SettingsPanel } from './components/SettingsPanel';
 import { Summary } from './components/Summary';
 import { analyzePortfolio } from './analyzer';
+import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { computeMetrics } from './metrics';
 import { loadPortfolio, loadSettings, savePortfolio, saveSettings } from './storage';
-import type { AppSettings, CashPosition, Holding, PortfolioState } from './types';
+import type { AppSettings, CashPosition, ExchangeRates, Holding, ImportedPortfolio, PortfolioState } from './types';
 import './App.css';
 
 type Tab = 'dashboard' | 'holdings' | 'analysis' | 'settings';
@@ -24,13 +26,30 @@ function generateId(): string {
 export default function App() {
   const [portfolio, setPortfolio] = useState<PortfolioState>(() => loadPortfolio());
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  const [rates, setRates] = useState<ExchangeRates>(() => loadExchangeRates());
+  const [rateError, setRateError] = useState<string>('');
   const [tab, setTab] = useState<Tab>('dashboard');
 
   useEffect(() => {
     savePortfolio(portfolio);
   }, [portfolio]);
 
-  const metrics = useMemo(() => computeMetrics(portfolio), [portfolio]);
+  useEffect(() => {
+    let active = true;
+    fetchLatestExchangeRates()
+      .then((next) => {
+        if (active) {
+          setRates(next);
+          setRateError('');
+        }
+      })
+      .catch(() => {
+        if (active) setRateError('暂未取得实时汇率，当前使用本地缓存或近似值。');
+      });
+    return () => { active = false; };
+  }, []);
+
+  const metrics = useMemo(() => computeMetrics(portfolio, rates), [portfolio, rates]);
   const findings = useMemo(() => analyzePortfolio(metrics), [metrics]);
 
   function addHolding(h: Omit<Holding, 'id'>) {
@@ -52,13 +71,21 @@ export default function App() {
     setSettings(next);
     saveSettings(next);
   }
+  function importFromImages(result: ImportedPortfolio) {
+    setPortfolio((current) => ({
+      holdings: [...current.holdings, ...result.holdings.map((holding) => ({ ...holding, id: generateId() }))],
+      cash: [...current.cash, ...result.cash],
+      updatedAt: new Date().toISOString(),
+    }));
+    setTab('dashboard');
+  }
 
   return (
     <div className="mx-auto min-h-full max-w-5xl px-3 py-4 sm:px-6">
       <header className="mb-4 flex items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold sm:text-2xl">我的投资组合</h1>
-          <p className="text-xs text-slate-500">本地存储 · 不上传 · 手机/桌面通用</p>
+          <p className="text-xs text-slate-500">本地存储 · 截图仅在你点击解析时发送给已选 AI · 手机/桌面通用</p>
         </div>
         <nav className="flex flex-wrap gap-1 text-xs sm:text-sm">
           <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} />
@@ -70,7 +97,7 @@ export default function App() {
 
       {tab === 'dashboard' && (
         <section className="space-y-4">
-          <Summary metrics={metrics} />
+          <Summary metrics={metrics} rates={rates} rateError={rateError} />
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
             <h3 className="mb-2 text-sm font-semibold">资产占比</h3>
             <AllocationChart metrics={metrics} />
@@ -84,13 +111,14 @@ export default function App() {
 
       {tab === 'holdings' && (
         <section className="space-y-4">
+          <ImageImportPanel settings={settings} onConfirm={importFromImages} onOpenSettings={() => setTab('settings')} />
           <HoldingsTable
             metrics={metrics.holdingsMetrics}
             onAdd={addHolding}
             onUpdate={updateHolding}
             onDelete={deleteHolding}
           />
-          <CashEditor cash={portfolio.cash} onChange={setCash} />
+          <CashEditor cash={portfolio.cash} rates={rates} onChange={setCash} />
         </section>
       )}
 
@@ -113,7 +141,7 @@ export default function App() {
       )}
 
       <footer className="mt-8 text-center text-xs text-slate-400">
-        数据保存在浏览器 localStorage；清除浏览器数据会丢失。建议定期导出 JSON 备份。
+        数据保存在浏览器 localStorage；清除浏览器数据会丢失。风险结果仅作教育与信息展示，不构成投资建议；建议定期导出 JSON 备份。
       </footer>
     </div>
   );

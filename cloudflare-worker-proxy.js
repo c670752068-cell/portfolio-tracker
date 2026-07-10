@@ -8,6 +8,8 @@
 
 const UPSTREAM = 'https://api.moonshot.cn';
 const ALLOWED_ORIGINS = [
+  // 本项目 GitHub Pages：
+  'https://c670752068-cell.github.io',
   // 部署后把你的 GitHub Pages 地址加进来，比如：
   // 'https://your-name.github.io',
   // 本地开发：

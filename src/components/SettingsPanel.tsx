@@ -28,18 +28,20 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
           className={inputCls}
         />
         <p className="mt-1 text-xs text-slate-500">
-          仅保存在本机浏览器（localStorage）。代码托管在 GitHub，但 Key 永远不会上传。
+          仅保存在本机浏览器（localStorage）。解析图片时，Key 与图片会发送给 Kimi API（或你填写的代理），不会进入 GitHub 仓库。
         </p>
       </Field>
-      <Field label="模型">
+      <Field label="Kimi 视觉模型">
         <select
           value={draft.kimiModel}
           onChange={(e) => setDraft({ ...draft, kimiModel: e.target.value })}
           className={inputCls}
         >
-          <option value="moonshot-v1-8k">moonshot-v1-8k</option>
-          <option value="moonshot-v1-32k">moonshot-v1-32k</option>
-          <option value="moonshot-v1-128k">moonshot-v1-128k</option>
+          <option value="kimi-k2.6">kimi-k2.6（推荐：图片识别 + 组合分析）</option>
+          <option value="kimi-k2.5">kimi-k2.5</option>
+          <option value="moonshot-v1-8k-vision-preview">moonshot-v1-8k-vision-preview</option>
+          <option value="moonshot-v1-32k-vision-preview">moonshot-v1-32k-vision-preview</option>
+          <option value="moonshot-v1-128k-vision-preview">moonshot-v1-128k-vision-preview</option>
         </select>
       </Field>
       <Field label="代理 URL（可选，处理 CORS）">
@@ -50,7 +52,7 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
           className={inputCls}
         />
         <p className="mt-1 text-xs text-slate-500">
-          浏览器直连 Moonshot 可能被 CORS 拦截。如失败，部署 README 中的 Cloudflare Worker 代理并填入此处。
+          浏览器直连 Moonshot 可能被 CORS 拦截。如失败，部署 README 中的 Cloudflare Worker 代理并填入此处。该代理需要把本网站域名加入允许列表。
         </p>
       </Field>
       <button

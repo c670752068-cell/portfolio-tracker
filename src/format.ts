@@ -1,7 +1,7 @@
 export function formatMoney(n: number, currency: string = 'USD'): string {
   const sign = n < 0 ? '-' : '';
   const abs = Math.abs(n);
-  const symbol = currency === 'CNY' ? '¥' : currency === 'HKD' ? 'HK$' : '$';
+  const symbol = currency === 'CNY' ? '¥' : currency === 'HKD' ? 'HK$' : currency === 'OTHER' ? '¤' : '$';
   return `${sign}${symbol}${abs.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

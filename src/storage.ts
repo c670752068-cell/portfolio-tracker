@@ -11,7 +11,7 @@ const emptyPortfolio: PortfolioState = {
 
 const defaultSettings: AppSettings = {
   kimiApiKey: '',
-  kimiModel: 'moonshot-v1-8k',
+  kimiModel: 'kimi-k2.6',
   proxyUrl: '',
 };
 
@@ -40,7 +40,13 @@ export function loadSettings(): AppSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    return { ...defaultSettings, ...parsed };
+    const oldTextOnlyModels = new Set(['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']);
+    return {
+      ...defaultSettings,
+      ...parsed,
+      // Existing users need a vision model for the new screenshot-import flow.
+      kimiModel: oldTextOnlyModels.has(parsed.kimiModel ?? '') ? defaultSettings.kimiModel : parsed.kimiModel ?? defaultSettings.kimiModel,
+    };
   } catch {
     return defaultSettings;
   }

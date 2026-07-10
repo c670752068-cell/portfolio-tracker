@@ -1,14 +1,16 @@
-import type { CashPosition } from '../types';
+import { toUsd } from '../exchangeRates';
+import type { CashPosition, ExchangeRates } from '../types';
 import { formatMoney } from '../format';
 
 interface CashEditorProps {
   cash: CashPosition[];
+  rates: ExchangeRates;
   onChange: (next: CashPosition[]) => void;
 }
 
 const CURRENCIES: CashPosition['currency'][] = ['USD', 'CNY', 'HKD', 'OTHER'];
 
-export function CashEditor({ cash, onChange }: CashEditorProps) {
+export function CashEditor({ cash, rates, onChange }: CashEditorProps) {
   function update(i: number, patch: Partial<CashPosition>) {
     const next = cash.map((c, idx) => (idx === i ? { ...c, ...patch } : c));
     onChange(next);
@@ -52,11 +54,11 @@ export function CashEditor({ cash, onChange }: CashEditorProps) {
             ))}
           </select>
           <button onClick={() => remove(i)} className="text-xs text-rose-600">删</button>
-          <div className="col-span-6 text-xs text-slate-500">折算显示：{formatMoney(c.amount, c.currency)}</div>
+          <div className="col-span-6 text-xs text-slate-500">折算显示：{formatMoney(c.amount, c.currency)} {toUsd(c.amount, c.currency, rates) != null && c.currency !== 'USD' ? `≈ ${formatMoney(toUsd(c.amount, c.currency, rates) ?? 0)} USD` : ''}</div>
         </div>
       ))}
       <p className="text-xs text-slate-400">
-        注：当前版本不做汇率换算，多币种现金按原币种数值直接相加。如需汇率换算，可在后续版本接入。
+        CNY、HKD 会按页面顶部显示的 USD 汇率折算并计入总资产；OTHER 币种需先改为支持币种，避免错误相加。
       </p>
     </div>
   );
