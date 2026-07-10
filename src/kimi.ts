@@ -155,6 +155,7 @@ async function requestKimi(settings: AppSettings, messages: KimiMessage[]): Prom
     throw new KimiError('未配置 Kimi API Key', '请在「设置」中填入 Moonshot API Key。');
   }
   const endpoint = settings.proxyUrl.trim() || DEFAULT_ENDPOINT;
+  const model = settings.kimiModel || 'kimi-k2.6';
   let response: Response;
   try {
     response = await fetch(endpoint, {
@@ -164,9 +165,9 @@ async function requestKimi(settings: AppSettings, messages: KimiMessage[]): Prom
         Authorization: `Bearer ${settings.kimiApiKey.trim()}`,
       },
       body: JSON.stringify({
-        model: settings.kimiModel || 'kimi-k2.6',
+        model,
         messages,
-        temperature: 0.1,
+        temperature: temperatureForModel(model),
         max_tokens: 8000,
       }),
     });
@@ -193,6 +194,10 @@ async function requestKimi(settings: AppSettings, messages: KimiMessage[]): Prom
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new KimiError('Kimi 返回为空，请重试或减少截图数量。');
   return content;
+}
+
+function temperatureForModel(model: string): number {
+  return model.startsWith('kimi-k2') ? 1 : 0.1;
 }
 
 function normalizeImportedPortfolio(raw: string): ImportedPortfolio {

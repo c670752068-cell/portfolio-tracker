@@ -77,7 +77,7 @@ export function HoldingsTable({ metrics, onUpdate, onDelete, onAdd }: HoldingsTa
           <table className="min-w-[1050px] divide-y divide-slate-200 text-sm dark:divide-slate-700">
             <thead className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <tr>
-                <Th>代码 / 类型</Th><Th>名称 / 行业</Th><Th className="text-right">数量</Th><Th className="text-right">买入价</Th><Th className="text-right">当前价 / 市值</Th><Th className="text-right">USD 占比</Th><Th className="text-right">盈亏</Th><Th>期权等效正股</Th><Th />
+                <Th>代码 / 类型</Th><Th>名称 / 行业</Th><Th className="text-right">数量</Th><Th className="text-right">买入价</Th><Th className="text-right">当前价 / 市值</Th><Th className="text-right">今日</Th><Th className="text-right">USD 占比</Th><Th className="text-right">盈亏</Th><Th>期权等效正股</Th><Th />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -105,6 +105,7 @@ interface RowProps {
 function Row({ metric, onUpdate, onDelete }: RowProps) {
   const { holding } = metric;
   const pnlClass = metric.pnl > 0 ? 'text-emerald-600' : metric.pnl < 0 ? 'text-rose-600' : 'text-slate-500';
+  const dayClass = metric.dayChange > 0 ? 'text-emerald-600' : metric.dayChange < 0 ? 'text-rose-600' : 'text-slate-500';
   const isOption = holding.assetType === 'option';
   const label = ASSET_TYPES.find((type) => type.value === (holding.assetType ?? 'stock'))?.label ?? '股票';
   const optionDescription = holding.option
@@ -113,14 +114,26 @@ function Row({ metric, onUpdate, onDelete }: RowProps) {
   return (
     <tr className="align-top hover:bg-slate-50 dark:hover:bg-slate-700/40">
       <td className="px-3 py-2"><div className="font-medium">{holding.symbol}</div><div className="text-xs text-slate-500">{label} · {holding.currency}</div>{optionDescription && <div className="mt-1 max-w-44 text-xs text-slate-500">{optionDescription}</div>}</td>
-      <td className="px-3 py-2"><input value={holding.name} onChange={(event) => onUpdate(holding.id, { name: event.target.value })} className="w-28 bg-transparent focus:outline-none" placeholder="名称" /><input value={holding.sector} onChange={(event) => onUpdate(holding.id, { sector: event.target.value })} className="mt-1 w-24 bg-transparent text-xs text-slate-500 focus:outline-none" placeholder="行业" />{holding.missingFields && holding.missingFields.length > 0 && <div className="mt-1 max-w-36 text-xs text-amber-600">待补：{holding.missingFields.join('、')}</div>}</td>
+      <td className="px-3 py-2"><input value={holding.name} onChange={(event) => onUpdate(holding.id, { name: event.target.value })} className="w-28 bg-transparent focus:outline-none" placeholder="名称" /><input value={holding.sector} onChange={(event) => onUpdate(holding.id, { sector: event.target.value })} className="mt-1 w-24 bg-transparent text-xs text-slate-500 focus:outline-none" placeholder="行业" />{holding.missingFields && holding.missingFields.length > 0 && <div className="mt-1 max-w-36 text-xs text-amber-600">待补：{holding.missingFields.join('、')}</div>}{holding.quote?.note && <div className="mt-1 max-w-44 text-xs text-indigo-600 dark:text-indigo-300">{holding.quote.note}</div>}</td>
       <td className="px-3 py-2 text-right tabular-nums"><input type="number" step="any" value={holding.shares} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-slate-500">{isOption ? '合约张数' : '股'}</div></td>
       <td className="px-3 py-2 text-right tabular-nums"><input type="number" step="any" value={holding.buyPrice} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-slate-500">{holding.currency}</div></td>
       <td className="px-3 py-2 text-right tabular-nums"><input type="number" step="any" value={holding.currentPrice} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="mt-1 text-xs font-medium">{formatMoney(metric.marketValueNative, holding.currency)}</div>{holding.currency !== 'USD' && <div className="text-xs text-slate-500">≈ {formatMoney(metric.marketValue)} USD</div>}</td>
+      <td className={`px-3 py-2 text-right tabular-nums ${dayClass}`}>{holding.quote?.change != null ? <><div>{formatMoney(metric.dayChange)}</div><div className="text-xs">{metric.dayChangePct != null ? formatSignedPct(metric.dayChangePct) : '涨跌率待补'}</div><div className="text-xs text-slate-400">{quoteSourceLabel(holding.quote.source)}</div></> : <div className="text-xs text-slate-400">未同步</div>}</td>
       <td className="px-3 py-2 text-right tabular-nums"><div>{formatMoney(metric.marketValue)}</div><div className="text-xs text-slate-500">{formatPct(metric.weight)}</div></td>
       <td className={`px-3 py-2 text-right tabular-nums ${pnlClass}`}>{metric.costKnown ? <><div>{formatMoney(metric.pnl)}</div><div className="text-xs">{formatSignedPct(metric.pnlPct)}</div></> : <div className="text-xs text-amber-600">成本待补</div>}</td>
       <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300">{metric.deltaEquivalentShares != null ? <><div>{metric.deltaEquivalentShares.toFixed(1)} 股</div><div className="mt-1">Δ 暴露 ≈ {metric.deltaAdjustedExposure != null ? formatMoney(metric.deltaAdjustedExposure) : '待标的现价'}</div></> : '—'}</td>
       <td className="px-3 py-2 text-right"><button onClick={() => onDelete(holding.id)} className="text-xs text-rose-600 hover:underline" aria-label={`删除 ${holding.symbol}`}>删除</button></td>
     </tr>
   );
+}
+
+function quoteSourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    finnhub: 'Finnhub',
+    fmp: 'FMP',
+    alphavantage: 'Alpha Vantage',
+    proxy: '代理',
+    delta_estimate: 'Delta 估算',
+  };
+  return labels[source] ?? source;
 }

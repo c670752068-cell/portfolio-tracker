@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AllocationChart } from './components/AllocationChart';
 import { AnalysisPanel } from './components/AnalysisPanel';
 import { CashEditor } from './components/CashEditor';
@@ -9,12 +9,20 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { Summary } from './components/Summary';
 import { analyzePortfolio } from './analyzer';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
+import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { computeMetrics } from './metrics';
 import { loadPortfolio, loadSettings, savePortfolio, saveSettings } from './storage';
 import type { AppSettings, CashPosition, ExchangeRates, Holding, ImportedPortfolio, PortfolioState } from './types';
 import './App.css';
 
 type Tab = 'dashboard' | 'holdings' | 'analysis' | 'settings';
+
+interface QuoteStatus {
+  loading: boolean;
+  lastSyncedAt: string | null;
+  error: string;
+  summary: string;
+}
 
 function generateId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -28,10 +36,18 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [rates, setRates] = useState<ExchangeRates>(() => loadExchangeRates());
   const [rateError, setRateError] = useState<string>('');
+  const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>({
+    loading: false,
+    lastSyncedAt: null,
+    error: '',
+    summary: '',
+  });
   const [tab, setTab] = useState<Tab>('dashboard');
+  const holdingsRef = useRef(portfolio.holdings);
 
   useEffect(() => {
     savePortfolio(portfolio);
+    holdingsRef.current = portfolio.holdings;
   }, [portfolio]);
 
   useEffect(() => {
@@ -48,6 +64,56 @@ export default function App() {
       });
     return () => { active = false; };
   }, []);
+
+  const refreshQuotes = useCallback(async () => {
+    const currentHoldings = holdingsRef.current;
+    if (currentHoldings.length === 0) {
+      setQuoteStatus((status) => ({ ...status, error: '', summary: '暂无持仓可同步。' }));
+      return;
+    }
+    const setupHint = quoteSyncSetupHint(settings);
+    if (setupHint) {
+      setQuoteStatus((status) => ({ ...status, loading: false, error: setupHint, summary: '' }));
+      return;
+    }
+    setQuoteStatus((status) => ({ ...status, loading: true, error: '' }));
+    try {
+      const result = await syncHoldingsWithQuotes(currentHoldings, settings);
+      const updatedById = new Map(result.holdings.map((holding) => [holding.id, holding]));
+      setPortfolio((current) => ({
+        ...current,
+        holdings: current.holdings.map((holding) => updatedById.get(holding.id) ?? holding),
+        updatedAt: result.updatedAt,
+      }));
+      const failedText = result.failedSymbols.length > 0 ? `，${result.failedSymbols.length} 个失败` : '';
+      setQuoteStatus({
+        loading: false,
+        lastSyncedAt: result.updatedAt,
+        error: result.failedSymbols.length > 0 ? result.failedSymbols.map((item) => `${item.symbol}: ${item.reason}`).join('；') : '',
+        summary: `已刷新 ${result.updatedSymbols.length}/${result.requestedSymbols.length} 个标的${failedText}`,
+      });
+    } catch (error) {
+      setQuoteStatus((status) => ({
+        ...status,
+        loading: false,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    if (!settings.autoRefreshQuotes || !canSyncQuotes(settings)) return undefined;
+    if (holdingsRef.current.length > 0) void refreshQuotes();
+    const timer = window.setInterval(() => {
+      void refreshQuotes();
+    }, 15 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [refreshQuotes, settings, settings.autoRefreshQuotes, settings.quoteApiKey, settings.quoteProvider, settings.quoteProxyUrl]);
+
+  useEffect(() => {
+    if (!settings.autoRefreshQuotes || !canSyncQuotes(settings) || portfolio.holdings.length === 0) return;
+    if (!quoteStatus.lastSyncedAt && !quoteStatus.loading) void refreshQuotes();
+  }, [portfolio.holdings.length, quoteStatus.lastSyncedAt, quoteStatus.loading, refreshQuotes, settings]);
 
   const metrics = useMemo(() => computeMetrics(portfolio, rates), [portfolio, rates]);
   const findings = useMemo(() => analyzePortfolio(metrics), [metrics]);
@@ -97,7 +163,14 @@ export default function App() {
 
       {tab === 'dashboard' && (
         <section className="space-y-4">
-          <Summary metrics={metrics} rates={rates} rateError={rateError} />
+          <Summary
+            metrics={metrics}
+            rates={rates}
+            rateError={rateError}
+            quoteStatus={quoteStatus}
+            canRefreshQuotes={portfolio.holdings.length > 0 && canSyncQuotes(settings)}
+            onRefreshQuotes={refreshQuotes}
+          />
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
             <h3 className="mb-2 text-sm font-semibold">资产占比</h3>
             <AllocationChart metrics={metrics} />

@@ -2,6 +2,23 @@ export type Currency = 'USD' | 'CNY' | 'HKD' | 'OTHER';
 
 export type AssetType = 'stock' | 'etf' | 'leveraged_etf' | 'option' | 'fund' | 'other';
 
+export type QuoteProvider = 'none' | 'finnhub' | 'fmp' | 'alphavantage' | 'proxy';
+
+export type QuoteSource = QuoteProvider | 'delta_estimate';
+
+export interface QuoteSnapshot {
+  symbol: string;
+  price: number;
+  previousClose: number | null;
+  change: number | null;
+  changePercent: number | null;
+  currency: Currency;
+  timestamp: string | null;
+  source: QuoteSource;
+  isRealtime?: boolean;
+  note?: string;
+}
+
 export interface OptionDetails {
   underlying: string;
   optionType: 'call' | 'put';
@@ -34,6 +51,7 @@ export interface Holding {
   missingFields?: string[];
   confidence?: 'high' | 'medium' | 'low';
   source?: 'manual' | 'image-import';
+  quote?: QuoteSnapshot;
 }
 
 export interface CashPosition {
@@ -52,6 +70,10 @@ export interface AppSettings {
   kimiApiKey: string;
   kimiModel: string;
   proxyUrl: string;
+  quoteProvider: QuoteProvider;
+  quoteApiKey: string;
+  quoteProxyUrl: string;
+  autoRefreshQuotes: boolean;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */
@@ -72,6 +94,9 @@ export interface HoldingMetric {
   costKnown: boolean;
   pnl: number;
   pnlPct: number;
+  dayChange: number;
+  dayChangeNative: number;
+  dayChangePct: number | null;
   weight: number;
   deltaEquivalentShares: number | null;
   deltaAdjustedExposure: number | null;
@@ -82,6 +107,8 @@ export interface PortfolioMetrics {
   totalCost: number;
   totalPnl: number;
   totalPnlPct: number;
+  dayChange: number;
+  dayChangePct: number;
   equityValue: number;
   cashValue: number;
   cashWeight: number;

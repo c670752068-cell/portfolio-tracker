@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AppSettings } from '../types';
+import type { AppSettings, QuoteProvider } from '../types';
 
 interface SettingsPanelProps {
   settings: AppSettings;
@@ -55,6 +55,60 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
           浏览器直连 Moonshot 可能被 CORS 拦截。如失败，部署 README 中的 Cloudflare Worker 代理并填入此处。该代理需要把本网站域名加入允许列表。
         </p>
       </Field>
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <h4 className="mb-2 text-sm font-semibold">行情同步</h4>
+        <div className="space-y-3">
+          <Field label="行情源">
+            <select
+              value={draft.quoteProvider}
+              onChange={(e) => setDraft({ ...draft, quoteProvider: e.target.value as QuoteProvider })}
+              className={inputCls}
+            >
+              <option value="none">暂不自动同步</option>
+              <option value="finnhub">Finnhub（实时/准实时，需 API Key）</option>
+              <option value="fmp">Financial Modeling Prep（需 API Key）</option>
+              <option value="alphavantage">Alpha Vantage（日线/收盘价，需 API Key）</option>
+              <option value="proxy">自建行情代理（NASDAQ Worker）</option>
+            </select>
+          </Field>
+          {draft.quoteProvider !== 'none' && draft.quoteProvider !== 'proxy' && (
+            <Field label="行情 API Key">
+              <input
+                type="password"
+                value={draft.quoteApiKey}
+                onChange={(e) => setDraft({ ...draft, quoteApiKey: e.target.value })}
+                placeholder="行情服务的 API Key"
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                仅保存在本机浏览器。用于刷新股票/ETF 当前价、今日涨跌和组合占比；不会进入 GitHub 仓库。
+              </p>
+            </Field>
+          )}
+          {draft.quoteProvider === 'proxy' && (
+            <Field label="行情代理 URL">
+              <input
+                value={draft.quoteProxyUrl}
+                onChange={(e) => setDraft({ ...draft, quoteProxyUrl: e.target.value })}
+                placeholder="https://your-worker.workers.dev/quotes"
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                使用 README 中的 Cloudflare Worker 模板可代理 NASDAQ 报价，URL 填到 /quotes。
+              </p>
+            </Field>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.autoRefreshQuotes}
+              onChange={(e) => setDraft({ ...draft, autoRefreshQuotes: e.target.checked })}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            进入页面后自动刷新，并每 15 分钟刷新一次
+          </label>
+        </div>
+      </div>
       <button
         onClick={save}
         className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"

@@ -13,6 +13,10 @@ const defaultSettings: AppSettings = {
   kimiApiKey: '',
   kimiModel: 'kimi-k2.6',
   proxyUrl: '',
+  quoteProvider: 'none',
+  quoteApiKey: '',
+  quoteProxyUrl: '',
+  autoRefreshQuotes: true,
 };
 
 export function loadPortfolio(): PortfolioState {

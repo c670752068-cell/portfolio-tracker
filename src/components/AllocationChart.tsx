@@ -1,4 +1,5 @@
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import { useEffect, useRef, useState } from 'react';
+import { Cell, Legend, Pie, PieChart, Tooltip } from 'recharts';
 import type { PortfolioMetrics } from '../types';
 import { formatMoney, formatPct } from '../format';
 
@@ -19,6 +20,8 @@ interface Slice {
 }
 
 export function AllocationChart({ metrics }: AllocationChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
   const slices: Slice[] = metrics.holdingsMetrics.map((m) => ({
     name: m.holding.symbol || m.holding.name || '未命名',
     value: m.marketValue,
@@ -32,6 +35,26 @@ export function AllocationChart({ metrics }: AllocationChartProps) {
     });
   }
 
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return undefined;
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      setSize({
+        width: Math.max(1, Math.floor(rect.width)),
+        height: Math.max(1, Math.floor(rect.height)),
+      });
+    };
+    update();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update);
+      return () => window.removeEventListener('resize', update);
+    }
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [slices.length]);
+
   if (slices.length === 0) {
     return (
       <div className="flex h-72 items-center justify-center text-sm text-slate-500">
@@ -41,9 +64,9 @@ export function AllocationChart({ metrics }: AllocationChartProps) {
   }
 
   return (
-    <div className="h-72 w-full sm:h-96">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
+    <div ref={containerRef} className="h-72 min-h-72 w-full min-w-0 sm:h-96">
+      {size.width > 1 && size.height > 1 && (
+        <PieChart width={size.width} height={size.height}>
           <Pie
             data={slices}
             dataKey="value"
@@ -74,7 +97,7 @@ export function AllocationChart({ metrics }: AllocationChartProps) {
           />
           <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
         </PieChart>
-      </ResponsiveContainer>
+      )}
     </div>
   );
 }

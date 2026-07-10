@@ -5,6 +5,7 @@
 - 上传券商截图：先由 **Kimi K2.6 视觉模型**识别股票、ETF、现金与期权，再显示预览和数据缺口，确认后才写入持仓
 - 手动录入股票（代码 / 名称 / 行业 / 股数 / 买入价 / 当前价）+ 现金条目，用于补充或修正截图结果
 - 自动按 USD 汇总总资产、盈亏、占比，支持 CNY、HKD 的实时汇率折算，渲染**饼图**
+- 可选接入行情源自动刷新股票 / ETF 当前价、今日涨跌、组合占比；期权可用标的最新价做 Delta 估算
 - 期权显示市值、合约张数、Delta 等效正股数量与 Delta 调整后暴露；重点提示短到期、较大期权浮亏和杠杆 ETF
 - 内置**本地规则风险扫描**（集中度、行业、现金比、单股浮亏、期权期限与 Delta 暴露）
 - 可选接入 **Kimi（Moonshot）API** 做组合风险解读
@@ -59,6 +60,8 @@ npm run preview  # 本地预览生产构建
 
 API Key 只存在你**本机浏览器的 localStorage**，绝不会进入 Git 提交、绝不会上传 GitHub。解析时，浏览器会把 Key 和图片发送给 Kimi API（或你配置的代理）；图片不会保存到本应用的 localStorage 或 JSON 备份中。
 
+> `kimi-k2.6` / `kimi-k2.5` 请求会使用模型要求的 `temperature: 1`。如果看到 `invalid temperature: only 1 is allowed for this model`，请刷新页面到最新版本。
+
 ### 截图准备建议
 
 - **完整持仓页**：代码、数量、市值/现价、成本和币种尽量同时可见。
@@ -81,6 +84,20 @@ Moonshot API 默认对浏览器跨域请求不友好。如果点击「调用 Kim
 6. 再次点击「调用 Kimi 分析」。
 
 代理只做请求中转，**不会保存或读取你的 Key**。
+
+---
+
+## 行情同步
+
+静态 GitHub Pages 没有后端，不能自己绕过行情接口的跨域和鉴权限制。因此应用提供两种方式：
+
+1. **行情 API Key**：在「设置 → 行情同步」选择 Finnhub、Financial Modeling Prep 或 Alpha Vantage，填入对应 API Key 并保存。页面会在进入后自动刷新，并每 15 分钟刷新一次，也可以在「总览」手动点「刷新行情」。
+2. **自建行情代理**：部署同一个 [`cloudflare-worker-proxy.js`](./cloudflare-worker-proxy.js)，然后在「设置 → 行情同步」选择「自建行情代理」，URL 填：
+   ```
+   https://kimi-proxy.your-name.workers.dev/quotes
+   ```
+
+普通股票、ETF、杠杆 ETF 会直接用最新价重算市值、今日涨跌和占比。期权如果没有真实期权盘口，会使用最新标的价格按 Delta 做粗略估算，并在持仓表中标注「Delta 估算」；这不等同于真实期权报价，因为没有包含 Gamma、Vega、Theta 和买卖价差。
 
 ---
 
@@ -128,6 +145,7 @@ src/
 ├── analyzer.ts                   # 本地风险规则
 ├── format.ts                     # 数字 / 货币 / 百分比格式化
 ├── kimi.ts                       # Moonshot Kimi 调用
+├── marketData.ts                 # 行情同步与期权 Delta 估算
 ├── metrics.ts                    # 组合计算
 ├── storage.ts                    # localStorage 读写
 ├── types.ts                      # 共享类型
@@ -136,6 +154,7 @@ src/
     ├── AnalysisPanel.tsx         # Kimi 分析面板
     ├── CashEditor.tsx            # 现金编辑
     ├── HoldingsTable.tsx         # 持仓 CRUD
+    ├── ImageImportPanel.tsx      # 截图识别导入
     ├── RiskList.tsx              # 风险列表
     ├── SettingsPanel.tsx         # API Key / 模型 / 代理
     └── Summary.tsx               # 总资产卡片

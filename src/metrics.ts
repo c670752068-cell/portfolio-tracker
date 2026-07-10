@@ -15,6 +15,8 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
     const costNative = h.costOverride ?? (costKnownNative ? h.shares * h.buyPrice * multiplier : 0);
     const marketValue = toUsd(marketValueNative, h.currency, rates);
     const cost = toUsd(costNative, h.currency, rates);
+    const dayChangeNative = h.quote?.change != null ? h.shares * multiplier * h.quote.change : 0;
+    const dayChange = toUsd(dayChangeNative, h.currency, rates);
     if (marketValue === null || cost === null) {
       unconvertedItems.push(h.symbol || h.name || '未命名持仓');
     }
@@ -38,6 +40,9 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
       costKnown,
       pnl,
       pnlPct,
+      dayChange: dayChange ?? 0,
+      dayChangeNative,
+      dayChangePct: h.quote?.changePercent ?? null,
       deltaEquivalentShares,
       deltaAdjustedExposure,
     };
@@ -56,6 +61,9 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
   const totalCost = holdingsMetricsBase.reduce((s, m) => s + m.cost, 0) + cashValue;
   const totalPnl = holdingsMetricsBase.reduce((s, m) => s + m.pnl, 0);
   const totalPnlPct = totalCost > 0 ? totalPnl / totalCost : 0;
+  const dayChange = holdingsMetricsBase.reduce((s, m) => s + m.dayChange, 0);
+  const previousTotalValue = totalValue - dayChange;
+  const dayChangePct = previousTotalValue > 0 ? dayChange / previousTotalValue : 0;
 
   const holdingsMetrics: HoldingMetric[] = holdingsMetricsBase.map((m) => ({
     ...m,
@@ -87,6 +95,8 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
     totalCost,
     totalPnl,
     totalPnlPct,
+    dayChange,
+    dayChangePct,
     equityValue,
     cashValue,
     cashWeight: totalValue > 0 ? cashValue / totalValue : 0,
