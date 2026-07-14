@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Cell, Legend, Pie, PieChart, Tooltip } from 'recharts';
 import type { PortfolioMetrics } from '../types';
 import { formatMoney, formatPct } from '../format';
+import { buildAllocationSlices, type AllocationSlice } from '../allocation';
 
 const COLORS = [
   '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4',
@@ -13,27 +14,10 @@ interface AllocationChartProps {
   metrics: PortfolioMetrics;
 }
 
-interface Slice {
-  name: string;
-  value: number;
-  weight: number;
-}
-
 export function AllocationChart({ metrics }: AllocationChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const slices: Slice[] = metrics.holdingsMetrics.map((m) => ({
-    name: m.holding.symbol || m.holding.name || '未命名',
-    value: m.marketValue,
-    weight: m.weight,
-  }));
-  if (metrics.cashValue > 0) {
-    slices.push({
-      name: '现金',
-      value: metrics.cashValue,
-      weight: metrics.cashWeight,
-    });
-  }
+  const slices = buildAllocationSlices(metrics);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -77,20 +61,20 @@ export function AllocationChart({ metrics }: AllocationChartProps) {
             outerRadius="80%"
             paddingAngle={2}
             label={(entry) => {
-              const slice = entry as unknown as Slice;
-              return `${slice.name} ${formatPct(slice.weight)}`;
+              const slice = entry as unknown as AllocationSlice;
+              return slice.showLabel ? `${slice.name} ${formatPct(slice.weight)}` : null;
             }}
           >
             {slices.map((s, i) => (
               <Cell
-                key={s.name}
-                fill={s.name === '现金' ? '#94a3b8' : COLORS[i % COLORS.length]}
+                key={`${i}-${s.name}`}
+                fill={s.kind === 'cash' ? '#94a3b8' : s.kind === 'cash-equivalent' ? '#64748b' : COLORS[i % COLORS.length]}
               />
             ))}
           </Pie>
           <Tooltip
             formatter={(value, _name, item) => {
-              const slice = item.payload as Slice;
+              const slice = item.payload as AllocationSlice;
               const num = typeof value === 'number' ? value : Number(value);
               return [`${formatMoney(num)} (${formatPct(slice.weight)})`, slice.name];
             }}
