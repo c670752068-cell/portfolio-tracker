@@ -1,4 +1,5 @@
 import type { PortfolioMetrics, RiskFinding } from './types';
+import { isCashEquivalent } from './assetClass';
 
 const SINGLE_STOCK_WARN = 0.25;
 const SINGLE_STOCK_CRIT = 0.4;
@@ -28,6 +29,7 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
   }
 
   for (const m of metrics.holdingsMetrics) {
+    if (isCashEquivalent(m.holding)) continue;
     if (m.weight >= SINGLE_STOCK_CRIT) {
       findings.push({
         level: 'critical',
@@ -43,6 +45,17 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
     }
   }
 
+  const cashEquivalentWeight = metrics.totalValue > 0
+    ? metrics.cashEquivalentValue / metrics.totalValue
+    : 0;
+  if (cashEquivalentWeight >= 0.25) {
+    findings.push({
+      level: 'info',
+      title: `SGOV 等现金类 ETF 合计 ${(cashEquivalentWeight * 100).toFixed(1)}%，已视作流动性，不计入个股集中度`,
+      detail: '货币基金和超短债 ETF 主要承担流动性管理功能，已从个股集中度与行业集中度中豁免。',
+    });
+  }
+
   if (metrics.unconvertedItems.length > 0) {
     findings.push({
       level: 'warn',
@@ -51,7 +64,27 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
     });
   }
 
-  for (const [sector, weight] of Object.entries(metrics.sectorWeights)) {
+  const sectorValues: Record<string, number> = {};
+  for (const metric of metrics.holdingsMetrics) {
+    if (isCashEquivalent(metric.holding)) continue;
+    const sector = metric.holding.sector || '未分类';
+    sectorValues[sector] = (sectorValues[sector] ?? 0) + metric.marketValue;
+  }
+  const sectorDenominator = Math.max(0, metrics.totalValue - metrics.cashEquivalentValue);
+  const unclassifiedWeight = sectorDenominator > 0
+    ? (sectorValues['未分类'] ?? 0) / sectorDenominator
+    : 0;
+  if (unclassifiedWeight >= 0.3) {
+    findings.push({
+      level: 'info',
+      title: `${(unclassifiedWeight * 100).toFixed(1)}% 持仓缺少行业分类，行业集中度未评估`,
+      detail: '可在持仓表补填行业后重新评估行业集中度。',
+    });
+  }
+
+  for (const [sector, value] of Object.entries(sectorValues)) {
+    if (sector === '未分类') continue;
+    const weight = sectorDenominator > 0 ? value / sectorDenominator : 0;
     if (weight >= SECTOR_CRIT) {
       findings.push({
         level: 'critical',
@@ -90,22 +123,22 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
     }
   }
 
-  if (metrics.cashWeight >= CASH_VERY_HIGH) {
+  if (metrics.liquidityWeight >= CASH_VERY_HIGH) {
     findings.push({
       level: 'warn',
-      title: `现金仓位过高 ${(metrics.cashWeight * 100).toFixed(1)}%`,
-      detail: `现金占比 ${(metrics.cashWeight * 100).toFixed(1)}%。这不是错误；请结合你的流动性需求和投资期限，确认这是否符合原先计划。`,
+      title: `现金及等价物仓位过高 ${(metrics.liquidityWeight * 100).toFixed(1)}%`,
+      detail: `现金及等价物占比 ${(metrics.liquidityWeight * 100).toFixed(1)}%。这不是错误；请结合你的流动性需求和投资期限，确认这是否符合原先计划。`,
     });
-  } else if (metrics.cashWeight >= CASH_HIGH) {
+  } else if (metrics.liquidityWeight >= CASH_HIGH) {
     findings.push({
       level: 'info',
-      title: `现金仓位偏高 ${(metrics.cashWeight * 100).toFixed(1)}%`,
+      title: `现金及等价物仓位偏高 ${(metrics.liquidityWeight * 100).toFixed(1)}%`,
       detail: '这不一定是风险；请确认该比例是否是你有意保留的流动性或等待资金。',
     });
-  } else if (metrics.cashWeight < CASH_LOW && metrics.totalValue > 0) {
+  } else if (metrics.liquidityWeight < CASH_LOW && metrics.totalValue > 0) {
     findings.push({
       level: 'warn',
-      title: `现金仓位过低 ${(metrics.cashWeight * 100).toFixed(1)}%`,
+      title: `现金及等价物仓位过低 ${(metrics.liquidityWeight * 100).toFixed(1)}%`,
       detail: '组合接近满仓，流动性缓冲较小。请结合应急资金与近期现金需求自行评估。',
     });
   }
@@ -119,12 +152,14 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
     });
   }
 
-  const losers = metrics.holdingsMetrics.filter((m) => m.pnlPct <= -0.2);
+  const losers = metrics.holdingsMetrics.filter(
+    (m) => m.costKnown && m.holding.confidence !== 'low' && m.pnlPct <= -0.2,
+  );
   for (const l of losers) {
     findings.push({
       level: 'warn',
       title: `${l.holding.symbol} 浮亏 ${(l.pnlPct * 100).toFixed(1)}%`,
-      detail: '跌幅超过 20%。这是复盘提示，不构成加仓、持有或卖出的建议。',
+      detail: `跌幅超过 20%。这是复盘提示，不构成加仓、持有或卖出的建议。${screenshotCostSuffix(l.holding.source)}`,
     });
   }
 
@@ -143,6 +178,7 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
     });
   }
 
+  const incompleteOptionSymbols = new Set<string>();
   for (const metric of options) {
     const option = metric.holding.option;
     const dte = option?.expiration ? daysUntil(option.expiration) : null;
@@ -165,14 +201,15 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
         detail: '该合约已进入较短到期期限；这是时间风险提示，不代表该仓位必须调整。',
       });
     }
-    if (metric.pnlPct <= -0.5 && metric.cost > 0) {
+    if (metric.costKnown && metric.holding.confidence !== 'low' && metric.pnlPct <= -0.5) {
       findings.push({
         level: 'critical',
         title: `${metric.holding.symbol} 期权浮亏 ${(metric.pnlPct * 100).toFixed(1)}%`,
-        detail: '亏损幅度较大，请同时核对到期日、合约方向、Delta 和原始交易计划。',
+        detail: `亏损幅度较大，请同时核对到期日、合约方向、Delta 和原始交易计划。${screenshotCostSuffix(metric.holding.source)}`,
       });
     }
-    if (option?.delta == null || !option.expiration) {
+    if ((option?.delta == null || !option.expiration) && !incompleteOptionSymbols.has(metric.holding.symbol)) {
+      incompleteOptionSymbols.add(metric.holding.symbol);
       findings.push({
         level: 'info',
         title: `${metric.holding.symbol} 期权数据不完整`,
@@ -198,6 +235,10 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
   }
 
   return findings;
+}
+
+function screenshotCostSuffix(source: string | undefined): string {
+  return source === 'image-import' ? '成本来自截图识别，请先在持仓表核对买入价。' : '';
 }
 
 function daysUntil(dateText: string): number | null {
