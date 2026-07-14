@@ -114,6 +114,7 @@ export interface HoldingMetric {
 export interface PortfolioMetrics {
   totalValue: number;
   totalCost: number;
+  knownCostSum: number;
   totalPnl: number;
   totalPnlPct: number;
   dayChange: number;

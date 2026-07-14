@@ -35,4 +35,28 @@ describe('computeMetrics liquidity', () => {
     expect(metrics.liquidityValue).toBe(50);
     expect(metrics.liquidityWeight).toBe(0.5);
   });
+
+  it('calculates pnl percentage only over known holding cost and excludes cash', () => {
+    const state: PortfolioState = {
+      holdings: [
+        {
+          id: 'known', symbol: 'AAPL', name: 'Apple', assetType: 'stock',
+          shares: 1, buyPrice: 100, currentPrice: 120, sector: '科技', currency: 'USD',
+        },
+        {
+          id: 'unknown', symbol: 'NVDA', name: 'NVIDIA', assetType: 'stock',
+          shares: 1, buyPrice: 0, currentPrice: 80, sector: '科技', currency: 'USD',
+        },
+      ],
+      cash: [{ amount: 20, currency: 'USD' }],
+      updatedAt: '2026-07-14T00:00:00.000Z',
+    };
+
+    const metrics = computeMetrics(state, usdRates);
+
+    expect(metrics.knownCostSum).toBe(100);
+    expect(metrics.totalPnl).toBe(20);
+    expect(metrics.totalPnlPct).toBe(0.2);
+    expect(metrics.unknownCostItems).toBe(1);
+  });
 });

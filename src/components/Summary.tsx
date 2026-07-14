@@ -37,9 +37,10 @@ export function Summary({ metrics, rates, rateError, quoteStatus, canRefreshQuot
         sub={`${formatPct(metrics.liquidityWeight)} · 现金 ${formatMoney(metrics.cashValue)} · 现金类 ETF ${formatMoney(metrics.cashEquivalentValue)}`}
       />
       <Card
-        label={metrics.unknownCostItems > 0 ? '总盈亏（已知成本）' : '总盈亏'}
+        label="总盈亏"
         value={formatMoney(metrics.totalPnl)}
-        sub={metrics.unknownCostItems > 0 ? `${metrics.unknownCostItems} 个条目成本待补` : formatSignedPct(metrics.totalPnlPct)}
+        sub={`${formatSignedPct(metrics.totalPnlPct)} · 按已知成本计算`}
+        extra={metrics.unknownCostItems > 0 ? `⚠ ${metrics.unknownCostItems} 个持仓成本未知，未计入收益率` : undefined}
         valueClass={pnlClass}
         subClass={pnlClass}
       />
@@ -83,14 +84,16 @@ interface CardProps {
   sub?: string;
   valueClass?: string;
   subClass?: string;
+  extra?: string;
 }
 
-function Card({ label, value, sub, valueClass, subClass }: CardProps) {
+function Card({ label, value, sub, valueClass, subClass, extra }: CardProps) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
       <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
       <div className={`mt-1 text-lg font-semibold tabular-nums ${valueClass ?? ''}`}>{value}</div>
       {sub && <div className={`text-xs tabular-nums ${subClass ?? 'text-slate-500 dark:text-slate-400'}`}>{sub}</div>}
+      {extra && <div className="mt-1 text-xs text-amber-600 dark:text-amber-300">{extra}</div>}
     </div>
   );
 }

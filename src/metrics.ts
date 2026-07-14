@@ -65,8 +65,12 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
   );
   const liquidityValue = cashValue + cashEquivalentValue;
   const totalCost = holdingsMetricsBase.reduce((s, m) => s + m.cost, 0) + cashValue;
+  const knownCostSum = holdingsMetricsBase.reduce(
+    (sum, metric) => sum + (metric.costKnown ? metric.cost : 0),
+    0,
+  );
   const totalPnl = holdingsMetricsBase.reduce((s, m) => s + m.pnl, 0);
-  const totalPnlPct = totalCost > 0 ? totalPnl / totalCost : 0;
+  const totalPnlPct = knownCostSum > 0 ? totalPnl / knownCostSum : 0;
   const dayChange = holdingsMetricsBase.reduce((s, m) => s + m.dayChange, 0);
   const previousTotalValue = totalValue - dayChange;
   const dayChangePct = previousTotalValue > 0 ? dayChange / previousTotalValue : 0;
@@ -99,6 +103,7 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
   return {
     totalValue,
     totalCost,
+    knownCostSum,
     totalPnl,
     totalPnlPct,
     dayChange,
