@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { KimiError, activeAiProviderLabel, testAiConnection } from '../kimi';
+import { isInvalidEndpointUrl, looksLikeApiKey, sanitizeEndpointUrl } from '../endpointUrl';
+import { KimiError, activeAiEndpoint, activeAiProviderLabel, testAiConnection } from '../kimi';
 import { getServerAiProxyUrl, getServerQuoteProxyUrl, hasServerGateway, serverGatewayLabel } from '../runtimeConfig';
 import type { AiProvider, AppSettings, QuoteProvider } from '../types';
 
@@ -12,12 +13,29 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saved, setSaved] = useState(false);
   const [testingAi, setTestingAi] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string; hint?: string } | null>(null);
   const aiLabel = activeAiProviderLabel(draft);
   const serverGatewayEnabled = hasServerGateway();
 
   function save() {
-    onSave(draft);
+    const endpointValues = [draft.proxyUrl, draft.zhipuProxyUrl];
+    if (draft.quoteProvider === 'proxy') endpointValues.push(draft.quoteProxyUrl);
+    if (endpointValues.some(looksLikeApiKey)) {
+      setSaveError('这里应填代理网址，你粘贴的是 API Key；Key 请填到上方「API Key」输入框');
+      return;
+    }
+    if (endpointValues.some(isInvalidEndpointUrl)) {
+      setSaveError('代理 URL 必须是 http(s):// 开头的完整网址');
+      return;
+    }
+    setSaveError('');
+    onSave({
+      ...draft,
+      proxyUrl: sanitizeEndpointUrl(draft.proxyUrl),
+      zhipuProxyUrl: sanitizeEndpointUrl(draft.zhipuProxyUrl),
+      quoteProxyUrl: sanitizeEndpointUrl(draft.quoteProxyUrl),
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
@@ -41,7 +59,7 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
       <h3 className="text-sm font-semibold">设置</h3>
       {serverGatewayEnabled && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-          已启用 {serverGatewayLabel()}：截图和行情请求先经过你的阿里云服务器，手机不再直接连接 AI 接口。
+          已启用 {serverGatewayLabel()}：截图和行情请求先经过服务器（{serverGatewayLabel()}），手机不再直接连接 AI 接口。
         </div>
       )}
       <Field label="AI 识别服务">
@@ -93,8 +111,8 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
             />
             <p className="mt-1 text-xs text-slate-500">
               {serverGatewayEnabled
-                ? `当前会自动使用服务器转发（${getServerAiProxyUrl('zhipu')}），无需填写。只有要换其他代理时才填。`
-                : '直连智谱失败时再填。README 里的 Worker 模板已支持 /zhipu/chat/completions。'}
+                ? `当前会自动使用服务器转发（${getServerAiProxyUrl('zhipu')}），无需填写。只有要换其他代理时才填。填写后会覆盖服务器转发，通常应留空。`
+                : '直连智谱失败时再填。README 里的 Worker 模板已支持 /zhipu/chat/completions。填写后会覆盖服务器转发，通常应留空。'}
             </p>
           </Field>
         </>
@@ -134,8 +152,8 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
             />
             <p className="mt-1 text-xs text-slate-500">
               {serverGatewayEnabled
-                ? `当前会自动使用服务器转发（${getServerAiProxyUrl('kimi')}），无需填写。`
-                : '浏览器直连 Moonshot 可能超时。如仍出现 Load failed，部署 README 中的 Worker 代理并填入此处。'}
+                ? `当前会自动使用服务器转发（${getServerAiProxyUrl('kimi')}），无需填写。填写后会覆盖服务器转发，通常应留空。`
+                : '浏览器直连 Moonshot 可能超时。如仍出现 Load failed，部署 README 中的 Worker 代理并填入此处。填写后会覆盖服务器转发，通常应留空。'}
             </p>
           </Field>
         </>
@@ -155,6 +173,7 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
           </span>
         )}
       </div>
+      <p className="text-xs text-slate-500">当前生效接口：{activeAiEndpoint(draft)}</p>
       {aiTestResult?.hint && <p className="text-xs text-amber-600 dark:text-amber-300">{aiTestResult.hint}</p>}
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <h4 className="mb-2 text-sm font-semibold">每日行情同步</h4>
@@ -221,6 +240,7 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
       >
         {saved ? '已保存 ✓' : '保存设置'}
       </button>
+      {saveError && <p className="text-xs text-rose-600 dark:text-rose-300">{saveError}</p>}
     </div>
   );
 }

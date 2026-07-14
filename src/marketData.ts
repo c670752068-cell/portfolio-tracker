@@ -1,4 +1,6 @@
 import type { AppSettings, Currency, Holding, QuoteProvider, QuoteSnapshot } from './types';
+import { KimiError } from './kimi';
+import { isMixedContentBlocked, sanitizeEndpointUrl } from './endpointUrl';
 
 export interface QuoteSyncResult {
   holdings: Holding[];
@@ -15,13 +17,13 @@ const US_MARKET_ASSET_TYPES = new Set(['stock', 'etf', 'leveraged_etf', 'option'
 
 export function canSyncQuotes(settings: AppSettings): boolean {
   if (settings.quoteProvider === 'none') return false;
-  if (settings.quoteProvider === 'proxy') return Boolean(settings.quoteProxyUrl.trim());
+  if (settings.quoteProvider === 'proxy') return Boolean(sanitizeEndpointUrl(settings.quoteProxyUrl));
   return Boolean(settings.quoteApiKey.trim());
 }
 
 export function quoteSyncSetupHint(settings: AppSettings): string {
   if (settings.quoteProvider === 'none') return '未开启行情源。可在设置里选择 Finnhub、FMP、Alpha Vantage 或自建免费行情代理。';
-  if (settings.quoteProvider === 'proxy' && !settings.quoteProxyUrl.trim()) return '请填写行情代理 URL。';
+  if (settings.quoteProvider === 'proxy' && !sanitizeEndpointUrl(settings.quoteProxyUrl)) return '请填写行情代理 URL。';
   if (settings.quoteProvider !== 'proxy' && !settings.quoteApiKey.trim()) return '请填写行情 API Key。';
   return '';
 }
@@ -115,7 +117,7 @@ async function fetchQuotes(
     case 'alphavantage':
       return fetchAlphaVantageQuotes(settings.quoteApiKey.trim(), symbols);
     case 'proxy':
-      return fetchProxyQuotes(settings.quoteProxyUrl.trim(), symbols);
+      return fetchProxyQuotes(sanitizeEndpointUrl(settings.quoteProxyUrl), symbols);
     default:
       throw new Error('未开启行情源。');
   }
@@ -225,7 +227,15 @@ async function fetchProxyQuotes(
   baseUrl: string,
   symbols: string[],
 ): Promise<{ quotes: RawQuoteMap; failedSymbols: Array<{ symbol: string; reason: string }> }> {
-  const url = new URL(baseUrl);
+  const endpoint = sanitizeEndpointUrl(baseUrl);
+  if (!endpoint) throw new Error('请填写行情代理 URL。');
+  if (isMixedContentBlocked(endpoint)) {
+    throw new KimiError(
+      '当前页面是 HTTPS，无法请求 HTTP 接口（浏览器安全限制）',
+      '请改用 http://67.215.255.196:8788/ 访问本应用，或等待网关支持 HTTPS。',
+    );
+  }
+  const url = new URL(endpoint);
   url.searchParams.set('symbols', symbols.join(','));
   const data = await fetchJson<unknown>(url.toString());
   const rows = Array.isArray(data) ? data : isRecord(data) && Array.isArray(data.quotes) ? data.quotes : [];

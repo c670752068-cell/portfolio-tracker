@@ -10,6 +10,7 @@ import type {
   PortfolioMetrics,
   RiskFinding,
 } from './types';
+import { isMixedContentBlocked, sanitizeEndpointUrl } from './endpointUrl';
 import { getServerAiProxyUrl, serverGatewayLabel } from './runtimeConfig';
 
 const KIMI_ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
@@ -79,6 +80,10 @@ export function activeAiProviderLabel(settings: AppSettings): string {
 
 export function activeAiApiKey(settings: AppSettings): string {
   return getAiRuntimeConfig(settings).apiKey;
+}
+
+export function activeAiEndpoint(settings: AppSettings): string {
+  return getAiRuntimeConfig(settings).endpoint;
 }
 
 function buildAnalysisPrompt(metrics: PortfolioMetrics, localFindings: RiskFinding[]): AiMessage[] {
@@ -211,9 +216,15 @@ async function requestAi(
   if (!config.apiKey.trim()) {
     throw new KimiError(`未配置 ${config.label} API Key`, `请在「设置」中填入 ${config.label} API Key。`);
   }
+  if (isMixedContentBlocked(config.endpoint)) {
+    throw new KimiError(
+      '当前页面是 HTTPS，无法请求 HTTP 接口（浏览器安全限制）',
+      '请改用 http://67.215.255.196:8788/ 访问本应用，或等待网关支持 HTTPS。',
+    );
+  }
   let response: Response;
   const controller = new AbortController();
-  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? (config.usesServerGateway ? 190_000 : REQUEST_TIMEOUT_MS);
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     response = await fetch(config.endpoint, {
@@ -260,6 +271,8 @@ async function requestAi(
       providerMessage,
       isRateLimited
         ? '这是 API 账户/模型的并发或频率限制，不是域名、VPN 或截图问题。请等待 60 秒后只重试一次；不要连续点击“连接测试”和“解析”。服务器已按 Key 串行转发，仍持续出现时需在智谱控制台查看该模型的速率权益或换一个有可用额度的 Key。'
+        : response.status === 404 && data.error?.code === 'not_found'
+          ? '请求路径不存在：多半是「代理 URL」填错了。清空该输入框并保存，即可恢复使用服务器转发。'
         : response.status === 401
         ? '请检查 API Key 是否正确、是否过期，或确认该 Key 有视觉模型权限。'
         : response.status === 400 && data.error?.message?.toLowerCase().includes('image')
@@ -272,10 +285,10 @@ async function requestAi(
   return content;
 }
 
-function getAiRuntimeConfig(settings: AppSettings): AiRuntimeConfig {
+export function getAiRuntimeConfig(settings: AppSettings): AiRuntimeConfig {
   const provider = settings.aiProvider === 'kimi' ? 'kimi' : 'zhipu';
   if (provider === 'kimi') {
-    const proxy = settings.proxyUrl.trim();
+    const proxy = sanitizeEndpointUrl(settings.proxyUrl);
     const serverProxy = getServerAiProxyUrl(provider);
     return {
       provider,
@@ -288,7 +301,7 @@ function getAiRuntimeConfig(settings: AppSettings): AiRuntimeConfig {
       usesServerGateway: Boolean(!proxy && serverProxy),
     };
   }
-  const proxy = settings.zhipuProxyUrl.trim();
+  const proxy = sanitizeEndpointUrl(settings.zhipuProxyUrl);
   const serverProxy = getServerAiProxyUrl(provider);
   return {
     provider,
