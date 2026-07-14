@@ -192,4 +192,24 @@ describe('portfolio import normalization', () => {
     expect(result.holdings[0]?.option?.underlying).toBe('MSFU');
     expect(result.holdings[0]?.option?.optionType).toBe('call');
   });
+
+  it('normalizes a broker-reported -70 percent value to -0.7', async () => {
+    setRuntimeConfig();
+    const content = JSON.stringify({
+      holdings: [{
+        symbol: 'NVDA', name: 'NVIDIA', assetType: 'stock', shares: 1,
+        buyPrice: 100, currentPrice: 30, marketValue: 30, costValue: 100,
+        currency: 'USD', sector: '科技', reportedPnl: -70, reportedPnlPct: -70,
+      }],
+      cash: [], issues: [], sourceSummary: 'reported pnl',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(aiResponse(200, {
+      choices: [{ message: { content } }],
+    })));
+
+    const result = await parsePortfolioImages(zhipuSettings('glm-4v-flash'), screenshot);
+
+    expect(result.holdings[0]?.reportedPnl).toBe(-70);
+    expect(result.holdings[0]?.reportedPnlPct).toBe(-0.7);
+  });
 });

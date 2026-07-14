@@ -116,6 +116,7 @@ function Row({ metric, onUpdate, onDelete }: RowProps) {
   const pnlClass = metric.pnl > 0 ? 'text-emerald-600' : metric.pnl < 0 ? 'text-rose-600' : 'text-slate-500';
   const dayClass = metric.dayChange > 0 ? 'text-emerald-600' : metric.dayChange < 0 ? 'text-rose-600' : 'text-slate-500';
   const isOption = holding.assetType === 'option';
+  const needsPnlCheck = holding.missingFields?.includes('成本待核对') ?? false;
   const label = ASSET_TYPES.find((type) => type.value === (holding.assetType ?? 'stock'))?.label ?? '股票';
   const optionDescription = holding.option
     ? `${holding.option.underlying} ${holding.option.optionType.toUpperCase()} ${holding.option.strike ?? '—'} · ${holding.option.expiration ?? '到期日待补'}`
@@ -129,7 +130,10 @@ function Row({ metric, onUpdate, onDelete }: RowProps) {
       <td className="px-3 py-2 text-right tabular-nums"><input type="number" step="any" value={holding.currentPrice} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="mt-1 text-xs font-medium">{formatMoney(metric.marketValueNative, holding.currency)}</div>{holding.currency !== 'USD' && <div className="text-xs text-slate-500">≈ {formatMoney(metric.marketValue)} USD</div>}</td>
       <td className={`px-3 py-2 text-right tabular-nums ${dayClass}`}>{holding.quote?.change != null ? <><div>{formatMoney(metric.dayChange)}</div><div className="text-xs">{metric.dayChangePct != null ? formatSignedPct(metric.dayChangePct) : '涨跌率待补'}</div><div className="text-xs text-slate-400">{quoteSourceLabel(holding.quote.source)}</div></> : <div className="text-xs text-slate-400">未同步</div>}</td>
       <td className="px-3 py-2 text-right tabular-nums"><div>{formatMoney(metric.marketValue)}</div><div className="text-xs text-slate-500">{formatPct(metric.weight)}</div></td>
-      <td className={`px-3 py-2 text-right tabular-nums ${pnlClass}`}>{metric.costKnown ? <><div>{formatMoney(metric.pnl)}</div><div className="text-xs">{formatSignedPct(metric.pnlPct)}</div></> : <div className="text-xs text-amber-600">成本待补</div>}</td>
+      <td className={`px-3 py-2 text-right tabular-nums ${pnlClass}`}>
+        {needsPnlCheck && <span className="mr-1 text-amber-500" title="盈亏与券商截图不符，请核对买入价/股数">⚠</span>}
+        {metric.costKnown ? <><div>{formatMoney(metric.pnl)}</div><div className="text-xs">{formatSignedPct(metric.pnlPct)}</div></> : <div className="text-xs text-amber-600">成本待补</div>}
+      </td>
       <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-300">{metric.deltaEquivalentShares != null ? <><div>{metric.deltaEquivalentShares.toFixed(1)} 股</div><div className="mt-1">Δ 暴露 ≈ {metric.deltaAdjustedExposure != null ? formatMoney(metric.deltaAdjustedExposure) : '待标的现价'}</div></> : '—'}</td>
       <td className="px-3 py-2 text-right"><button onClick={() => onDelete(holding.id)} className="text-xs text-rose-600 hover:underline" aria-label={`删除 ${holding.symbol}`}>删除</button></td>
     </tr>

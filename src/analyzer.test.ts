@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { analyzePortfolio } from './analyzer';
 import { computeMetrics } from './metrics';
-import type { ExchangeRates, Holding, PortfolioState } from './types';
+import { crossCheckImportedPnl } from './importMerge';
+import type { ExchangeRates, Holding, ImportIssue, PortfolioState } from './types';
 
 const usdRates: ExchangeRates = {
   USD: 1, CNY: 7, HKD: 7.8, updatedAt: null, source: 'fallback',
@@ -95,5 +96,25 @@ describe('analyzePortfolio data-quality aware risk scan', () => {
     ]);
 
     expect(findings.filter((item) => item.title === 'IGV 期权数据不完整')).toHaveLength(1);
+  });
+
+  it('replaces a false NVDA loss warning with a required reconciliation issue', () => {
+    const issues: ImportIssue[] = [];
+    const checked = crossCheckImportedPnl({
+      ...holding('NVDA', 30, { source: 'image-import', confidence: 'high' }),
+      id: undefined,
+      shares: 1,
+      buyPrice: 102,
+      currentPrice: 30,
+      marketValueOverride: 30,
+      costOverride: 102,
+      reportedPnl: 10,
+    } as Omit<Holding, 'id'>, issues);
+    const findings = findingsFor([{ ...checked, id: 'nvda' }], 70);
+
+    expect(checked.confidence).toBe('low');
+    expect(checked.missingFields).toContain('成本待核对');
+    expect(issues.some((item) => item.priority === 'required' && item.field.includes('成本待核对'))).toBe(true);
+    expect(findings.some((item) => item.title.includes('NVDA 浮亏'))).toBe(false);
   });
 });

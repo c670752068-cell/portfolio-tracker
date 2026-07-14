@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { applyImageImport, mergeImportedHoldings } from './importMerge';
-import type { Holding, ImportedPortfolio, PortfolioState } from './types';
+import { applyImageImport, crossCheckImportedPnl, mergeImportedHoldings } from './importMerge';
+import type { Holding, ImportedPortfolio, ImportIssue, PortfolioState } from './types';
 
 type ImportedHolding = Omit<Holding, 'id'>;
 
@@ -65,5 +65,50 @@ describe('mergeImportedHoldings', () => {
 
     expect(twice.holdings.map((item) => item.symbol)).toEqual(['CASHX', 'NVDA']);
     expect(twice.cash.map((item) => item.amount)).toEqual([10, 30]);
+  });
+});
+
+describe('crossCheckImportedPnl', () => {
+  it('marks a holding and creates a required issue when computed and reported pnl signs differ', () => {
+    const issues: ImportIssue[] = [];
+    const checked = crossCheckImportedPnl(imported({
+      shares: 10,
+      buyPrice: 130,
+      currentPrice: 100,
+      marketValueOverride: 1000,
+      costOverride: 1300,
+      reportedPnl: 200,
+    }), issues);
+
+    expect(checked.confidence).toBe('low');
+    expect(checked.missingFields).toContain('成本待核对');
+    expect(issues).toEqual([expect.objectContaining({
+      field: 'NVDA 成本待核对',
+      priority: 'required',
+    })]);
+  });
+
+  it('does not mark a difference below both the 10% and $50 thresholds', () => {
+    const issues: ImportIssue[] = [];
+    const checked = crossCheckImportedPnl(imported({
+      shares: 4,
+      buyPrice: 90,
+      currentPrice: 100,
+      marketValueOverride: 400,
+      costOverride: 360,
+      reportedPnl: 8,
+    }), issues);
+
+    expect(checked.confidence).toBe('high');
+    expect(checked.missingFields).not.toContain('成本待核对');
+    expect(issues).toEqual([]);
+  });
+
+  it('skips reconciliation when reported pnl is null', () => {
+    const issues: ImportIssue[] = [];
+    const original = imported({ reportedPnl: null });
+
+    expect(crossCheckImportedPnl(original, issues)).toEqual(original);
+    expect(issues).toEqual([]);
   });
 });

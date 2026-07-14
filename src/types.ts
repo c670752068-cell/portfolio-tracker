@@ -54,6 +54,8 @@ export interface Holding {
   confidence?: 'high' | 'medium' | 'low';
   source?: 'manual' | 'image-import';
   cashEquivalent?: boolean;
+  reportedPnl?: number | null;
+  reportedPnlPct?: number | null;
   quote?: QuoteSnapshot;
 }
 

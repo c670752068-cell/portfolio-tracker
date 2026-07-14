@@ -13,7 +13,7 @@ import type {
 import { classifyAiFailure, isRetryableAiFailure, type AiFailureKind } from './aiFailure';
 import { isMixedContentBlocked, sanitizeEndpointUrl } from './endpointUrl';
 import { getServerAiProxyUrl, serverGatewayLabel } from './runtimeConfig';
-import { mergeImportedHoldings } from './importMerge';
+import { crossCheckImportedPnl, mergeImportedHoldings } from './importMerge';
 
 const KIMI_ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
 const ZHIPU_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
@@ -218,13 +218,14 @@ export async function parsePortfolioImages(
       text: `你正在读取 ${images.length} 张券商持仓截图。识别股票、ETF、杠杆 ETF、基金、现金和期权，并把同一张/不同张截图中的数据互相核对。\n\n` +
         '只输出一个合法 JSON 对象，不要 Markdown、不要解释、不要使用 null 以外的非 JSON 值。数值必须是数字，货币必须是 USD、CNY、HKD 或 OTHER。\n' +
         'JSON 结构：\n' +
-        '{"holdings":[{"symbol":"IGV","name":"iShares Expanded Tech-Software Sector ETF","assetType":"option","shares":2,"buyPrice":7.2,"currentPrice":18.413,"marketValue":3682.66,"costValue":1440,"sector":"科技","currency":"USD","confidence":"high","missingFields":[],"option":{"underlying":"IGV","optionType":"call","strike":80,"expiration":"2027-01-15","contractMultiplier":100,"delta":0.8024,"theta":-0.0231,"gamma":0.012,"vega":0.188,"impliedVolatility":0.3438,"underlyingPrice":94.59}}],"cash":[{"amount":5671.08,"currency":"USD"}],"issues":[{"field":"现金/可用资金截图","reason":"未看到完整现金或购买力，因此总资产与现金占比不完整","priority":"recommended"}],"sourceSummary":"已识别 3 个持仓和 1 个现金条目"}\n\n' +
+        '{"holdings":[{"symbol":"IGV","name":"iShares Expanded Tech-Software Sector ETF","assetType":"option","shares":2,"buyPrice":7.2,"currentPrice":18.413,"marketValue":3682.66,"costValue":1440,"reportedPnl":2242.66,"reportedPnlPct":1.5574,"sector":"科技","currency":"USD","confidence":"high","missingFields":[],"option":{"underlying":"IGV","optionType":"call","strike":80,"expiration":"2027-01-15","contractMultiplier":100,"delta":0.8024,"theta":-0.0231,"gamma":0.012,"vega":0.188,"impliedVolatility":0.3438,"underlyingPrice":94.59}}],"cash":[{"amount":5671.08,"currency":"USD"}],"issues":[{"field":"现金/可用资金截图","reason":"未看到完整现金或购买力，因此总资产与现金占比不完整","priority":"recommended"}],"sourceSummary":"已识别 3 个持仓和 1 个现金条目"}\n\n' +
         '规则：\n' +
         '1. 优先采用截图明确显示的“市值/Market Value/市值数量”，写入 marketValue；若未显示则根据数量×现价×期权合约乘数计算。\n' +
         '2. 期权 shares 是合约张数，contractMultiplier 通常为 100；必须读出标的、Call/Put、行权价、到期日、Delta、Theta、Gamma、Vega、隐含波动率和标的价格。看不到时用 null，并在 issues 中说明。可识别“DTE/距到期日/到期日/Delta/Theta/IV”等英文或中文字段。\n' +
         '3. 股票或 ETF 不要臆造行业、成本、价格或现金；看不到就用空字符串、0 或 null，并在 issues 中写明。\n' +
         '4. 杠杆 ETF 标记为 leveraged_etf；普通 ETF 标记为 etf。不要把期权的市值当作正股市值。\n' +
-        '5. 如果截图不足，也必须输出已能确认的持仓和现金；issues 告诉用户还需要什么截图，例如“完整持仓页”“期权详情页”“现金/购买力页”。',
+        '5. 如果截图不足，也必须输出已能确认的持仓和现金；issues 告诉用户还需要什么截图，例如“完整持仓页”“期权详情页”“现金/购买力页”。\n' +
+        '6. 必须优先读取截图里券商直接显示的浮动盈亏金额和收益率，分别写入 reportedPnl 和 reportedPnlPct（小数形式）；看不到时用 null，不要自己计算。',
     },
     ...imageParts,
   ];
@@ -419,9 +420,10 @@ function normalizeImportedPortfolio(raw: string): ImportedPortfolio {
   }
   if (!isRecord(data)) throw new KimiError('AI 的识别结果格式不正确');
   const issues = asIssues(data.issues);
-  const holdings = mergeImportedHoldings(Array.isArray(data.holdings)
+  const mergedHoldings = mergeImportedHoldings(Array.isArray(data.holdings)
     ? data.holdings.map((holding) => normalizeHolding(holding, issues)).filter((holding): holding is ImportedPortfolio['holdings'][number] => holding !== null)
     : []);
+  const holdings = mergedHoldings.map((holding) => crossCheckImportedPnl(holding, issues));
   const cash = Array.isArray(data.cash) ? data.cash.map(normalizeCash).filter((item): item is CashPosition => item !== null) : [];
   if (holdings.length === 0 && cash.length === 0) {
     throw new KimiError('未能从截图中确认任何持仓或现金', '请上传包含代码、数量与市值的完整持仓页；期权请再附上合约详情页。');
@@ -465,6 +467,7 @@ function normalizeHolding(value: unknown, issues: ImportIssue[]): ImportedPortfo
     };
   }
   const missingFields = asTextArray(value.missingFields);
+  const reportedPnlPctValue = nullableNumber(value.reportedPnlPct);
   if (assetType === 'option') {
     if (!option?.expiration) missingFields.push('期权到期日');
     if (option?.delta == null) missingFields.push('期权 Delta');
@@ -505,6 +508,10 @@ function normalizeHolding(value: unknown, issues: ImportIssue[]): ImportedPortfo
     costOverride: costOverride ?? undefined,
     missingFields: unique(missingFields),
     confidence: asConfidence(value.confidence),
+    reportedPnl: nullableNumber(value.reportedPnl),
+    reportedPnlPct: reportedPnlPctValue != null && Math.abs(reportedPnlPctValue) > 1.5
+      ? reportedPnlPctValue / 100
+      : reportedPnlPctValue,
     source: 'image-import',
     note: '由截图识别导入；请在确认后核对关键数值。',
   };
