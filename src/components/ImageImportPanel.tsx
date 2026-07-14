@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KimiError, activeAiApiKey, activeAiProviderLabel, parsePortfolioImages } from '../kimi';
 import { formatMoney } from '../format';
 import type { AppSettings, ImportedPortfolio } from '../types';
@@ -21,7 +21,29 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
   const [result, setResult] = useState<ImportedPortfolio | null>(null);
   const [prepareSummary, setPrepareSummary] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const retryCountdownRef = useRef<number | null>(null);
   const aiLabel = activeAiProviderLabel(settings);
+
+  function clearRetryCountdown() {
+    if (retryCountdownRef.current != null) {
+      window.clearInterval(retryCountdownRef.current);
+      retryCountdownRef.current = null;
+    }
+  }
+
+  useEffect(() => () => clearRetryCountdown(), []);
+
+  function showRetryCountdown(info: { attempt: number; total: number; delayMs: number }) {
+    clearRetryCountdown();
+    let seconds = Math.ceil(info.delayMs / 1000);
+    const render = () => setPrepareSummary(`智谱繁忙，${seconds} 秒后自动重试（第 ${info.attempt}/${info.total} 次）…`);
+    render();
+    retryCountdownRef.current = window.setInterval(() => {
+      seconds = Math.max(0, seconds - 1);
+      render();
+      if (seconds === 0) clearRetryCountdown();
+    }, 1000);
+  }
 
   function addFiles(nextList: FileList | null) {
     if (!nextList) return;
@@ -56,6 +78,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
       return;
     }
     setLoading(true);
+    clearRetryCountdown();
     setError(null);
     setResult(null);
     setPrepareSummary('正在压缩截图，减少移动端网络失败…');
@@ -64,7 +87,13 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
       const originalBytes = files.reduce((sum, file) => sum + file.size, 0);
       const preparedBytes = images.reduce((sum, image) => sum + image.bytes, 0);
       setPrepareSummary(`已将截图从 ${formatBytes(originalBytes)} 压缩到 ${formatBytes(preparedBytes)} 后发送给 ${aiLabel}。`);
-      const parsed = await parsePortfolioImages(settings, images);
+      const parsed = await parsePortfolioImages(settings, images, {
+        onRetryWait: showRetryCountdown,
+        onNotice: (text) => {
+          clearRetryCountdown();
+          setPrepareSummary(text);
+        },
+      });
       setResult(parsed);
       setFiles([]);
       onConfirm(parsed);
@@ -72,6 +101,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
       if (caught instanceof KimiError) setError({ message: caught.message, hint: caught.hint });
       else setError({ message: caught instanceof Error ? caught.message : String(caught) });
     } finally {
+      clearRetryCountdown();
       setLoading(false);
     }
   }

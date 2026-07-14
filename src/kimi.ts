@@ -10,6 +10,7 @@ import type {
   PortfolioMetrics,
   RiskFinding,
 } from './types';
+import { classifyAiFailure, isRetryableAiFailure, type AiFailureKind } from './aiFailure';
 import { isMixedContentBlocked, sanitizeEndpointUrl } from './endpointUrl';
 import { getServerAiProxyUrl, serverGatewayLabel } from './runtimeConfig';
 
@@ -17,6 +18,7 @@ const KIMI_ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
 const ZHIPU_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 const REQUEST_TIMEOUT_MS = 180_000;
 const PING_TIMEOUT_MS = 20_000;
+const STANDARD_RETRY_DELAYS_MS = [30_000, 65_000];
 const KIMI_VISION_MODELS = new Set([
   'kimi-k2.6',
   'kimi-k2.5',
@@ -56,11 +58,33 @@ export interface ImageForImport {
 
 export class KimiError extends Error {
   hint?: string;
-  constructor(message: string, hint?: string) {
+  failureKind: AiFailureKind;
+  constructor(message: string, hint?: string, failureKind: AiFailureKind = 'other') {
     super(message);
     this.name = 'KimiError';
     this.hint = hint;
+    this.failureKind = failureKind;
   }
+}
+
+export interface AiRetryWaitInfo {
+  attempt: number;
+  total: number;
+  delayMs: number;
+  reason: string;
+}
+
+interface AiRequestOptions {
+  maxTokens?: number;
+  timeoutMs?: number;
+  retryDelaysMs?: number[];
+  onRetryWait?: (info: AiRetryWaitInfo) => void;
+  modelOverride?: string;
+}
+
+interface ImageParseCallbacks {
+  onRetryWait?: (info: AiRetryWaitInfo) => void;
+  onNotice?: (text: string) => void;
 }
 
 interface AiRuntimeConfig {
@@ -144,7 +168,9 @@ export async function analyzeWithAi(
   metrics: PortfolioMetrics,
   localFindings: RiskFinding[],
 ): Promise<string> {
-  const data = await requestAi(settings, buildAnalysisPrompt(metrics, localFindings));
+  const data = await requestAi(settings, buildAnalysisPrompt(metrics, localFindings), {
+    retryDelaysMs: STANDARD_RETRY_DELAYS_MS,
+  });
   return data;
 }
 
@@ -163,6 +189,7 @@ export async function testAiConnection(settings: AppSettings): Promise<string> {
 export async function parsePortfolioImages(
   settings: AppSettings,
   images: ImageForImport[],
+  callbacks: ImageParseCallbacks = {},
 ): Promise<ImportedPortfolio> {
   if (images.length === 0) throw new KimiError('请先选择至少一张持仓或期权详情截图。');
   const provider = settings.aiProvider ?? 'zhipu';
@@ -200,17 +227,32 @@ export async function parsePortfolioImages(
     },
     ...imageParts,
   ];
-  const raw = await requestAi(settings, [
+  const messages: AiMessage[] = [
     { role: 'system', content: '你是金融截图数据录入助手。仅提取用户截图明确可见的数据；不提供投资建议。' },
     { role: 'user', content },
-  ]);
+  ];
+  let raw: string;
+  try {
+    raw = await requestAi(settings, messages, {
+      retryDelaysMs: STANDARD_RETRY_DELAYS_MS,
+      onRetryWait: callbacks.onRetryWait,
+    });
+  } catch (error: unknown) {
+    const shouldFallback = error instanceof KimiError
+      && isRetryableAiFailure(error.failureKind)
+      && provider === 'zhipu'
+      && model !== 'glm-4v-flash';
+    if (!shouldFallback) throw error;
+    callbacks.onNotice?.(`${model} 持续繁忙，已临时换用 glm-4v-flash 重试…`);
+    raw = await requestAi(settings, messages, { modelOverride: 'glm-4v-flash' });
+  }
   return normalizeImportedPortfolio(raw);
 }
 
 async function requestAi(
   settings: AppSettings,
   messages: AiMessage[],
-  options: { maxTokens?: number; timeoutMs?: number } = {},
+  options: AiRequestOptions = {},
 ): Promise<string> {
   const config = getAiRuntimeConfig(settings);
   if (!config.apiKey.trim()) {
@@ -222,67 +264,101 @@ async function requestAi(
       '请改用 http://67.215.255.196:8788/ 访问本应用，或等待网关支持 HTTPS。',
     );
   }
-  let response: Response;
-  const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? (config.usesServerGateway ? 190_000 : REQUEST_TIMEOUT_MS);
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    response = await fetch(config.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey.trim()}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        temperature: temperatureForModel(config.provider, config.model),
-        max_tokens: options.maxTokens ?? 3500,
-        // Screenshot extraction only needs structured facts. Explicitly disabling
-        // reasoning on GLM avoids a slow, unnecessary thinking pass.
-        ...(config.provider === 'zhipu' ? { thinking: { type: 'disabled' } } : {}),
-      }),
-      signal: controller.signal,
-    });
-  } catch (error: unknown) {
-    const message = error instanceof DOMException && error.name === 'AbortError'
-      ? `请求超过 ${Math.round(timeoutMs / 1000)} 秒`
-      : error instanceof Error ? error.message : String(error);
-    throw new KimiError(
-      `网络请求失败：${message}`,
-      networkHint(config),
-    );
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
+  const retryDelaysMs = options.retryDelaysMs ?? [];
+  for (let attemptIndex = 0; ; attemptIndex += 1) {
+    let response: Response;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+    const requestModel = options.modelOverride ?? config.model;
+    try {
+      response = await fetch(config.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey.trim()}`,
+        },
+        body: JSON.stringify({
+          model: requestModel,
+          messages,
+          temperature: temperatureForModel(config.provider, requestModel),
+          max_tokens: options.maxTokens ?? 3500,
+          // Screenshot extraction only needs structured facts. Explicitly disabling
+          // reasoning on GLM avoids a slow, unnecessary thinking pass.
+          ...(config.provider === 'zhipu' ? { thinking: { type: 'disabled' } } : {}),
+        }),
+        signal: controller.signal,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof DOMException && error.name === 'AbortError'
+        ? `请求超过 ${Math.round(timeoutMs / 1000)} 秒`
+        : error instanceof Error ? error.message : String(error);
+      throw new KimiError(
+        `网络请求失败：${message}`,
+        networkHint(config),
+      );
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
 
-  let data: AiResponse;
-  try {
-    data = (await response.json()) as AiResponse;
-  } catch {
-    throw new KimiError(`响应非 JSON（HTTP ${response.status}）`);
+    let data: AiResponse;
+    try {
+      data = (await response.json()) as AiResponse;
+    } catch {
+      throw new KimiError(`响应非 JSON（HTTP ${response.status}）`);
+    }
+    if (!response.ok) {
+      const providerMessage = data.error?.message ?? data.error?.code ?? `HTTP ${response.status}`;
+      const failureKind = classifyAiFailure(response.status, data.error?.code, providerMessage);
+      const retryDelayMs = retryDelaysMs[attemptIndex];
+      if (isRetryableAiFailure(failureKind) && retryDelayMs != null) {
+        options.onRetryWait?.({
+          attempt: attemptIndex + 2,
+          total: retryDelaysMs.length + 1,
+          delayMs: retryDelayMs,
+          reason: providerMessage,
+        });
+        await waitForRetry(retryDelayMs);
+        continue;
+      }
+      throw new KimiError(
+        providerMessage,
+        failureHint(failureKind, response.status, data, config),
+        failureKind,
+      );
+    }
+    const responseContent = data.choices?.[0]?.message?.content;
+    if (!responseContent) throw new KimiError(`${config.label} 返回为空，请重试或减少截图数量。`);
+    return responseContent;
   }
-  if (!response.ok) {
-    const providerMessage = data.error?.message ?? data.error?.code ?? `HTTP ${response.status}`;
-    const isRateLimited = response.status === 429
-      || data.error?.code === '1302'
-      || /rate.?limit|速率限制|请求过于频繁/i.test(providerMessage);
-    throw new KimiError(
-      providerMessage,
-      isRateLimited
-        ? '这是 API 账户/模型的并发或频率限制，不是域名、VPN 或截图问题。请等待 60 秒后只重试一次；不要连续点击“连接测试”和“解析”。服务器已按 Key 串行转发，仍持续出现时需在智谱控制台查看该模型的速率权益或换一个有可用额度的 Key。'
-        : response.status === 404 && data.error?.code === 'not_found'
-          ? '请求路径不存在：多半是「代理 URL」填错了。清空该输入框并保存，即可恢复使用服务器转发。'
-        : response.status === 401
-        ? '请检查 API Key 是否正确、是否过期，或确认该 Key 有视觉模型权限。'
-        : response.status === 400 && data.error?.message?.toLowerCase().includes('image')
-          ? `模型或接口没有接受图片输入。请使用 ${config.provider === 'zhipu' ? 'glm-4.6v-flash / glm-5v-turbo' : 'kimi-k2.6'}。`
-          : undefined,
-    );
+}
+
+function waitForRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
+
+function failureHint(
+  failureKind: AiFailureKind,
+  status: number,
+  data: AiResponse,
+  config: AiRuntimeConfig,
+): string | undefined {
+  if (failureKind === 'overload') {
+    return '智谱这个免费模型当前过载（平台侧拥堵，不是你的账号问题）。已自动重试仍未成功。建议：① 换时间段（北京时间早上 7–9 点最空）② 到「设置」换一个视觉模型 ③ 在智谱控制台完成实名认证或开通付费额度，可提高优先级。';
   }
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new KimiError(`${config.label} 返回为空，请重试或减少截图数量。`);
-  return content;
+  if (failureKind === 'rate_limit') {
+    return '这是 API 账户/模型的并发或频率限制，不是域名、VPN 或截图问题。前端已自动等待并重试过，请稍后再试或检查账号额度。';
+  }
+  if (status === 404 && data.error?.code === 'not_found') {
+    return '请求路径不存在：多半是「代理 URL」填错了。清空该输入框并保存，即可恢复使用服务器转发。';
+  }
+  if (failureKind === 'auth') {
+    return '请检查 API Key 是否正确、是否过期，或确认该 Key 有视觉模型权限。';
+  }
+  if (failureKind === 'bad_image') {
+    return `模型或接口没有接受图片输入。请使用 ${config.provider === 'zhipu' ? 'glm-4.6v-flash / glm-5v-turbo' : 'kimi-k2.6'}。`;
+  }
+  return undefined;
 }
 
 export function getAiRuntimeConfig(settings: AppSettings): AiRuntimeConfig {
