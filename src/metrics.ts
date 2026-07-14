@@ -5,6 +5,7 @@ import type {
   PortfolioState,
 } from './types';
 import { loadExchangeRates, toUsd } from './exchangeRates';
+import { isCashEquivalent } from './assetClass';
 
 export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loadExchangeRates()): PortfolioMetrics {
   const unconvertedItems: string[] = [];
@@ -58,6 +59,11 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
     return s + converted;
   }, 0);
   const totalValue = equityValue + cashValue;
+  const cashEquivalentValue = holdingsMetricsBase.reduce(
+    (sum, metric) => sum + (isCashEquivalent(metric.holding) ? metric.marketValue : 0),
+    0,
+  );
+  const liquidityValue = cashValue + cashEquivalentValue;
   const totalCost = holdingsMetricsBase.reduce((s, m) => s + m.cost, 0) + cashValue;
   const totalPnl = holdingsMetricsBase.reduce((s, m) => s + m.pnl, 0);
   const totalPnlPct = totalCost > 0 ? totalPnl / totalCost : 0;
@@ -100,6 +106,9 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
     equityValue,
     cashValue,
     cashWeight: totalValue > 0 ? cashValue / totalValue : 0,
+    cashEquivalentValue,
+    liquidityValue,
+    liquidityWeight: totalValue > 0 ? liquidityValue / totalValue : 0,
     holdingsMetrics,
     sectorWeights,
     optionValue,

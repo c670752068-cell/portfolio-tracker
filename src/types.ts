@@ -53,6 +53,7 @@ export interface Holding {
   missingFields?: string[];
   confidence?: 'high' | 'medium' | 'low';
   source?: 'manual' | 'image-import';
+  cashEquivalent?: boolean;
   quote?: QuoteSnapshot;
 }
 
@@ -118,6 +119,9 @@ export interface PortfolioMetrics {
   equityValue: number;
   cashValue: number;
   cashWeight: number;
+  cashEquivalentValue: number;
+  liquidityValue: number;
+  liquidityWeight: number;
   holdingsMetrics: HoldingMetric[];
   sectorWeights: Record<string, number>;
   optionValue: number;

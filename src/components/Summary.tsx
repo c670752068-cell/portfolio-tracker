@@ -31,7 +31,11 @@ export function Summary({ metrics, rates, rateError, quoteStatus, canRefreshQuot
         subClass={dayClass}
       />
       <Card label="持仓市值（USD）" value={formatMoney(metrics.equityValue)} sub={`${formatPct(1 - metrics.cashWeight)}`} />
-      <Card label="现金（USD）" value={formatMoney(metrics.cashValue)} sub={formatPct(metrics.cashWeight)} />
+      <Card
+        label="现金及等价物（USD）"
+        value={formatMoney(metrics.liquidityValue)}
+        sub={`${formatPct(metrics.liquidityWeight)} · 现金 ${formatMoney(metrics.cashValue)} · 现金类 ETF ${formatMoney(metrics.cashEquivalentValue)}`}
+      />
       <Card
         label={metrics.unknownCostItems > 0 ? '总盈亏（已知成本）' : '总盈亏'}
         value={formatMoney(metrics.totalPnl)}

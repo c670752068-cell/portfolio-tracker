@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AssetType, Currency, Holding, HoldingMetric } from '../types';
 import { formatMoney, formatPct, formatSignedPct } from '../format';
+import { CASH_EQUIVALENT_SYMBOLS, isCashEquivalent } from '../assetClass';
 
 interface HoldingsTableProps {
   metrics: HoldingMetric[];
@@ -64,6 +65,14 @@ export function HoldingsTable({ metrics, onUpdate, onDelete, onAdd }: HoldingsTa
             <option value="">行业</option>
             {SECTOR_PRESETS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
           </select>
+          <label className="col-span-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 sm:col-span-4 lg:col-span-8">
+            <input
+              type="checkbox"
+              checked={draft.cashEquivalent === true || CASH_EQUIVALENT_SYMBOLS.has(draft.symbol.trim().toUpperCase())}
+              onChange={(event) => setDraft({ ...draft, cashEquivalent: event.target.checked })}
+            />
+            现金等价物
+          </label>
           <button type="submit" className="col-span-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 sm:col-span-4 lg:col-span-8">添加持仓</button>
         </form>
       </div>
@@ -114,7 +123,7 @@ function Row({ metric, onUpdate, onDelete }: RowProps) {
   return (
     <tr className="align-top hover:bg-slate-50 dark:hover:bg-slate-700/40">
       <td className="px-3 py-2"><div className="font-medium">{holding.symbol}</div><div className="text-xs text-slate-500">{label} · {holding.currency}</div>{optionDescription && <div className="mt-1 max-w-44 text-xs text-slate-500">{optionDescription}</div>}</td>
-      <td className="px-3 py-2"><input value={holding.name} onChange={(event) => onUpdate(holding.id, { name: event.target.value })} className="w-28 bg-transparent focus:outline-none" placeholder="名称" /><input value={holding.sector} onChange={(event) => onUpdate(holding.id, { sector: event.target.value })} className="mt-1 w-24 bg-transparent text-xs text-slate-500 focus:outline-none" placeholder="行业" />{holding.missingFields && holding.missingFields.length > 0 && <div className="mt-1 max-w-36 text-xs text-amber-600">待补：{holding.missingFields.join('、')}</div>}{holding.quote?.note && <div className="mt-1 max-w-44 text-xs text-indigo-600 dark:text-indigo-300">{holding.quote.note}</div>}</td>
+      <td className="px-3 py-2"><input value={holding.name} onChange={(event) => onUpdate(holding.id, { name: event.target.value })} className="w-28 bg-transparent focus:outline-none" placeholder="名称" /><input value={holding.sector} onChange={(event) => onUpdate(holding.id, { sector: event.target.value })} className="mt-1 w-24 bg-transparent text-xs text-slate-500 focus:outline-none" placeholder="行业" /><label className="mt-1 flex items-center gap-1 text-xs text-slate-500"><input type="checkbox" checked={isCashEquivalent(holding)} onChange={(event) => onUpdate(holding.id, { cashEquivalent: event.target.checked })} />现金等价物</label>{holding.missingFields && holding.missingFields.length > 0 && <div className="mt-1 max-w-36 text-xs text-amber-600">待补：{holding.missingFields.join('、')}</div>}{holding.quote?.note && <div className="mt-1 max-w-44 text-xs text-indigo-600 dark:text-indigo-300">{holding.quote.note}</div>}</td>
       <td className="px-3 py-2 text-right tabular-nums"><input type="number" step="any" value={holding.shares} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-slate-500">{isOption ? '合约张数' : '股'}</div></td>
       <td className="px-3 py-2 text-right tabular-nums"><input type="number" step="any" value={holding.buyPrice} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-slate-500">{holding.currency}</div></td>
       <td className="px-3 py-2 text-right tabular-nums"><input type="number" step="any" value={holding.currentPrice} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="mt-1 text-xs font-medium">{formatMoney(metric.marketValueNative, holding.currency)}</div>{holding.currency !== 'USD' && <div className="text-xs text-slate-500">≈ {formatMoney(metric.marketValue)} USD</div>}</td>
