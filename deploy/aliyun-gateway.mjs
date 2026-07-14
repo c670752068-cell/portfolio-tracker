@@ -7,11 +7,11 @@
  * accidental parallel "test connection" + "parse screenshot" requests from
  * causing account-level rate-limit errors.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { get as httpsGet } from 'node:https';
 import { createReadStream } from 'node:fs';
-import { access, stat } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 
 const PORT = Number(process.env.PORT || 8789);
@@ -20,6 +20,10 @@ const STATIC_ROOT = process.env.STATIC_ROOT ? resolve(process.env.STATIC_ROOT) :
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 180_000;
 const requestQueues = new Map();
+const IMPORT_ARCHIVE_TOKEN = process.env.IMPORT_ARCHIVE_TOKEN || '';
+const IMPORT_ARCHIVE_ROOT = resolve(process.env.IMPORT_ARCHIVE_ROOT || '/opt/portfolio-tracker-data/imports');
+const IMPORT_ARCHIVE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const IMPORT_ARCHIVE_MAX_BYTES = 200 * 1024 * 1024;
 
 const AI_ROUTES = {
   '/api/zhipu/chat/completions': 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
@@ -115,6 +119,9 @@ async function proxyAi(req, res, upstream) {
       }
     });
     const payload = await upstreamResponse.arrayBuffer();
+    void archiveImageImport(body, Buffer.from(payload)).catch((error) => {
+      console.error('portfolio import archive failed:', error);
+    });
     const contentType = upstreamResponse.headers.get('content-type') || 'application/json; charset=utf-8';
     res.writeHead(upstreamResponse.status, {
       'Content-Type': contentType,
@@ -132,6 +139,160 @@ async function proxyAi(req, res, upstream) {
       },
     });
   }
+}
+
+function importArchiveNotFound(res) {
+  sendJson(res, 404, { error: { code: 'not_found', message: '未知接口' } });
+}
+
+function archiveTokenMatches(url) {
+  return Boolean(IMPORT_ARCHIVE_TOKEN) && url.searchParams.get('token') === IMPORT_ARCHIVE_TOKEN;
+}
+
+function extractDataUrlImages(body) {
+  let parsed;
+  try {
+    parsed = JSON.parse(body.toString('utf8'));
+  } catch {
+    return [];
+  }
+  const images = [];
+  for (const message of Array.isArray(parsed?.messages) ? parsed.messages : []) {
+    for (const part of Array.isArray(message?.content) ? message.content : []) {
+      const url = part?.type === 'image_url' ? part?.image_url?.url : '';
+      const match = typeof url === 'string'
+        ? url.match(/^data:image\/[a-zA-Z0-9.+-]+;base64,([A-Za-z0-9+/=\r\n]+)$/)
+        : null;
+      if (match) images.push(Buffer.from(match[1], 'base64'));
+    }
+  }
+  return images;
+}
+
+function archiveTimestamp(date) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}`;
+}
+
+async function archiveImageImport(body, responsePayload) {
+  if (!IMPORT_ARCHIVE_TOKEN) return;
+  const images = extractDataUrlImages(body);
+  if (images.length === 0) return;
+  let request;
+  try {
+    request = JSON.parse(body.toString('utf8'));
+  } catch {
+    return;
+  }
+  const now = new Date();
+  const id = `${archiveTimestamp(now)}-${randomBytes(3).toString('hex')}`;
+  const directory = join(IMPORT_ARCHIVE_ROOT, id);
+  await mkdir(directory, { recursive: true });
+  await Promise.all(images.map((image, index) => writeFile(join(directory, `image-${index + 1}.jpg`), image)));
+  await writeFile(join(directory, 'request-meta.json'), JSON.stringify({
+    model: typeof request?.model === 'string' ? request.model : '',
+    time: now.toISOString(),
+    imageCount: images.length,
+  }, null, 2));
+  await writeFile(join(directory, 'response.json'), responsePayload);
+  await cleanupImportArchives(now.getTime());
+}
+
+async function archiveDirectories() {
+  try {
+    return (await readdir(IMPORT_ARCHIVE_ROOT, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && /^[A-Za-z0-9_-]+$/.test(entry.name))
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+async function archiveDirectoryInfo(id) {
+  const directory = join(IMPORT_ARCHIVE_ROOT, id);
+  const [directoryStat, files] = await Promise.all([stat(directory), readdir(directory)]);
+  let size = 0;
+  for (const file of files) {
+    if (!/^[A-Za-z0-9._-]+$/.test(file)) continue;
+    const fileStat = await stat(join(directory, file));
+    if (fileStat.isFile()) size += fileStat.size;
+  }
+  return { id, directory, mtimeMs: directoryStat.mtimeMs, size };
+}
+
+async function cleanupImportArchives(nowMs) {
+  const infos = (await Promise.all((await archiveDirectories()).map(archiveDirectoryInfo)))
+    .sort((left, right) => left.mtimeMs - right.mtimeMs);
+  const retained = [];
+  for (const info of infos) {
+    if (nowMs - info.mtimeMs > IMPORT_ARCHIVE_MAX_AGE_MS) {
+      await rm(info.directory, { recursive: true, force: true });
+    } else {
+      retained.push(info);
+    }
+  }
+  let totalBytes = retained.reduce((sum, info) => sum + info.size, 0);
+  for (const info of retained) {
+    if (totalBytes <= IMPORT_ARCHIVE_MAX_BYTES) break;
+    await rm(info.directory, { recursive: true, force: true });
+    totalBytes -= info.size;
+  }
+}
+
+async function listImportArchives() {
+  const rows = [];
+  for (const id of await archiveDirectories()) {
+    try {
+      const meta = JSON.parse(await readFile(join(IMPORT_ARCHIVE_ROOT, id, 'request-meta.json'), 'utf8'));
+      rows.push({
+        id,
+        time: typeof meta.time === 'string' ? meta.time : '',
+        imageCount: Number(meta.imageCount) || 0,
+        model: typeof meta.model === 'string' ? meta.model : '',
+      });
+    } catch {
+      // Ignore incomplete archive directories.
+    }
+  }
+  return rows.sort((left, right) => right.time.localeCompare(left.time)).slice(0, 100);
+}
+
+async function handleImportArchiveRoute(url, req, res) {
+  if (url.pathname !== '/api/imports' && !url.pathname.startsWith('/api/imports/')) return false;
+  if (req.method !== 'GET' || !archiveTokenMatches(url)) {
+    importArchiveNotFound(res);
+    return true;
+  }
+  if (url.pathname === '/api/imports') {
+    sendJson(res, 200, await listImportArchives());
+    return true;
+  }
+  const match = url.pathname.match(/^\/api\/imports\/([A-Za-z0-9_-]+)\/([A-Za-z0-9._-]+)$/);
+  if (!match) {
+    importArchiveNotFound(res);
+    return true;
+  }
+  const [, id, file] = match;
+  const filePath = resolve(IMPORT_ARCHIVE_ROOT, id, file);
+  const directory = resolve(IMPORT_ARCHIVE_ROOT, id);
+  if (!filePath.startsWith(`${directory}/`)) {
+    importArchiveNotFound(res);
+    return true;
+  }
+  try {
+    const info = await stat(filePath);
+    if (!info.isFile()) throw new Error('not a file');
+  } catch {
+    importArchiveNotFound(res);
+    return true;
+  }
+  res.writeHead(200, {
+    'Content-Type': MIME_TYPES[extname(filePath).toLowerCase()] || 'application/octet-stream',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  createReadStream(filePath).pipe(res);
+  return true;
 }
 
 function asNumber(value) {
@@ -302,6 +463,7 @@ async function serveStatic(url, req, res) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
+  if (await handleImportArchiveRoute(url, req, res)) return;
   if (req.method === 'GET' && url.pathname === '/api/health') {
     sendJson(res, 200, { ok: true, service: 'portfolio-ai-gateway', time: new Date().toISOString() });
     return;

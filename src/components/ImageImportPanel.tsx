@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { KimiError, activeAiApiKey, activeAiProviderLabel, parsePortfolioImages } from '../kimi';
 import { formatMoney } from '../format';
 import type { AppSettings, ImportedPortfolio } from '../types';
+import { hasServerGateway } from '../runtimeConfig';
 
 const MAX_FILES = 8;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -23,6 +24,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
   const inputRef = useRef<HTMLInputElement>(null);
   const retryCountdownRef = useRef<number | null>(null);
   const aiLabel = activeAiProviderLabel(settings);
+  const usesServerGateway = hasServerGateway();
 
   function clearRetryCountdown() {
     if (retryCountdownRef.current != null) {
@@ -141,7 +143,11 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
         <button onClick={parse} disabled={loading || files.length === 0} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400">
           {loading ? '正在压缩并识别…' : '解析并导入'}
         </button>
-        <span className="text-xs text-slate-500">截图只会随本次请求发送到 {aiLabel}，不会保存到本地或导出 JSON。</span>
+        <span className="text-xs text-slate-500">
+          {usesServerGateway
+            ? `截图经你的私人服务器转发给 ${aiLabel}；服务器会保留最近 30 天的截图与识别结果供复查，不会发给任何第三方。`
+            : `截图只会随本次请求发送到 ${aiLabel}，不会保存到本地或导出 JSON。`}
+        </span>
       </div>
       {prepareSummary && <p className="text-xs text-slate-500 dark:text-slate-400">{prepareSummary}</p>}
 
