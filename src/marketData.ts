@@ -1,5 +1,5 @@
 import type { AppSettings, Currency, Holding, QuoteProvider, QuoteSnapshot } from './types';
-import { KimiError } from './kimi';
+import { isValidTicker, KimiError } from './kimi';
 import { isMixedContentBlocked, sanitizeEndpointUrl } from './endpointUrl';
 
 export interface QuoteSyncResult {
@@ -33,13 +33,17 @@ export async function syncHoldingsWithQuotes(
   settings: AppSettings,
 ): Promise<QuoteSyncResult> {
   const symbols = getSymbolsForQuotes(holdings);
+  const initiallySkipped = holdings
+    .filter((holding) => !shouldSyncHolding(holding))
+    .map((holding) => holding.symbol.trim().toUpperCase())
+    .filter(Boolean);
   if (symbols.length === 0) {
     return {
       holdings,
       requestedSymbols: [],
       updatedSymbols: [],
       failedSymbols: [],
-      skippedSymbols: [],
+      skippedSymbols: [...new Set(initiallySkipped)],
       updatedAt: new Date().toISOString(),
     };
   }
@@ -47,7 +51,7 @@ export async function syncHoldingsWithQuotes(
 
   const { quotes, failedSymbols } = await fetchQuotes(settings, symbols);
   const updatedSymbols = new Set<string>();
-  const skippedSymbols = new Set<string>();
+  const skippedSymbols = new Set<string>(initiallySkipped);
 
   const nextHoldings = holdings.map((holding) => {
     if (!shouldSyncHolding(holding)) {
@@ -56,7 +60,7 @@ export async function syncHoldingsWithQuotes(
     }
 
     if (holding.assetType === 'option') {
-      const underlyingSymbol = normalizeSymbol(holding.option?.underlying || holding.symbol);
+      const underlyingSymbol = normalizeSymbol(holding.option?.underlying);
       const quote = quotes.get(underlyingSymbol);
       if (!quote) return holding;
       const updated = applyUnderlyingQuoteToOption(holding, quote);
@@ -92,7 +96,7 @@ function getSymbolsForQuotes(holdings: Holding[]): string[] {
     if (!shouldSyncHolding(holding)) continue;
     const symbol =
       holding.assetType === 'option'
-        ? normalizeSymbol(holding.option?.underlying || holding.symbol)
+        ? normalizeSymbol(holding.option?.underlying)
         : normalizeSymbol(holding.symbol);
     if (symbol) symbols.add(symbol);
   }
@@ -102,7 +106,10 @@ function getSymbolsForQuotes(holdings: Holding[]): string[] {
 function shouldSyncHolding(holding: Holding): boolean {
   if (holding.currency !== 'USD') return false;
   if (!US_MARKET_ASSET_TYPES.has(holding.assetType ?? 'stock')) return false;
-  return Boolean(normalizeSymbol(holding.assetType === 'option' ? holding.option?.underlying || holding.symbol : holding.symbol));
+  const symbol = normalizeSymbol(
+    holding.assetType === 'option' ? holding.option?.underlying : holding.symbol,
+  );
+  return isValidTicker(symbol);
 }
 
 async function fetchQuotes(

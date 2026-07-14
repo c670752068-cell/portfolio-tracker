@@ -13,6 +13,7 @@ import type {
 import { classifyAiFailure, isRetryableAiFailure, type AiFailureKind } from './aiFailure';
 import { isMixedContentBlocked, sanitizeEndpointUrl } from './endpointUrl';
 import { getServerAiProxyUrl, serverGatewayLabel } from './runtimeConfig';
+import { mergeImportedHoldings } from './importMerge';
 
 const KIMI_ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
 const ZHIPU_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
@@ -418,9 +419,9 @@ function normalizeImportedPortfolio(raw: string): ImportedPortfolio {
   }
   if (!isRecord(data)) throw new KimiError('AI 的识别结果格式不正确');
   const issues = asIssues(data.issues);
-  const holdings = Array.isArray(data.holdings)
+  const holdings = mergeImportedHoldings(Array.isArray(data.holdings)
     ? data.holdings.map((holding) => normalizeHolding(holding, issues)).filter((holding): holding is ImportedPortfolio['holdings'][number] => holding !== null)
-    : [];
+    : []);
   const cash = Array.isArray(data.cash) ? data.cash.map(normalizeCash).filter((item): item is CashPosition => item !== null) : [];
   if (holdings.length === 0 && cash.length === 0) {
     throw new KimiError('未能从截图中确认任何持仓或现金', '请上传包含代码、数量与市值的完整持仓页；期权请再附上合约详情页。');
@@ -436,7 +437,9 @@ function normalizeImportedPortfolio(raw: string): ImportedPortfolio {
 function normalizeHolding(value: unknown, issues: ImportIssue[]): ImportedPortfolio['holdings'][number] | null {
   if (!isRecord(value)) return null;
   const assetType = asAssetType(value.assetType);
-  const symbol = asText(value.symbol).toUpperCase();
+  const rawSymbol = asText(value.symbol).toUpperCase();
+  const optionSymbolMatch = rawSymbol.match(/^([A-Z][A-Z0-9.\-]{0,9})\s+(CALL|PUT)$/);
+  const symbol = optionSymbolMatch?.[1] ?? rawSymbol;
   const name = asText(value.name);
   if (!symbol && !name) return null;
   const currency = asCurrency(value.currency);
@@ -449,7 +452,18 @@ function normalizeHolding(value: unknown, issues: ImportIssue[]): ImportedPortfo
   if (currentPrice === 0 && marketValueOverride != null && shares > 0) currentPrice = marketValueOverride / (shares * multiplier);
   if (buyPrice === 0 && costOverride != null && shares > 0) buyPrice = costOverride / (shares * multiplier);
 
-  const option = assetType === 'option' ? normalizeOption(value.option, symbol, multiplier) : undefined;
+  let option = assetType === 'option' ? normalizeOption(value.option, symbol, multiplier) : undefined;
+  if (
+    option
+    && optionSymbolMatch
+    && (!isRecord(value.option) || !asText(value.option.underlying))
+  ) {
+    option = {
+      ...option,
+      underlying: optionSymbolMatch[1],
+      optionType: optionSymbolMatch[2].toLowerCase() as 'call' | 'put',
+    };
+  }
   const missingFields = asTextArray(value.missingFields);
   if (assetType === 'option') {
     if (!option?.expiration) missingFields.push('期权到期日');
@@ -494,6 +508,10 @@ function normalizeHolding(value: unknown, issues: ImportIssue[]): ImportedPortfo
     source: 'image-import',
     note: '由截图识别导入；请在确认后核对关键数值。',
   };
+}
+
+export function isValidTicker(symbol: string): boolean {
+  return /^[A-Z][A-Z0-9.\-]{0,9}$/.test(symbol.trim().toUpperCase());
 }
 
 function normalizeCash(value: unknown): CashPosition | null {

@@ -11,6 +11,7 @@ import { analyzePortfolio } from './analyzer';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { computeMetrics } from './metrics';
+import { applyImageImport } from './importMerge';
 import { loadPortfolio, loadSettings, savePortfolio, saveSettings } from './storage';
 import type { AppSettings, CashPosition, ExchangeRates, Holding, ImportedPortfolio, PortfolioState } from './types';
 import './App.css';
@@ -138,6 +139,9 @@ export default function App() {
         updatedAt: result.updatedAt,
       }));
       const failedText = result.failedSymbols.length > 0 ? `，${result.failedSymbols.length} 个失败` : '';
+      const skippedText = result.skippedSymbols.length > 0
+        ? `，${result.skippedSymbols.length} 个跳过（非标准代码/缺标的）`
+        : '';
       const nextDailySyncKey = dailySyncKey ?? buildDailyQuoteSyncKey(getBeijingQuoteTargetDate(), currentHoldings, settings);
       localStorage.setItem(DAILY_QUOTE_SYNC_KEY, nextDailySyncKey);
       const prefix = reason === 'daily'
@@ -147,7 +151,7 @@ export default function App() {
         loading: false,
         lastSyncedAt: result.updatedAt,
         error: result.failedSymbols.length > 0 ? result.failedSymbols.map((item) => `${item.symbol}: ${item.reason}`).join('；') : '',
-        summary: `${prefix} ${result.updatedSymbols.length}/${result.requestedSymbols.length} 个标的${failedText}`,
+        summary: `${prefix} ${result.updatedSymbols.length}/${result.requestedSymbols.length} 个标的${failedText}${skippedText}`,
       });
     } catch (error) {
       setQuoteStatus((status) => ({
@@ -212,11 +216,7 @@ export default function App() {
     saveSettings(next);
   }
   function importFromImages(result: ImportedPortfolio) {
-    setPortfolio((current) => ({
-      holdings: [...current.holdings, ...result.holdings.map((holding) => ({ ...holding, id: generateId() }))],
-      cash: [...current.cash, ...result.cash],
-      updatedAt: new Date().toISOString(),
-    }));
+    setPortfolio((current) => applyImageImport(current, result, generateId));
     setLastImport(result);
     setTab('dashboard');
   }
@@ -303,7 +303,7 @@ function ImportResultNotice({ result, onClose }: { result: ImportedPortfolio; on
         <div>
           <div className="font-semibold">截图识别已自动导入</div>
           <p className="mt-1 text-xs">
-            {result.sourceSummary}；新增 {result.holdings.length} 个持仓、{result.cash.length} 个现金条目。请在下方总览先看组合结构，如数值不对可到「持仓」里编辑或删除。
+            本次已替换上一批截图导入（手动添加的条目未受影响）；共导入 {result.holdings.length} 个持仓、{result.cash.length} 个现金条目。
           </p>
         </div>
         <button type="button" onClick={onClose} className="text-xs text-emerald-700 hover:underline dark:text-emerald-200">关闭</button>

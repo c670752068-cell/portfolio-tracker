@@ -170,3 +170,26 @@ describe('AI retry orchestration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('portfolio import normalization', () => {
+  it('turns an option symbol like MSFU CALL into a valid ticker and option metadata', async () => {
+    setRuntimeConfig();
+    const content = JSON.stringify({
+      holdings: [{
+        symbol: ' MSFU CALL ', name: 'MSFU Call', assetType: 'option', shares: 1,
+        buyPrice: 2, currentPrice: 3, currency: 'USD', sector: '未分类',
+        option: { underlying: '', optionType: '', strike: 40, expiration: '2027-01-15', contractMultiplier: 100, delta: 0.5, underlyingPrice: 35 },
+      }],
+      cash: [], issues: [], sourceSummary: 'option',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(aiResponse(200, {
+      choices: [{ message: { content } }],
+    })));
+
+    const result = await parsePortfolioImages(zhipuSettings('glm-4v-flash'), screenshot);
+
+    expect(result.holdings[0]?.symbol).toBe('MSFU');
+    expect(result.holdings[0]?.option?.underlying).toBe('MSFU');
+    expect(result.holdings[0]?.option?.optionType).toBe('call');
+  });
+});
