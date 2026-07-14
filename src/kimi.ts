@@ -225,7 +225,10 @@ export async function parsePortfolioImages(
         '3. 股票或 ETF 不要臆造行业、成本、价格或现金；看不到就用空字符串、0 或 null，并在 issues 中写明。\n' +
         '4. 杠杆 ETF 标记为 leveraged_etf；普通 ETF 标记为 etf。不要把期权的市值当作正股市值。\n' +
         '5. 如果截图不足，也必须输出已能确认的持仓和现金；issues 告诉用户还需要什么截图，例如“完整持仓页”“期权详情页”“现金/购买力页”。\n' +
-        '6. 必须优先读取截图里券商直接显示的浮动盈亏金额和收益率，分别写入 reportedPnl 和 reportedPnlPct（小数形式）；看不到时用 null，不要自己计算。',
+        '6. 必须优先读取截图里券商直接显示的浮动盈亏金额和收益率，分别写入 reportedPnl 和 reportedPnlPct（小数形式）；看不到时用 null，不要自己计算。\n' +
+        '7. symbol 必须是纯代码（大写字母、数字、点或连字号），绝不能包含空格、CALL、PUT；期权方向写入 option.optionType，标的代码写入 option.underlying。\n' +
+        '8. 同一标的的多行分批持仓，除非是行权价或到期日不同的期权，否则合并为一条：shares 相加、buyPrice 加权平均。\n' +
+        '9. SGOV、BIL、SHV、USFR 等货币基金/超短债 ETF 的 assetType 用 "etf"，不要标成 stock。',
     },
     ...imageParts,
   ];

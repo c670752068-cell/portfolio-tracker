@@ -212,4 +212,18 @@ describe('portfolio import normalization', () => {
     expect(result.holdings[0]?.reportedPnl).toBe(-70);
     expect(result.holdings[0]?.reportedPnlPct).toBe(-0.7);
   });
+
+  it('sends hardened symbol, lot-merging, and cash-ETF extraction rules', async () => {
+    setRuntimeConfig();
+    const fetchMock = vi.fn().mockResolvedValueOnce(successResponse());
+    vi.stubGlobal('fetch', fetchMock);
+
+    await parsePortfolioImages(zhipuSettings('glm-4v-flash'), screenshot);
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const prompt = body.messages[1].content[0].text as string;
+    expect(prompt).toContain('绝不能包含空格、CALL、PUT');
+    expect(prompt).toContain('shares 相加、buyPrice 加权平均');
+    expect(prompt).toContain('不要标成 stock');
+  });
 });
