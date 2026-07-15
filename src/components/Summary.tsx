@@ -19,8 +19,6 @@ interface SummaryProps {
 }
 
 export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, rateError, quoteStatus, canRefreshQuotes, onRefreshQuotes }: SummaryProps) {
-  const pnlClass =
-    metrics.totalPnl > 0 ? 'text-emerald-600' : metrics.totalPnl < 0 ? 'text-rose-600' : 'text-slate-500';
   const dayClass =
     metrics.dayChange > 0 ? 'text-emerald-600' : metrics.dayChange < 0 ? 'text-rose-600' : 'text-slate-500';
   return (
@@ -38,14 +36,6 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
         label={`现金及等价物（${displayCurrency}）`}
         value={formatDisplayMoney(metrics.liquidityValue, displayCurrency, rates)}
         sub={`${formatPct(metrics.liquidityWeight)} · 现金 ${formatDisplayMoney(metrics.cashValue, displayCurrency, rates)} · 现金类 ETF ${formatDisplayMoney(metrics.cashEquivalentValue, displayCurrency, rates)}`}
-      />
-      <Card
-        label="总盈亏"
-        value={formatDisplayMoney(metrics.totalPnl, displayCurrency, rates)}
-        sub={`${formatSignedPct(metrics.totalPnlPct)} · 按已知成本计算`}
-        extra={metrics.unknownCostItems > 0 ? `⚠ ${metrics.unknownCostItems} 个持仓成本未知，未计入收益率` : undefined}
-        valueClass={pnlClass}
-        subClass={pnlClass}
       />
       {metrics.optionValue > 0 && (
         <>
@@ -99,16 +89,14 @@ interface CardProps {
   sub?: string;
   valueClass?: string;
   subClass?: string;
-  extra?: string;
 }
 
-function Card({ label, value, sub, valueClass, subClass, extra }: CardProps) {
+function Card({ label, value, sub, valueClass, subClass }: CardProps) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
       <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
       <div className={`mt-1 text-lg font-semibold tabular-nums ${valueClass ?? ''}`}>{value}</div>
       {sub && <div className={`text-xs tabular-nums ${subClass ?? 'text-slate-500 dark:text-slate-400'}`}>{sub}</div>}
-      {extra && <div className="mt-1 text-xs text-amber-600 dark:text-amber-300">{extra}</div>}
     </div>
   );
 }
