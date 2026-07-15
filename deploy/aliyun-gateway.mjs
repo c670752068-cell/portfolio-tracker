@@ -12,6 +12,7 @@ import { createServer } from 'node:http';
 import { get as httpsGet } from 'node:https';
 import { createReadStream } from 'node:fs';
 import { access, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { rename } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 
 const PORT = Number(process.env.PORT || 8789);
@@ -24,6 +25,9 @@ const IMPORT_ARCHIVE_TOKEN = process.env.IMPORT_ARCHIVE_TOKEN || '';
 const IMPORT_ARCHIVE_ROOT = resolve(process.env.IMPORT_ARCHIVE_ROOT || '/opt/portfolio-tracker-data/imports');
 const IMPORT_ARCHIVE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const IMPORT_ARCHIVE_MAX_BYTES = 200 * 1024 * 1024;
+const PORTFOLIO_SYNC_TOKEN = process.env.PORTFOLIO_SYNC_TOKEN || '';
+const PORTFOLIO_POSITIONS_ROOT = resolve(process.env.PORTFOLIO_POSITIONS_ROOT || '/opt/portfolio-tracker-data/positions');
+const PORTFOLIO_POSITIONS_MAX_BYTES = 2 * 1024 * 1024;
 
 const AI_ROUTES = {
   '/api/zhipu/chat/completions': 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
@@ -295,6 +299,93 @@ async function handleImportArchiveRoute(url, req, res) {
   return true;
 }
 
+async function readPositionsBody(req) {
+  let total = 0;
+  const parts = [];
+  for await (const part of req) {
+    total += part.length;
+    if (total > PORTFOLIO_POSITIONS_MAX_BYTES) {
+      const error = new Error('请求体超过 2MB 限制');
+      error.status = 413;
+      throw error;
+    }
+    parts.push(part);
+  }
+  return Buffer.concat(parts);
+}
+
+function positionsRouteNotFound(res) {
+  sendJson(res, 404, { error: { code: 'not_found', message: '未知接口' } });
+}
+
+function positionsAuthorizationMatches(req) {
+  return Boolean(PORTFOLIO_SYNC_TOKEN)
+    && req.headers.authorization === `Bearer ${PORTFOLIO_SYNC_TOKEN}`;
+}
+
+async function handlePortfolioPositionsRoute(url, req, res) {
+  if (url.pathname !== '/api/portfolio/positions') return false;
+  if (!PORTFOLIO_SYNC_TOKEN) {
+    positionsRouteNotFound(res);
+    return true;
+  }
+  if (!positionsAuthorizationMatches(req)) {
+    sendJson(res, 401, { error: { code: 'unauthorized', message: '认证失败' } });
+    return true;
+  }
+  const latestPath = join(PORTFOLIO_POSITIONS_ROOT, 'latest.json');
+  if (req.method === 'GET') {
+    try {
+      const payload = await readFile(latestPath, 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      res.end(payload);
+    } catch {
+      sendJson(res, 404, { error: { code: 'no_data', message: '尚无量化系统持仓数据' } });
+    }
+    return true;
+  }
+  if (req.method !== 'POST') {
+    positionsRouteNotFound(res);
+    return true;
+  }
+  let body;
+  try {
+    body = await readPositionsBody(req);
+  } catch (error) {
+    sendJson(res, error.status || 400, { error: { code: 'request_body_error', message: error.message } });
+    return true;
+  }
+  let snapshot;
+  try {
+    snapshot = JSON.parse(body.toString('utf8'));
+  } catch {
+    sendJson(res, 400, { error: { code: 'invalid_json', message: '请求体不是合法 JSON' } });
+    return true;
+  }
+  if (!Array.isArray(snapshot?.payload?.positions) || typeof snapshot?.payload?.net_liquidation !== 'number' || !Number.isFinite(snapshot.payload.net_liquidation)) {
+    sendJson(res, 400, { error: { code: 'invalid_payload', message: 'payload.positions 必须为数组，payload.net_liquidation 必须为数字' } });
+    return true;
+  }
+  if (snapshot.source !== 'futu-assistant' || typeof snapshot.pushed_at !== 'string' || Number.isNaN(Date.parse(snapshot.pushed_at))) {
+    sendJson(res, 400, { error: { code: 'invalid_envelope', message: 'source 或 pushed_at 不合法' } });
+    return true;
+  }
+  await mkdir(PORTFOLIO_POSITIONS_ROOT, { recursive: true });
+  const temporaryPath = join(PORTFOLIO_POSITIONS_ROOT, `.latest-${process.pid}-${randomBytes(4).toString('hex')}.tmp`);
+  try {
+    await writeFile(temporaryPath, body, { mode: 0o600 });
+    await rename(temporaryPath, latestPath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+  sendJson(res, 200, { ok: true, position_count: snapshot.payload.positions.length, pushed_at: snapshot.pushed_at });
+  return true;
+}
+
 function asNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value !== 'string') return null;
@@ -464,6 +555,7 @@ async function serveStatic(url, req, res) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
   if (await handleImportArchiveRoute(url, req, res)) return;
+  if (await handlePortfolioPositionsRoute(url, req, res)) return;
   if (req.method === 'GET' && url.pathname === '/api/health') {
     sendJson(res, 200, { ok: true, service: 'portfolio-ai-gateway', time: new Date().toISOString() });
     return;
