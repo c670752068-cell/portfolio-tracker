@@ -117,4 +117,15 @@ describe('analyzePortfolio data-quality aware risk scan', () => {
     expect(issues.some((item) => item.priority === 'required' && item.field.includes('成本待核对'))).toBe(true);
     expect(findings.some((item) => item.title.includes('NVDA 浮亏'))).toBe(false);
   });
+
+  it('does not emit leveraged ETF noise for TQQQ or NVDL', () => {
+    const findings = findingsFor([
+      holding('TQQQ', 10, { assetType: 'leveraged_etf' }),
+      holding('NVDL', 10, { assetType: 'leveraged_etf' }),
+      holding('AAPL', 30),
+      holding('MSFT', 30),
+    ], 20);
+
+    expect(findings.some((item) => item.title.includes('为杠杆 ETF'))).toBe(false);
+  });
 });

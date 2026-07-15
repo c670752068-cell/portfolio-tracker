@@ -218,14 +218,6 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
     }
   }
 
-  for (const metric of metrics.holdingsMetrics.filter((m) => m.holding.assetType === 'leveraged_etf')) {
-    findings.push({
-      level: 'warn',
-      title: `${metric.holding.symbol} 为杠杆 ETF`,
-      detail: '杠杆 ETF 通常按日重置，较长持有期可能出现路径依赖和波动损耗；该提示不代表买卖建议。',
-    });
-  }
-
   if (findings.length === 0) {
     findings.push({
       level: 'info',
