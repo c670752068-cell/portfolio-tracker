@@ -17,6 +17,8 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     autoRefreshQuotes: true,
     displayCurrency: 'USD',
     exposureTargetPct: 100,
+    quantSyncEnabled: false,
+    quantSyncToken: '',
     ...overrides,
   };
 }

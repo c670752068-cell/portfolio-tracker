@@ -35,6 +35,10 @@ export function getServerQuoteProxyUrl(): string {
   return apiUrl('/api/quotes');
 }
 
+export function getServerPortfolioPositionsUrl(): string {
+  return apiUrl('/api/portfolio/positions');
+}
+
 export function hasServerGateway(): boolean {
   return Boolean(runtimeApiBaseUrl());
 }

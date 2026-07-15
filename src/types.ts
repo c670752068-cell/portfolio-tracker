@@ -54,7 +54,8 @@ export interface Holding {
   costOverride?: number;
   missingFields?: string[];
   confidence?: 'high' | 'medium' | 'low';
-  source?: 'manual' | 'image-import';
+  source?: 'manual' | 'image-import' | 'quant-sync';
+  broker?: string;
   cashEquivalent?: boolean;
   leverageFactor?: number;
   reportedPnl?: number | null;
@@ -65,7 +66,8 @@ export interface Holding {
 export interface CashPosition {
   amount: number;
   currency: Currency;
-  source?: 'manual' | 'image-import';
+  source?: 'manual' | 'image-import' | 'quant-sync';
+  note?: string;
 }
 
 export interface PortfolioState {
@@ -88,6 +90,31 @@ export interface AppSettings {
   autoRefreshQuotes: boolean;
   displayCurrency: DisplayCurrency;
   exposureTargetPct: number;
+  quantSyncEnabled: boolean;
+  quantSyncToken: string;
+}
+
+export interface QuantPosition {
+  broker: string;
+  symbol: string;
+  asset_type: 'stock' | 'etf' | 'option';
+  qty: number;
+  market_value: number;
+}
+
+export interface QuantPositionsPayload {
+  as_of: string;
+  currency: string;
+  net_liquidation: number;
+  broker: string;
+  position_count_by_broker?: Record<string, number>;
+  positions: QuantPosition[];
+}
+
+export interface QuantPositionsSnapshot {
+  payload: QuantPositionsPayload;
+  pushed_at: string;
+  source: 'futu-assistant';
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */

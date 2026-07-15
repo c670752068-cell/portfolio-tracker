@@ -13,6 +13,8 @@ import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './mar
 import { computeMetrics } from './metrics';
 import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDetailsApplyResult } from './importMerge';
 import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
+import { applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions, type QuantMappedPortfolio } from './quantSync';
+import { getServerPortfolioPositionsUrl, hasServerGateway } from './runtimeConfig';
 import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState } from './types';
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
@@ -31,9 +33,19 @@ interface QuoteStatus {
   summary: string;
 }
 
+interface QuantStatus {
+  loading: boolean;
+  asOf: string | null;
+  pushedAt: string | null;
+  stale: boolean;
+  error: string;
+  summary: string;
+}
+
 type ImportNotice =
   | { mode: 'full'; result: ImportedPortfolio }
-  | { mode: 'option'; result: OptionDetailsApplyResult };
+  | { mode: 'option'; result: OptionDetailsApplyResult }
+  | { mode: 'quant'; result: QuantMappedPortfolio };
 
 function generateId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -97,14 +109,25 @@ export default function App() {
     error: '',
     summary: '',
   });
+  const [quantStatus, setQuantStatus] = useState<QuantStatus>({
+    loading: false,
+    asOf: null,
+    pushedAt: null,
+    stale: false,
+    error: '',
+    summary: '',
+  });
   const [lastImport, setLastImport] = useState<ImportNotice | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const holdingsRef = useRef(portfolio.holdings);
+  const portfolioRef = useRef(portfolio);
   const quoteRefreshInFlightRef = useRef(false);
+  const quantAutoSyncKeyRef = useRef('');
 
   useEffect(() => {
     savePortfolio(portfolio);
     holdingsRef.current = portfolio.holdings;
+    portfolioRef.current = portfolio;
   }, [portfolio]);
 
   useEffect(() => {
@@ -172,6 +195,57 @@ export default function App() {
       quoteRefreshInFlightRef.current = false;
     }
   }, [settings]);
+
+  const refreshQuantPositions = useCallback(async () => {
+    const url = getServerPortfolioPositionsUrl();
+    if (!url) {
+      setQuantStatus((status) => ({ ...status, loading: false, error: '量化同步仅在 VPS 入口可用' }));
+      return;
+    }
+    if (!settings.quantSyncEnabled) {
+      setQuantStatus((status) => ({ ...status, loading: false, error: '请先在设置中启用量化系统同步' }));
+      return;
+    }
+    if (!settings.quantSyncToken.trim()) {
+      setQuantStatus((status) => ({ ...status, loading: false, error: '请先在设置中填写同步 Token' }));
+      return;
+    }
+
+    setQuantStatus((status) => ({ ...status, loading: true, error: '' }));
+    try {
+      const snapshot = await fetchQuantPositions(url, settings.quantSyncToken.trim());
+      const current = portfolioRef.current;
+      const mapped = mapQuantPositions(snapshot.payload, current);
+      backupPortfolio(current);
+      const next = applyQuantSync(current, mapped);
+      portfolioRef.current = next;
+      setPortfolio(next);
+      setLastImport({ mode: 'quant', result: mapped });
+      setQuantStatus({
+        loading: false,
+        asOf: snapshot.payload.as_of,
+        pushedAt: snapshot.pushed_at,
+        stale: isQuantSnapshotStale(snapshot.pushed_at),
+        error: '',
+        summary: `已同步 ${mapped.holdings.length} 个持仓、${mapped.cash.length} 个推算现金条目`,
+      });
+    } catch (error) {
+      setQuantStatus((status) => ({
+        ...status,
+        loading: false,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }, [settings.quantSyncEnabled, settings.quantSyncToken]);
+
+  useEffect(() => {
+    const url = getServerPortfolioPositionsUrl();
+    if (!settings.quantSyncEnabled || !settings.quantSyncToken.trim() || !url) return;
+    const key = `${url}|${settings.quantSyncToken.trim()}`;
+    if (quantAutoSyncKeyRef.current === key) return;
+    quantAutoSyncKeyRef.current = key;
+    void refreshQuantPositions();
+  }, [refreshQuantPositions, settings.quantSyncEnabled, settings.quantSyncToken]);
 
   useEffect(() => {
     if (!settings.autoRefreshQuotes || !canSyncQuotes(settings)) return undefined;
@@ -292,6 +366,11 @@ export default function App() {
             canRefreshQuotes={portfolio.holdings.length > 0 && canSyncQuotes(settings)}
             onRefreshQuotes={() => refreshQuotes('manual')}
             exposureTargetPct={settings.exposureTargetPct}
+            quantStatus={quantStatus}
+            quantSyncEnabled={settings.quantSyncEnabled}
+            quantGatewayAvailable={hasServerGateway()}
+            quantTokenConfigured={Boolean(settings.quantSyncToken.trim())}
+            onRefreshQuant={refreshQuantPositions}
           />
           {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} onUndo={undoLastImport} />}
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
@@ -351,14 +430,18 @@ function ImportResultNotice({ result: notice, onClose, onUndo }: { result: Impor
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-semibold">{notice.mode === 'full' ? '截图识别已自动导入' : '期权详情已安全补充'}</div>
+          <div className="font-semibold">{notice.mode === 'full' ? '截图识别已自动导入' : notice.mode === 'option' ? '期权详情已安全补充' : '量化系统持仓已同步'}</div>
           {notice.mode === 'full' ? (
             <p className="mt-1 text-xs">
               本次已替换上一批截图导入（手动添加的条目未受影响）；共导入 {notice.result.holdings.length} 个持仓、{notice.result.cash.length} 个现金条目。
             </p>
-          ) : (
+          ) : notice.mode === 'option' ? (
             <p className="mt-1 text-xs">
               已更新 {notice.result.updated.length} 个期权、补充新增 {notice.result.added.length} 个；未动任何正股、ETF 与现金。
+            </p>
+          ) : (
+            <p className="mt-1 text-xs">
+              已替换量化同步与截图导入条目；共同步 {notice.result.holdings.length} 个持仓、{notice.result.cash.length} 个推算现金条目，手工条目未受影响。
             </p>
           )}
         </div>
@@ -377,7 +460,7 @@ function ImportResultNotice({ result: notice, onClose, onUndo }: { result: Impor
         </div>
       )}
       <button type="button" onClick={onUndo} className="mt-2 rounded-md border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-100 dark:hover:bg-emerald-900/40">
-        撤销本次导入
+        {notice.mode === 'quant' ? '撤销本次同步' : '撤销本次导入'}
       </button>
     </div>
   );

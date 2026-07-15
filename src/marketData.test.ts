@@ -10,6 +10,8 @@ const settings: AppSettings = {
   autoRefreshQuotes: true,
   displayCurrency: 'USD',
   exposureTargetPct: 100,
+  quantSyncEnabled: false,
+  quantSyncToken: '',
 };
 
 const usdRates: ExchangeRates = {
