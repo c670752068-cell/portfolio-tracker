@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { applyImageImport } from './importMerge';
+import type { ImportedPortfolio, PortfolioState } from './types';
 
 const SETTINGS_KEY = 'portfolio-tracker:settings-v1';
 
@@ -32,5 +34,33 @@ describe('display currency settings persistence', () => {
     const settings = loadSettings();
     saveSettings({ ...settings, displayCurrency: 'CNY' });
     expect(loadSettings().displayCurrency).toBe('CNY');
+  });
+});
+
+describe('portfolio import backup', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('localStorage', memoryStorage());
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('restores the exact pre-import portfolio and clears the one-tap backup', async () => {
+    const { backupPortfolio, clearPortfolioBackup, loadPortfolioBackup } = await import('./storage');
+    const before: PortfolioState = {
+      holdings: [{ id: 'msft', symbol: 'MSFT', name: 'Microsoft', shares: 10, buyPrice: 300, currentPrice: 400, sector: '科技', currency: 'USD' }],
+      cash: [{ amount: 5000, currency: 'USD', source: 'manual' }],
+      updatedAt: '2026-07-15T00:00:00.000Z',
+    };
+    const imported: ImportedPortfolio = {
+      holdings: [{ symbol: 'IGV', name: 'IGV Call', shares: 2, buyPrice: 10, currentPrice: 18, sector: '期权', currency: 'USD', assetType: 'option', source: 'image-import' }],
+      cash: [], issues: [], sourceSummary: 'option-only screenshot',
+    };
+
+    backupPortfolio(before);
+    const afterImport = applyImageImport(before, imported, () => 'igv');
+    expect(afterImport).not.toEqual(before);
+    expect(loadPortfolioBackup()).toEqual(before);
+    clearPortfolioBackup();
+    expect(loadPortfolioBackup()).toBeNull();
   });
 });

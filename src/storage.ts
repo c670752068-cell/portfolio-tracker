@@ -4,6 +4,7 @@ import { getServerQuoteProxyUrl } from './runtimeConfig';
 
 const PORTFOLIO_KEY = 'portfolio-tracker:portfolio-v1';
 const SETTINGS_KEY = 'portfolio-tracker:settings-v1';
+const BACKUP_KEY = 'portfolio-tracker:portfolio-backup-v1';
 
 const emptyPortfolio: PortfolioState = {
   holdings: [],
@@ -49,6 +50,26 @@ export function loadPortfolio(): PortfolioState {
 export function savePortfolio(state: PortfolioState): void {
   const next: PortfolioState = { ...state, updatedAt: new Date().toISOString() };
   localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(next));
+}
+
+export function backupPortfolio(state: PortfolioState): void {
+  localStorage.setItem(BACKUP_KEY, JSON.stringify(state));
+}
+
+export function loadPortfolioBackup(): PortfolioState | null {
+  try {
+    const raw = localStorage.getItem(BACKUP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PortfolioState;
+    if (!Array.isArray(parsed.holdings) || !Array.isArray(parsed.cash)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPortfolioBackup(): void {
+  localStorage.removeItem(BACKUP_KEY);
 }
 
 export function loadSettings(): AppSettings {

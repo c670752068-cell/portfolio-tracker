@@ -12,7 +12,7 @@ import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { computeMetrics } from './metrics';
 import { applyImageImport, countNeedsReview } from './importMerge';
-import { loadPortfolio, loadSettings, savePortfolio, saveSettings } from './storage';
+import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
 import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, PortfolioState } from './types';
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
@@ -233,9 +233,17 @@ export default function App() {
     saveSettings(next);
   }
   function importFromImages(result: ImportedPortfolio) {
+    backupPortfolio(portfolio);
     setPortfolio((current) => applyImageImport(current, result, generateId));
     setLastImport(result);
     setTab('dashboard');
+  }
+  function undoLastImport() {
+    const backup = loadPortfolioBackup();
+    if (!backup) return;
+    setPortfolio(backup);
+    clearPortfolioBackup();
+    setLastImport(null);
   }
 
   return (
@@ -270,7 +278,7 @@ export default function App() {
             canRefreshQuotes={portfolio.holdings.length > 0 && canSyncQuotes(settings)}
             onRefreshQuotes={() => refreshQuotes('manual')}
           />
-          {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} />}
+          {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} onUndo={undoLastImport} />}
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
             <h3 className="mb-2 text-sm font-semibold">资产占比</h3>
             <AllocationChart metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
@@ -322,7 +330,7 @@ export default function App() {
   );
 }
 
-function ImportResultNotice({ result, onClose }: { result: ImportedPortfolio; onClose: () => void }) {
+function ImportResultNotice({ result, onClose, onUndo }: { result: ImportedPortfolio; onClose: () => void; onUndo: () => void }) {
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
       <div className="flex items-start justify-between gap-3">
@@ -346,6 +354,9 @@ function ImportResultNotice({ result, onClose }: { result: ImportedPortfolio; on
           </ul>
         </div>
       )}
+      <button type="button" onClick={onUndo} className="mt-2 rounded-md border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-100 dark:hover:bg-emerald-900/40">
+        撤销本次导入
+      </button>
     </div>
   );
 }
