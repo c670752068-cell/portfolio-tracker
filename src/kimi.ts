@@ -548,7 +548,7 @@ function normalizeHolding(value: unknown, issues: ImportIssue[]): ImportedPortfo
   if (!isRecord(value)) return null;
   const assetType = asAssetType(value.assetType);
   const rawSymbol = asText(value.symbol).toUpperCase();
-  const optionSymbolMatch = rawSymbol.match(/^([A-Z][A-Z0-9.\-]{0,9})\s+(CALL|PUT)$/);
+  const optionSymbolMatch = rawSymbol.match(/^([A-Z][A-Z0-9.-]{0,9})\s+(CALL|PUT)$/);
   const symbol = optionSymbolMatch?.[1] ?? rawSymbol;
   const name = asText(value.name);
   if (!symbol && !name) return null;
@@ -626,7 +626,7 @@ function normalizeHolding(value: unknown, issues: ImportIssue[]): ImportedPortfo
 }
 
 export function isValidTicker(symbol: string): boolean {
-  return /^[A-Z][A-Z0-9.\-]{0,9}$/.test(symbol.trim().toUpperCase());
+  return /^[A-Z][A-Z0-9.-]{0,9}$/.test(symbol.trim().toUpperCase());
 }
 
 function normalizeCash(value: unknown): CashPosition | null {

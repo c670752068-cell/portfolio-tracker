@@ -39,4 +39,33 @@ describe('Summary cards', () => {
     expect(html).toContain('总资产（USD）');
     expect(html).toContain('持仓市值（USD）');
   });
+
+  it('shows equivalent exposure decomposition, target, and uncomputable option warning', () => {
+    const metrics = computeMetrics({
+      holdings: [
+        { id: 'msft', symbol: 'MSFT', name: 'Microsoft', shares: 10, buyPrice: 100, currentPrice: 100, sector: '科技', currency: 'USD', assetType: 'stock' },
+        {
+          id: 'igv', symbol: 'IGV', name: 'IGV CALL', shares: 1, buyPrice: 10, currentPrice: 10,
+          sector: '科技', currency: 'USD', assetType: 'option',
+          option: { underlying: 'IGV', optionType: 'call', strike: 80, expiration: '2027-01-15', contractMultiplier: 100, delta: null, theta: null, gamma: null, vega: null, impliedVolatility: null, underlyingPrice: 95 },
+        },
+      ], cash: [], updatedAt: 'old',
+    }, rates);
+
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD"
+        onDisplayCurrencyChange={() => undefined} valueHistory={[]} rateError=""
+        quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={120}
+      />,
+    );
+
+    expect(html).toContain('等效正股暴露（USD）');
+    expect(html).toContain('目标 120%');
+    expect(html).toContain('正股');
+    expect(html).toContain('杠杆折算');
+    expect(html).toContain('期权Δ');
+    expect(html).toContain('1 个期权缺 Delta/标的价未计入');
+  });
 });
