@@ -13,7 +13,7 @@ import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './mar
 import { computeMetrics } from './metrics';
 import { applyImageImport } from './importMerge';
 import { loadPortfolio, loadSettings, savePortfolio, saveSettings } from './storage';
-import type { AppSettings, CashPosition, ExchangeRates, Holding, ImportedPortfolio, PortfolioState } from './types';
+import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, PortfolioState } from './types';
 import './App.css';
 
 type Tab = 'dashboard' | 'holdings' | 'analysis' | 'settings';
@@ -215,6 +215,11 @@ export default function App() {
     setSettings(next);
     saveSettings(next);
   }
+  function setDisplayCurrency(displayCurrency: DisplayCurrency) {
+    const next = { ...settings, displayCurrency };
+    setSettings(next);
+    saveSettings(next);
+  }
   function importFromImages(result: ImportedPortfolio) {
     setPortfolio((current) => applyImageImport(current, result, generateId));
     setLastImport(result);
@@ -241,6 +246,8 @@ export default function App() {
           <Summary
             metrics={metrics}
             rates={rates}
+            displayCurrency={settings.displayCurrency}
+            onDisplayCurrencyChange={setDisplayCurrency}
             rateError={rateError}
             quoteStatus={quoteStatus}
             canRefreshQuotes={portfolio.holdings.length > 0 && canSyncQuotes(settings)}
@@ -249,7 +256,7 @@ export default function App() {
           {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} />}
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
             <h3 className="mb-2 text-sm font-semibold">资产占比</h3>
-            <AllocationChart metrics={metrics} />
+            <AllocationChart metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
             <h3 className="mb-2 text-sm font-semibold">本地风险扫描</h3>
@@ -263,6 +270,8 @@ export default function App() {
           <ImageImportPanel settings={settings} onConfirm={importFromImages} onOpenSettings={() => setTab('settings')} />
           <HoldingsTable
             metrics={metrics.holdingsMetrics}
+            displayCurrency={settings.displayCurrency}
+            rates={rates}
             onAdd={addHolding}
             onUpdate={updateHolding}
             onDelete={deleteHolding}

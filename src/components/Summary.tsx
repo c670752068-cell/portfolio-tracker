@@ -1,9 +1,12 @@
-import type { ExchangeRates, PortfolioMetrics } from '../types';
-import { formatMoney, formatPct, formatSignedPct } from '../format';
+import type { DisplayCurrency, ExchangeRates, PortfolioMetrics } from '../types';
+import { formatPct, formatSignedPct } from '../format';
+import { formatDisplayMoney } from '../displayCurrency';
 
 interface SummaryProps {
   metrics: PortfolioMetrics;
   rates: ExchangeRates;
+  displayCurrency: DisplayCurrency;
+  onDisplayCurrencyChange: (currency: DisplayCurrency) => void;
   rateError: string;
   quoteStatus: {
     loading: boolean;
@@ -15,30 +18,30 @@ interface SummaryProps {
   onRefreshQuotes: () => void;
 }
 
-export function Summary({ metrics, rates, rateError, quoteStatus, canRefreshQuotes, onRefreshQuotes }: SummaryProps) {
+export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, rateError, quoteStatus, canRefreshQuotes, onRefreshQuotes }: SummaryProps) {
   const pnlClass =
     metrics.totalPnl > 0 ? 'text-emerald-600' : metrics.totalPnl < 0 ? 'text-rose-600' : 'text-slate-500';
   const dayClass =
     metrics.dayChange > 0 ? 'text-emerald-600' : metrics.dayChange < 0 ? 'text-rose-600' : 'text-slate-500';
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <Card label="总资产（USD）" value={formatMoney(metrics.totalValue)} />
+      <Card label={`总资产（${displayCurrency}）`} value={formatDisplayMoney(metrics.totalValue, displayCurrency, rates)} />
       <Card
-        label="今日涨跌（USD）"
-        value={formatMoney(metrics.dayChange)}
+        label={`今日涨跌（${displayCurrency}）`}
+        value={formatDisplayMoney(metrics.dayChange, displayCurrency, rates)}
         sub={formatSignedPct(metrics.dayChangePct)}
         valueClass={dayClass}
         subClass={dayClass}
       />
-      <Card label="持仓市值（USD）" value={formatMoney(metrics.equityValue)} sub={`${formatPct(1 - metrics.cashWeight)}`} />
+      <Card label={`持仓市值（${displayCurrency}）`} value={formatDisplayMoney(metrics.equityValue, displayCurrency, rates)} sub={`${formatPct(1 - metrics.cashWeight)}`} />
       <Card
-        label="现金及等价物（USD）"
-        value={formatMoney(metrics.liquidityValue)}
-        sub={`${formatPct(metrics.liquidityWeight)} · 现金 ${formatMoney(metrics.cashValue)} · 现金类 ETF ${formatMoney(metrics.cashEquivalentValue)}`}
+        label={`现金及等价物（${displayCurrency}）`}
+        value={formatDisplayMoney(metrics.liquidityValue, displayCurrency, rates)}
+        sub={`${formatPct(metrics.liquidityWeight)} · 现金 ${formatDisplayMoney(metrics.cashValue, displayCurrency, rates)} · 现金类 ETF ${formatDisplayMoney(metrics.cashEquivalentValue, displayCurrency, rates)}`}
       />
       <Card
         label="总盈亏"
-        value={formatMoney(metrics.totalPnl)}
+        value={formatDisplayMoney(metrics.totalPnl, displayCurrency, rates)}
         sub={`${formatSignedPct(metrics.totalPnlPct)} · 按已知成本计算`}
         extra={metrics.unknownCostItems > 0 ? `⚠ ${metrics.unknownCostItems} 个持仓成本未知，未计入收益率` : undefined}
         valueClass={pnlClass}
@@ -46,13 +49,25 @@ export function Summary({ metrics, rates, rateError, quoteStatus, canRefreshQuot
       />
       {metrics.optionValue > 0 && (
         <>
-          <Card label="期权权利金（USD）" value={formatMoney(metrics.optionValue)} sub={`${formatPct(metrics.optionWeight)} 的总资产`} />
-          <Card label="期权 Delta 暴露" value={formatMoney(metrics.deltaAdjustedExposure)} sub="仅已识别 Delta/标的现价的合约" />
+          <Card label={`期权权利金（${displayCurrency}）`} value={formatDisplayMoney(metrics.optionValue, displayCurrency, rates)} sub={`${formatPct(metrics.optionWeight)} 的总资产`} />
+          <Card label={`期权 Delta 暴露（${displayCurrency}）`} value={formatDisplayMoney(metrics.deltaAdjustedExposure, displayCurrency, rates)} sub="仅已识别 Delta/标的现价的合约" />
         </>
       )}
       <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:col-span-4">
-        <span className="font-medium text-slate-700 dark:text-slate-200">汇率换算：</span>
-        <span className="text-slate-500 dark:text-slate-400">1 USD ≈ {rates.CNY.toFixed(4)} CNY · {rates.HKD.toFixed(4)} HKD</span>
+        <label className="font-medium text-slate-700 dark:text-slate-200">
+          显示货币：
+          <select
+            aria-label="显示货币"
+            value={displayCurrency}
+            onChange={(event) => onDisplayCurrencyChange(event.target.value as DisplayCurrency)}
+            className="ml-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"
+          >
+            {(['USD', 'CNY', 'HKD', 'JPY', 'EUR', 'GBP'] as DisplayCurrency[]).map((currency) => (
+              <option key={currency} value={currency}>{currency}</option>
+            ))}
+          </select>
+        </label>
+        <span className="ml-3 text-slate-500 dark:text-slate-400">1 USD ≈ {rates.CNY.toFixed(4)} CNY</span>
         <span className="ml-2 text-slate-400">{rates.source === 'live' ? `实时数据 ${rates.updatedAt ?? ''}` : rates.source === 'cache' ? `缓存数据 ${rates.updatedAt ?? ''}` : '近似兜底值'}</span>
         {rateError && <span className="ml-2 text-amber-600 dark:text-amber-300">{rateError}</span>}
       </div>

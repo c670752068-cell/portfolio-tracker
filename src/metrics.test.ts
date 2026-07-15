@@ -6,6 +6,9 @@ const usdRates: ExchangeRates = {
   USD: 1,
   CNY: 7,
   HKD: 7.8,
+  JPY: 155,
+  EUR: 0.92,
+  GBP: 0.79,
   updatedAt: '2026-07-14T00:00:00.000Z',
   source: 'fallback',
 };

@@ -5,7 +5,7 @@ import { crossCheckImportedPnl } from './importMerge';
 import type { ExchangeRates, Holding, ImportIssue, PortfolioState } from './types';
 
 const usdRates: ExchangeRates = {
-  USD: 1, CNY: 7, HKD: 7.8, updatedAt: null, source: 'fallback',
+  USD: 1, CNY: 7, HKD: 7.8, JPY: 155, EUR: 0.92, GBP: 0.79, updatedAt: null, source: 'fallback',
 };
 
 function holding(symbol: string, value: number, overrides: Partial<Holding> = {}): Holding {

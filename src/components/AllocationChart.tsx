@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Cell, Legend, Pie, PieChart, Tooltip } from 'recharts';
-import type { PortfolioMetrics } from '../types';
-import { formatMoney, formatPct } from '../format';
+import type { DisplayCurrency, ExchangeRates, PortfolioMetrics } from '../types';
+import { formatPct } from '../format';
 import { buildAllocationSlices, type AllocationSlice } from '../allocation';
+import { formatDisplayMoney } from '../displayCurrency';
 
 const COLORS = [
   '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4',
@@ -12,9 +13,11 @@ const COLORS = [
 
 interface AllocationChartProps {
   metrics: PortfolioMetrics;
+  displayCurrency: DisplayCurrency;
+  rates: ExchangeRates;
 }
 
-export function AllocationChart({ metrics }: AllocationChartProps) {
+export function AllocationChart({ metrics, displayCurrency, rates }: AllocationChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const slices = buildAllocationSlices(metrics);
@@ -80,7 +83,7 @@ export function AllocationChart({ metrics }: AllocationChartProps) {
               formatter={(value, _name, item) => {
                 const slice = item.payload as AllocationSlice;
                 const num = typeof value === 'number' ? value : Number(value);
-                return [`${formatMoney(num)} (${formatPct(slice.weight)})`, slice.name];
+                return [`${formatDisplayMoney(num, displayCurrency, rates)} (${formatPct(slice.weight)})`, slice.name];
               }}
             />
             {!isNarrow && <Legend wrapperStyle={{ fontSize: '0.75rem' }} />}
@@ -96,7 +99,10 @@ export function AllocationChart({ metrics }: AllocationChartProps) {
                       style={{ backgroundColor: sliceColor(slice, index) }}
                     />
                     <span className="min-w-0 flex-1 truncate text-slate-600" title={slice.name}>{slice.name}</span>
-                    <span className="shrink-0 font-medium text-slate-800">{formatPct(slice.weight)}</span>
+                    <span className="shrink-0 text-right font-medium text-slate-800">
+                      <span className="block">{formatPct(slice.weight)}</span>
+                      <span className="block text-[10px] font-normal text-slate-500">{formatDisplayMoney(slice.value, displayCurrency, rates)}</span>
+                    </span>
                   </div>
                 );
               })}

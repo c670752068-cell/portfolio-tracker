@@ -3,7 +3,7 @@ import { buildAllocationSlices } from './allocation';
 import { computeMetrics } from './metrics';
 import type { ExchangeRates, Holding, PortfolioState } from './types';
 
-const rates: ExchangeRates = { USD: 1, CNY: 7, HKD: 7.8, updatedAt: null, source: 'fallback' };
+const rates: ExchangeRates = { USD: 1, CNY: 7, HKD: 7.8, JPY: 155, EUR: 0.92, GBP: 0.79, updatedAt: null, source: 'fallback' };
 
 function row(id: string, symbol: string, value: number): Holding {
   return {

@@ -6,6 +6,9 @@ const fallbackRates: ExchangeRates = {
   USD: 1,
   CNY: 7.2,
   HKD: 7.8,
+  JPY: 155,
+  EUR: 0.92,
+  GBP: 0.79,
   updatedAt: null,
   source: 'fallback',
 };
@@ -20,6 +23,9 @@ export function loadExchangeRates(): ExchangeRates {
       USD: 1,
       CNY: parsed.CNY,
       HKD: parsed.HKD,
+      JPY: isPositive(parsed.JPY) ? parsed.JPY : fallbackRates.JPY,
+      EUR: isPositive(parsed.EUR) ? parsed.EUR : fallbackRates.EUR,
+      GBP: isPositive(parsed.GBP) ? parsed.GBP : fallbackRates.GBP,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
       source: 'cache',
     };
@@ -29,16 +35,24 @@ export function loadExchangeRates(): ExchangeRates {
 }
 
 export async function fetchLatestExchangeRates(): Promise<ExchangeRates> {
-  const response = await fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=CNY,HKD');
+  const response = await fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=CNY,HKD,JPY,EUR,GBP');
   if (!response.ok) throw new Error(`汇率服务返回 HTTP ${response.status}`);
   const payload = (await response.json()) as { date?: string; rates?: Record<string, number> };
   const cny = payload.rates?.CNY;
   const hkd = payload.rates?.HKD;
-  if (!isPositive(cny) || !isPositive(hkd)) throw new Error('汇率服务未返回完整的 CNY / HKD 数据');
+  const jpy = payload.rates?.JPY;
+  const eur = payload.rates?.EUR;
+  const gbp = payload.rates?.GBP;
+  if (!isPositive(cny) || !isPositive(hkd) || !isPositive(jpy) || !isPositive(eur) || !isPositive(gbp)) {
+    throw new Error('汇率服务未返回完整的 CNY / HKD / JPY / EUR / GBP 数据');
+  }
   const rates: ExchangeRates = {
     USD: 1,
     CNY: cny,
     HKD: hkd,
+    JPY: jpy,
+    EUR: eur,
+    GBP: gbp,
     updatedAt: payload.date ?? new Date().toISOString().slice(0, 10),
     source: 'live',
   };

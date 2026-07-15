@@ -7,6 +7,7 @@ const settings: AppSettings = {
   zhipuApiKey: '', zhipuModel: 'glm-4.6v-flash', zhipuProxyUrl: '',
   quoteProvider: 'proxy', quoteApiKey: '', quoteProxyUrl: 'https://quotes.example.test/api/quotes',
   autoRefreshQuotes: true,
+  displayCurrency: 'USD',
 };
 
 function holding(overrides: Partial<Holding>): Holding {

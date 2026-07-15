@@ -1,4 +1,4 @@
-import type { AppSettings, PortfolioState } from './types';
+import type { AppSettings, DisplayCurrency, PortfolioState } from './types';
 import { sanitizeEndpointUrl } from './endpointUrl';
 import { getServerQuoteProxyUrl } from './runtimeConfig';
 
@@ -25,6 +25,7 @@ function buildDefaultSettings(): AppSettings {
   quoteApiKey: '',
   quoteProxyUrl,
   autoRefreshQuotes: true,
+  displayCurrency: 'USD',
   };
 }
 
@@ -69,6 +70,7 @@ export function loadSettings(): AppSettings {
       // browser data is never overwritten when the user already chose a provider.
       quoteProvider: parsed.quoteProvider ?? defaultSettings.quoteProvider,
       quoteProxyUrl: sanitizeEndpointUrl(parsed.quoteProxyUrl ?? defaultSettings.quoteProxyUrl),
+      displayCurrency: isDisplayCurrency(parsed.displayCurrency) ? parsed.displayCurrency : defaultSettings.displayCurrency,
     };
   } catch {
     return defaultSettings;
@@ -77,4 +79,8 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(settings: AppSettings): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function isDisplayCurrency(value: unknown): value is DisplayCurrency {
+  return ['USD', 'CNY', 'HKD', 'JPY', 'EUR', 'GBP'].includes(String(value));
 }

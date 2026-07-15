@@ -1,5 +1,7 @@
 export type Currency = 'USD' | 'CNY' | 'HKD' | 'OTHER';
 
+export type DisplayCurrency = 'USD' | 'CNY' | 'HKD' | 'JPY' | 'EUR' | 'GBP';
+
 export type AssetType = 'stock' | 'etf' | 'leveraged_etf' | 'option' | 'fund' | 'other';
 
 export type QuoteProvider = 'none' | 'finnhub' | 'fmp' | 'alphavantage' | 'proxy';
@@ -83,6 +85,7 @@ export interface AppSettings {
   quoteApiKey: string;
   quoteProxyUrl: string;
   autoRefreshQuotes: boolean;
+  displayCurrency: DisplayCurrency;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */
@@ -90,6 +93,9 @@ export interface ExchangeRates {
   USD: number;
   CNY: number;
   HKD: number;
+  JPY: number;
+  EUR: number;
+  GBP: number;
   updatedAt: string | null;
   source: 'live' | 'cache' | 'fallback';
 }

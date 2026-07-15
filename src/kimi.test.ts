@@ -15,6 +15,7 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     quoteApiKey: '',
     quoteProxyUrl: '',
     autoRefreshQuotes: true,
+    displayCurrency: 'USD',
     ...overrides,
   };
 }
