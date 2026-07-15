@@ -6,6 +6,7 @@ import { HoldingsTable } from './components/HoldingsTable';
 import { ImageImportPanel } from './components/ImageImportPanel';
 import { RiskList } from './components/RiskList';
 import { SettingsPanel } from './components/SettingsPanel';
+import { ScenarioCalculator } from './components/ScenarioCalculator';
 import { Summary } from './components/Summary';
 import { analyzePortfolio } from './analyzer';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
@@ -19,7 +20,7 @@ import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
 
-type Tab = 'dashboard' | 'holdings' | 'analysis' | 'settings';
+type Tab = 'dashboard' | 'holdings' | 'analysis' | 'calculator' | 'settings';
 type QuoteRefreshReason = 'manual' | 'daily';
 
 const DAILY_QUOTE_SYNC_KEY = 'portfolio-tracker:daily-quote-sync-key-v1';
@@ -349,6 +350,7 @@ export default function App() {
             onClick={() => setTab('holdings')}
           />
           <TabBtn label="分析" active={tab === 'analysis'} onClick={() => setTab('analysis')} />
+          <TabBtn label="计算器" active={tab === 'calculator'} onClick={() => setTab('calculator')} />
           <TabBtn label="设置" active={tab === 'settings'} onClick={() => setTab('settings')} />
         </nav>
       </header>
@@ -404,6 +406,10 @@ export default function App() {
           <RiskList findings={findings} />
           <AnalysisPanel settings={settings} metrics={metrics} localFindings={findings} />
         </section>
+      )}
+
+      {tab === 'calculator' && (
+        <ScenarioCalculator metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
       )}
 
       {tab === 'settings' && (
