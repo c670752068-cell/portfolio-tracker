@@ -35,6 +35,18 @@ describe('display currency settings persistence', () => {
     saveSettings({ ...settings, displayCurrency: 'CNY' });
     expect(loadSettings().displayCurrency).toBe('CNY');
   });
+
+  it('defaults old settings without an exposure target to 100 percent', async () => {
+    const { loadSettings } = await import('./storage');
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ aiProvider: 'zhipu' }));
+    expect(loadSettings().exposureTargetPct).toBe(100);
+  });
+
+  it('falls back to 100 when the stored exposure target is outside 50–300', async () => {
+    const { loadSettings } = await import('./storage');
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ exposureTargetPct: 500 }));
+    expect(loadSettings().exposureTargetPct).toBe(100);
+  });
 });
 
 describe('portfolio import backup', () => {

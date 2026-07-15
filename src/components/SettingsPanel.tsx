@@ -35,6 +35,9 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
       proxyUrl: sanitizeEndpointUrl(draft.proxyUrl),
       zhipuProxyUrl: sanitizeEndpointUrl(draft.zhipuProxyUrl),
       quoteProxyUrl: sanitizeEndpointUrl(draft.quoteProxyUrl),
+      exposureTargetPct: draft.exposureTargetPct >= 50 && draft.exposureTargetPct <= 300
+        ? draft.exposureTargetPct
+        : 100,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
@@ -175,6 +178,20 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
       </div>
       <p className="text-xs text-slate-500">当前生效接口：{activeAiEndpoint(draft)}</p>
       {aiTestResult?.hint && <p className="text-xs text-amber-600 dark:text-amber-300">{aiTestResult.hint}</p>}
+      <Field label="等效仓位目标 %">
+        <input
+          type="number"
+          min={50}
+          max={300}
+          step={5}
+          value={draft.exposureTargetPct}
+          onChange={(event) => setDraft({ ...draft, exposureTargetPct: Number(event.target.value) })}
+          className={inputCls}
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          等效仓位 = 正股 + 杠杆 ETF×倍数 + 期权 Delta 折算后的总敞口 ÷ 总资产。留现金子弹但用杠杆/期权把等效顶到目标，是本设置的用途。
+        </p>
+      </Field>
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <h4 className="mb-2 text-sm font-semibold">每日行情同步</h4>
         <div className="space-y-3">

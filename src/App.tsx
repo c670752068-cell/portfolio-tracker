@@ -200,7 +200,7 @@ export default function App() {
   }, [portfolio.holdings.length, refreshQuotes, settings, settings.autoRefreshQuotes, settings.quoteApiKey, settings.quoteProvider, settings.quoteProxyUrl]);
 
   const metrics = useMemo(() => computeMetrics(portfolio, rates), [portfolio, rates]);
-  const findings = useMemo(() => analyzePortfolio(metrics), [metrics]);
+  const findings = useMemo(() => analyzePortfolio(metrics, settings.exposureTargetPct), [metrics, settings.exposureTargetPct]);
   const needsReviewCount = countNeedsReview(portfolio.holdings);
 
   useEffect(() => {
@@ -288,6 +288,7 @@ export default function App() {
             quoteStatus={quoteStatus}
             canRefreshQuotes={portfolio.holdings.length > 0 && canSyncQuotes(settings)}
             onRefreshQuotes={() => refreshQuotes('manual')}
+            exposureTargetPct={settings.exposureTargetPct}
           />
           {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} onUndo={undoLastImport} />}
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">

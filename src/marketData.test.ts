@@ -8,6 +8,7 @@ const settings: AppSettings = {
   quoteProvider: 'proxy', quoteApiKey: '', quoteProxyUrl: 'https://quotes.example.test/api/quotes',
   autoRefreshQuotes: true,
   displayCurrency: 'USD',
+  exposureTargetPct: 100,
 };
 
 function holding(overrides: Partial<Holding>): Holding {

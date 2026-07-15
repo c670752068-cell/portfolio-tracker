@@ -31,6 +31,7 @@ describe('Summary cards', () => {
         quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
         canRefreshQuotes={false}
         onRefreshQuotes={() => undefined}
+        exposureTargetPct={100}
       />,
     );
 

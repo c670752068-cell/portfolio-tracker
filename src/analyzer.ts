@@ -16,7 +16,7 @@ const SHORT_DTE_WARN = 45;
 const UNDERLYING_EXPOSURE_WARN = 0.4;
 const UNDERLYING_EXPOSURE_CRIT = 0.65;
 
-export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
+export function analyzePortfolio(metrics: PortfolioMetrics, exposureTargetPct = 100): RiskFinding[] {
   const findings: RiskFinding[] = [];
 
   if (metrics.totalValue <= 0) {
@@ -26,6 +26,27 @@ export function analyzePortfolio(metrics: PortfolioMetrics): RiskFinding[] {
       detail: '请先添加持仓或现金，再进行分析。',
     });
     return findings;
+  }
+
+  const equivalentPct = metrics.equivalentExposurePct * 100;
+  if (equivalentPct < exposureTargetPct - 10) {
+    findings.push({
+      level: 'info',
+      title: `等效仓位 ${equivalentPct.toFixed(1)}% 低于目标 ${exposureTargetPct}%`,
+      detail: '现金子弹未部署完，属你的计划内则忽略。本提示不构成买卖建议。',
+    });
+  } else if (equivalentPct > exposureTargetPct + 40) {
+    findings.push({
+      level: 'critical',
+      title: `等效仓位 ${equivalentPct.toFixed(1)}% 显著高于目标 ${exposureTargetPct}%`,
+      detail: '杠杆与期权折算后的敞口显著超出计划，回撤会被放大。本提示不构成买卖建议。',
+    });
+  } else if (equivalentPct > exposureTargetPct + 10) {
+    findings.push({
+      level: 'warn',
+      title: `等效仓位 ${equivalentPct.toFixed(1)}% 高于目标 ${exposureTargetPct}%`,
+      detail: '杠杆与期权折算后的敞口超出计划，回撤会被放大。本提示不构成买卖建议。',
+    });
   }
 
   for (const m of metrics.holdingsMetrics) {

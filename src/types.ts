@@ -87,6 +87,7 @@ export interface AppSettings {
   quoteProxyUrl: string;
   autoRefreshQuotes: boolean;
   displayCurrency: DisplayCurrency;
+  exposureTargetPct: number;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */

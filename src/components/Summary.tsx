@@ -20,9 +20,10 @@ interface SummaryProps {
   };
   canRefreshQuotes: boolean;
   onRefreshQuotes: () => void;
+  exposureTargetPct: number;
 }
 
-export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, canRefreshQuotes, onRefreshQuotes }: SummaryProps) {
+export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, canRefreshQuotes, onRefreshQuotes, exposureTargetPct }: SummaryProps) {
   const dayClass =
     metrics.dayChange > 0 ? 'text-emerald-600' : metrics.dayChange < 0 ? 'text-rose-600' : 'text-slate-500';
   const trendPoints = valueHistory.slice(-30).map((point) => ({
@@ -68,10 +69,23 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
         sub={`${formatPct(metrics.liquidityWeight)} · 现金 ${formatDisplayMoney(metrics.cashValue, displayCurrency, rates)} · 现金类 ETF ${formatDisplayMoney(metrics.cashEquivalentValue, displayCurrency, rates)}`}
       />
       {metrics.optionValue > 0 && (
-        <>
-          <Card label={`期权权利金（${displayCurrency}）`} value={formatDisplayMoney(metrics.optionValue, displayCurrency, rates)} sub={`${formatPct(metrics.optionWeight)} 的总资产`} />
-          <Card label={`期权 Delta 暴露（${displayCurrency}）`} value={formatDisplayMoney(metrics.deltaAdjustedExposure, displayCurrency, rates)} sub="仅已识别 Delta/标的现价的合约" />
-        </>
+        <Card label={`期权权利金（${displayCurrency}）`} value={formatDisplayMoney(metrics.optionValue, displayCurrency, rates)} sub={`${formatPct(metrics.optionWeight)} 的总资产`} />
+      )}
+      {metrics.holdingsMetrics.length > 0 && (
+        <Card
+          label={`等效正股暴露（${displayCurrency}）`}
+          value={formatDisplayMoney(metrics.equivalentExposureTotal, displayCurrency, rates)}
+          sub={`等效仓位 ${formatPct(metrics.equivalentExposurePct)} · 目标 ${exposureTargetPct}%`}
+        >
+          <div className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+            正股 {formatDisplayMoney(metrics.plainEquityExposure, displayCurrency, rates)} · 杠杆折算 {formatDisplayMoney(metrics.leveragedEtfExposure, displayCurrency, rates)} · 期权Δ {formatDisplayMoney(metrics.optionDeltaExposure, displayCurrency, rates)}
+          </div>
+          {metrics.uncomputableOptions > 0 && (
+            <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-300">
+              ⚠ {metrics.uncomputableOptions} 个期权缺 Delta/标的价未计入（用「补充期权详情」导入）
+            </div>
+          )}
+        </Card>
       )}
       <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:col-span-4">
         <label className="font-medium text-slate-700 dark:text-slate-200">

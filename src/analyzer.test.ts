@@ -23,13 +23,13 @@ function holding(symbol: string, value: number, overrides: Partial<Holding> = {}
   };
 }
 
-function findingsFor(holdings: Holding[], cash = 0) {
+function findingsFor(holdings: Holding[], cash = 0, exposureTargetPct = 100) {
   const state: PortfolioState = {
     holdings,
     cash: cash > 0 ? [{ amount: cash, currency: 'USD' }] : [],
     updatedAt: '2026-07-14T00:00:00.000Z',
   };
-  return analyzePortfolio(computeMetrics(state, usdRates));
+  return analyzePortfolio(computeMetrics(state, usdRates), exposureTargetPct);
 }
 
 describe('analyzePortfolio data-quality aware risk scan', () => {
@@ -127,5 +127,32 @@ describe('analyzePortfolio data-quality aware risk scan', () => {
     ], 20);
 
     expect(findings.some((item) => item.title.includes('为杠杆 ETF'))).toBe(false);
+  });
+});
+
+describe('equivalent exposure target reminders', () => {
+  function exposureFinding(exposurePct: number, cashOverride?: number) {
+    const leveraged = exposurePct > 100;
+    const marketValue = leveraged ? exposurePct / 2 : exposurePct;
+    const cash = cashOverride ?? 100 - marketValue;
+    return findingsFor([holding(leveraged ? 'TSLL' : 'MSFT', marketValue, leveraged ? { assetType: 'leveraged_etf' } : {})], cash, 100)
+      .find((finding) => finding.title.startsWith('等效仓位'));
+  }
+
+  it('reports 85% as planned undeployed cash at info level', () => {
+    expect(exposureFinding(85)).toEqual(expect.objectContaining({ level: 'info', title: expect.stringContaining('85.0% 低于目标 100%') }));
+  });
+
+  it('reports 115% as above-target leverage at warn level', () => {
+    expect(exposureFinding(115)).toEqual(expect.objectContaining({ level: 'warn', title: expect.stringContaining('115.0% 高于目标 100%') }));
+  });
+
+  it('reports 145% as significantly above target at critical level', () => {
+    expect(exposureFinding(145)).toEqual(expect.objectContaining({ level: 'critical', title: expect.stringContaining('145.0% 显著高于目标 100%') }));
+  });
+
+  it('does not emit a target reminder inside the 90–110% tolerance band', () => {
+    expect(exposureFinding(95)).toBeUndefined();
+    expect(exposureFinding(105)).toBeUndefined();
   });
 });

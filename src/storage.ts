@@ -27,6 +27,7 @@ function buildDefaultSettings(): AppSettings {
   quoteProxyUrl,
   autoRefreshQuotes: true,
   displayCurrency: 'USD',
+  exposureTargetPct: 100,
   };
 }
 
@@ -92,6 +93,7 @@ export function loadSettings(): AppSettings {
       quoteProvider: parsed.quoteProvider ?? defaultSettings.quoteProvider,
       quoteProxyUrl: sanitizeEndpointUrl(parsed.quoteProxyUrl ?? defaultSettings.quoteProxyUrl),
       displayCurrency: isDisplayCurrency(parsed.displayCurrency) ? parsed.displayCurrency : defaultSettings.displayCurrency,
+      exposureTargetPct: isValidExposureTarget(parsed.exposureTargetPct) ? parsed.exposureTargetPct : 100,
     };
   } catch {
     return defaultSettings;
@@ -104,4 +106,8 @@ export function saveSettings(settings: AppSettings): void {
 
 function isDisplayCurrency(value: unknown): value is DisplayCurrency {
   return ['USD', 'CNY', 'HKD', 'JPY', 'EUR', 'GBP'].includes(String(value));
+}
+
+function isValidExposureTarget(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 50 && value <= 300;
 }
