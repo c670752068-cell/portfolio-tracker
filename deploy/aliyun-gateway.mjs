@@ -329,10 +329,6 @@ async function handlePortfolioPositionsRoute(url, req, res) {
     positionsRouteNotFound(res);
     return true;
   }
-  if (!positionsAuthorizationMatches(req)) {
-    sendJson(res, 401, { error: { code: 'unauthorized', message: '认证失败' } });
-    return true;
-  }
   const latestPath = join(PORTFOLIO_POSITIONS_ROOT, 'latest.json');
   if (req.method === 'GET') {
     try {
@@ -350,6 +346,10 @@ async function handlePortfolioPositionsRoute(url, req, res) {
   }
   if (req.method !== 'POST') {
     positionsRouteNotFound(res);
+    return true;
+  }
+  if (!positionsAuthorizationMatches(req)) {
+    sendJson(res, 401, { error: { code: 'unauthorized', message: '认证失败' } });
     return true;
   }
   let body;

@@ -78,17 +78,19 @@ describe('portfolio positions gateway', () => {
     });
     expect(post.status).toBe(200);
 
-    const get = await fetch(`${origin}/api/portfolio/positions`, {
-      headers: { Authorization: AUTHORIZATION },
-    });
+    // Reading the latest shared snapshot must work on a second device without
+    // copying browser-local credentials from the first device.
+    const get = await fetch(`${origin}/api/portfolio/positions`);
     expect(get.status).toBe(200);
     expect(await get.json()).toEqual(snapshot);
     expect(JSON.parse(await readFile(join(storageRoot, 'latest.json'), 'utf8'))).toEqual(snapshot);
   });
 
-  it('rejects a wrong bearer value without exposing stored data', async () => {
+  it('keeps snapshot writes protected by the bearer token', async () => {
     const response = await fetch(`${origin}/api/portfolio/positions`, {
-      headers: { Authorization: 'Bearer wrong-value' },
+      method: 'POST',
+      headers: { Authorization: 'Bearer wrong-value', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload: { positions: [], net_liquidation: 0 } }),
     });
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: { code: 'unauthorized', message: '认证失败' } });

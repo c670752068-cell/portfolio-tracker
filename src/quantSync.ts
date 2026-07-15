@@ -155,8 +155,10 @@ export function isQuantSnapshotStale(pushedAt: string, now = Date.now()): boolea
 }
 
 export async function fetchQuantPositions(url: string, token: string): Promise<QuantPositionsSnapshot> {
+  const headers: Record<string, string> = {};
+  if (token.trim()) headers.Authorization = `Bearer ${token.trim()}`;
   const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers,
   });
   const body = await response.json().catch(() => null) as QuantPositionsSnapshot | { error?: string } | null;
   if (!response.ok) {

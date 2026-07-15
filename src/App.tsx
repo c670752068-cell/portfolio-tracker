@@ -203,15 +203,6 @@ export default function App() {
       setQuantStatus((status) => ({ ...status, loading: false, error: '量化同步仅在 VPS 入口可用' }));
       return;
     }
-    if (!settings.quantSyncEnabled) {
-      setQuantStatus((status) => ({ ...status, loading: false, error: '请先在设置中启用量化系统同步' }));
-      return;
-    }
-    if (!settings.quantSyncToken.trim()) {
-      setQuantStatus((status) => ({ ...status, loading: false, error: '请先在设置中填写同步 Token' }));
-      return;
-    }
-
     setQuantStatus((status) => ({ ...status, loading: true, error: '' }));
     try {
       const snapshot = await fetchQuantPositions(url, settings.quantSyncToken.trim());
@@ -237,16 +228,16 @@ export default function App() {
         error: error instanceof Error ? error.message : String(error),
       }));
     }
-  }, [settings.quantSyncEnabled, settings.quantSyncToken]);
+  }, [settings.quantSyncToken]);
 
   useEffect(() => {
     const url = getServerPortfolioPositionsUrl();
-    if (!settings.quantSyncEnabled || !settings.quantSyncToken.trim() || !url) return;
-    const key = `${url}|${settings.quantSyncToken.trim()}`;
+    if (!url) return;
+    const key = url;
     if (quantAutoSyncKeyRef.current === key) return;
     quantAutoSyncKeyRef.current = key;
     void refreshQuantPositions();
-  }, [refreshQuantPositions, settings.quantSyncEnabled, settings.quantSyncToken]);
+  }, [refreshQuantPositions]);
 
   useEffect(() => {
     if (!settings.autoRefreshQuotes || !canSyncQuotes(settings)) return undefined;
@@ -340,7 +331,7 @@ export default function App() {
       <header className="mb-4 flex items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold sm:text-2xl">我的投资组合</h1>
-          <p className="text-xs text-slate-500">本地存储 · 截图仅在你点击解析时发送给已选 AI · 手机/桌面通用</p>
+          <p className="text-xs text-slate-500">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</p>
         </div>
         <nav className="flex flex-wrap gap-1 text-xs sm:text-sm">
           <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} />
@@ -369,9 +360,9 @@ export default function App() {
             onRefreshQuotes={() => refreshQuotes('manual')}
             exposureTargetPct={settings.exposureTargetPct}
             quantStatus={quantStatus}
-            quantSyncEnabled={settings.quantSyncEnabled}
+            quantSyncEnabled={hasServerGateway()}
             quantGatewayAvailable={hasServerGateway()}
-            quantTokenConfigured={Boolean(settings.quantSyncToken.trim())}
+            quantTokenConfigured={true}
             onRefreshQuant={refreshQuantPositions}
           />
           {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} onUndo={undoLastImport} />}

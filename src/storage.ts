@@ -28,7 +28,7 @@ function buildDefaultSettings(): AppSettings {
   autoRefreshQuotes: true,
   displayCurrency: 'USD',
   exposureTargetPct: 100,
-  quantSyncEnabled: false,
+  quantSyncEnabled: true,
   quantSyncToken: '',
   };
 }

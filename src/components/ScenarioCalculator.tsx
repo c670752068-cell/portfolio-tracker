@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { formatDisplayMoney } from '../displayCurrency';
 import { formatSignedPct } from '../format';
 import { listScenarioFamilies, simulateScenario, type ScenarioKind } from '../scenario';
@@ -16,15 +16,12 @@ const DAY_STEPS = [10, 15, 30];
 export function ScenarioCalculator({ metrics, displayCurrency, rates }: ScenarioCalculatorProps) {
   const families = useMemo(() => listScenarioFamilies(metrics.holdingsMetrics), [metrics.holdingsMetrics]);
   const [family, setFamily] = useState('');
-  const [targetPrice, setTargetPrice] = useState(0);
+  const [target, setTarget] = useState({ key: '', value: 0 });
   const [days, setDays] = useState(0);
   const selected = families.find((item) => item.symbol === family) ?? families[0];
-
-  useEffect(() => {
-    if (!selected) return;
-    if (family !== selected.symbol) setFamily(selected.symbol);
-    setTargetPrice(selected.spot);
-  }, [selected?.symbol, selected?.spot]);
+  const selectedKey = selected ? `${selected.symbol}:${selected.spot}` : '';
+  const targetPrice = selected && target.key === selectedKey ? target.value : selected?.spot ?? 0;
+  const setTargetPrice = (value: number) => setTarget({ key: selectedKey, value });
 
   const result = useMemo(() => {
     if (!selected) return null;
@@ -60,7 +57,7 @@ export function ScenarioCalculator({ metrics, displayCurrency, rates }: Scenario
               onChange={(event) => {
                 const next = families.find((item) => item.symbol === event.target.value);
                 setFamily(event.target.value);
-                if (next) setTargetPrice(next.spot);
+                if (next) setTarget({ key: `${next.symbol}:${next.spot}`, value: next.spot });
               }}
               className={inputClass}
             >

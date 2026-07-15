@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { applyQuantSync, isQuantSnapshotStale, mapQuantPositions } from './quantSync';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions } from './quantSync';
 import type { PortfolioState, QuantPositionsPayload } from './types';
 
 const payload: QuantPositionsPayload = {
@@ -145,5 +145,29 @@ describe('isQuantSnapshotStale', () => {
 
   it('treats an invalid timestamp as stale', () => {
     expect(isQuantSnapshotStale('not-a-date')).toBe(true);
+  });
+});
+
+describe('fetchQuantPositions cross-device access', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('loads the shared VPS snapshot without a browser-local token', async () => {
+    const snapshot = { payload, pushed_at: '2026-07-15T10:00:00.000Z', source: 'futu-assistant' as const };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(snapshot), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchQuantPositions('http://example.test/api/portfolio/positions', '')).resolves.toEqual(snapshot);
+    expect(fetchMock).toHaveBeenCalledWith('http://example.test/api/portfolio/positions', { headers: {} });
+  });
+
+  it('still sends a token when a legacy browser already has one', async () => {
+    const snapshot = { payload, pushed_at: '2026-07-15T10:00:00.000Z', source: 'futu-assistant' as const };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(snapshot), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchQuantPositions('http://example.test/api/portfolio/positions', 'legacy-token');
+    expect(fetchMock).toHaveBeenCalledWith('http://example.test/api/portfolio/positions', {
+      headers: { Authorization: 'Bearer legacy-token' },
+    });
   });
 });

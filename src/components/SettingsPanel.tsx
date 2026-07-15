@@ -194,35 +194,11 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
       </Field>
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <h4 className="mb-2 text-sm font-semibold">量化系统同步</h4>
-        <p className="mb-3 text-xs text-slate-500">
-          持仓来自你 Mac 上的量化系统（IBKR+长桥+富途三券商聚合，每 45 分钟推送一次）。启用后，截图导入退为补充手段。
+        <p className="text-xs text-slate-500">
+          {serverGatewayEnabled
+            ? '已启用跨设备自动同步：Mac 量化系统每 45 分钟汇总 IBKR、长桥和富途后推送到 VPS；手机和电脑打开本网址会自动读取同一份持仓，不再需要分别填 Token。'
+            : '请使用 VPS 入口打开网站，GitHub Pages 无法跨设备读取服务器持仓。'}
         </p>
-        <div className="space-y-3">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={draft.quantSyncEnabled}
-              onChange={(event) => setDraft({ ...draft, quantSyncEnabled: event.target.checked })}
-              className="h-4 w-4 rounded border-slate-300"
-            />
-            启用量化系统持仓同步
-          </label>
-          <Field label="同步 Token">
-            <input
-              type="password"
-              value={draft.quantSyncToken}
-              onChange={(event) => setDraft({ ...draft, quantSyncToken: event.target.value })}
-              placeholder="与 VPS 的 PORTFOLIO_SYNC_TOKEN 一致"
-              className={inputCls}
-            />
-            <p className="mt-1 text-xs text-slate-500">
-              仅保存在本机浏览器 localStorage，不会进入仓库或导出的组合 JSON。
-            </p>
-          </Field>
-          {!serverGatewayEnabled && (
-            <p className="text-xs text-amber-600 dark:text-amber-300">量化同步仅在 VPS 入口可用；GitHub Pages 入口仍可使用其他功能。</p>
-          )}
-        </div>
       </div>
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <h4 className="mb-2 text-sm font-semibold">每日行情同步</h4>

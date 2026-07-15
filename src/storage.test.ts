@@ -29,6 +29,12 @@ describe('display currency settings persistence', () => {
     expect(loadSettings().displayCurrency).toBe('USD');
   });
 
+  it('enables shared quant sync by default on a new phone or computer', async () => {
+    const { loadSettings } = await import('./storage');
+    expect(loadSettings().quantSyncEnabled).toBe(true);
+    expect(loadSettings().quantSyncToken).toBe('');
+  });
+
   it('persists a selected display currency', async () => {
     const { loadSettings, saveSettings } = await import('./storage');
     const settings = loadSettings();
