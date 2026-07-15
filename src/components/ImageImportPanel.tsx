@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { KimiError, activeAiApiKey, activeAiProviderLabel, parsePortfolioImages } from '../kimi';
+import { KimiError, activeAiApiKey, activeAiProviderLabel, parseOptionDetailImages, parsePortfolioImages } from '../kimi';
 import { formatMoney } from '../format';
-import type { AppSettings, ImportedPortfolio } from '../types';
+import type { AppSettings, ImportedPortfolio, ParsedOptionDetails } from '../types';
 import { hasServerGateway } from '../runtimeConfig';
 
 const MAX_FILES = 8;
@@ -12,14 +12,16 @@ const JPEG_QUALITY = 0.82;
 interface ImageImportPanelProps {
   settings: AppSettings;
   onConfirm: (result: ImportedPortfolio) => void;
+  onOptionDetails: (result: ParsedOptionDetails) => void;
   onOpenSettings: () => void;
 }
 
-export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageImportPanelProps) {
+export function ImageImportPanel({ settings, onConfirm, onOptionDetails, onOpenSettings }: ImageImportPanelProps) {
   const [files, setFiles] = useState<File[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loadingMode, setLoadingMode] = useState<'full' | 'option' | null>(null);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [result, setResult] = useState<ImportedPortfolio | null>(null);
+  const [optionResult, setOptionResult] = useState<ParsedOptionDetails | null>(null);
   const [prepareSummary, setPrepareSummary] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const retryCountdownRef = useRef<number | null>(null);
@@ -51,6 +53,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
     if (!nextList) return;
     setError(null);
     setResult(null);
+    setOptionResult(null);
     setPrepareSummary('');
     const valid = Array.from(nextList).filter((file) => {
       if (!file.type.startsWith('image/')) return false;
@@ -70,7 +73,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
     if (inputRef.current) inputRef.current.value = '';
   }
 
-  async function parse() {
+  async function parse(mode: 'full' | 'option') {
     if (!activeAiApiKey(settings).trim()) {
       setError({ message: `请先保存 ${aiLabel} API Key。`, hint: `当前图片解析服务是 ${aiLabel}；Key 只保存在当前浏览器。` });
       return;
@@ -79,32 +82,40 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
       setError({ message: '请先选择持仓、期权详情或现金/购买力截图。' });
       return;
     }
-    setLoading(true);
+    setLoadingMode(mode);
     clearRetryCountdown();
     setError(null);
     setResult(null);
+    setOptionResult(null);
     setPrepareSummary('正在压缩截图，减少移动端网络失败…');
     try {
       const images = await Promise.all(files.map(prepareImageForVision));
       const originalBytes = files.reduce((sum, file) => sum + file.size, 0);
       const preparedBytes = images.reduce((sum, image) => sum + image.bytes, 0);
       setPrepareSummary(`已将截图从 ${formatBytes(originalBytes)} 压缩到 ${formatBytes(preparedBytes)} 后发送给 ${aiLabel}。`);
-      const parsed = await parsePortfolioImages(settings, images, {
+      const callbacks = {
         onRetryWait: showRetryCountdown,
-        onNotice: (text) => {
+        onNotice: (text: string) => {
           clearRetryCountdown();
           setPrepareSummary(text);
         },
-      });
-      setResult(parsed);
+      };
+      if (mode === 'full') {
+        const parsed = await parsePortfolioImages(settings, images, callbacks);
+        setResult(parsed);
+        onConfirm(parsed);
+      } else {
+        const parsed = await parseOptionDetailImages(settings, images, callbacks);
+        setOptionResult(parsed);
+        onOptionDetails(parsed);
+      }
       setFiles([]);
-      onConfirm(parsed);
     } catch (caught: unknown) {
       if (caught instanceof KimiError) setError({ message: caught.message, hint: caught.hint });
       else setError({ message: caught instanceof Error ? caught.message : String(caught) });
     } finally {
       clearRetryCountdown();
-      setLoading(false);
+      setLoadingMode(null);
     }
   }
 
@@ -114,7 +125,7 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
         <div>
           <h2 className="text-sm font-semibold text-indigo-950 dark:text-indigo-100">截图导入持仓</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-            上传完整持仓页，再附期权详情页和现金/购买力页。识别成功后会自动写入并跳到总览；缺什么数据会在总览提示。
+            完整持仓页请选择“全量持仓”；单独上传期权详情页请选择“补充期权详情”，该模式绝不会删除正股、ETF 或现金。
           </p>
         </div>
         <button onClick={onOpenSettings} className="text-xs font-medium text-indigo-700 hover:underline dark:text-indigo-300">
@@ -133,15 +144,18 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
           {files.map((file, index) => (
             <span key={`${file.name}-${file.size}`} className="inline-flex max-w-full items-center gap-1 rounded-full bg-white px-2 py-1 text-xs text-slate-700 shadow-sm dark:bg-slate-800 dark:text-slate-200">
               <span className="truncate">{file.name}</span>
-              <button aria-label={`移除 ${file.name}`} onClick={() => { setFiles(files.filter((_, itemIndex) => itemIndex !== index)); setResult(null); setPrepareSummary(''); }} className="font-bold text-slate-400 hover:text-rose-600">×</button>
+              <button aria-label={`移除 ${file.name}`} onClick={() => { setFiles(files.filter((_, itemIndex) => itemIndex !== index)); setResult(null); setOptionResult(null); setPrepareSummary(''); }} className="font-bold text-slate-400 hover:text-rose-600">×</button>
             </span>
           ))}
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={parse} disabled={loading || files.length === 0} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400">
-          {loading ? '正在压缩并识别…' : '解析并导入'}
+        <button onClick={() => parse('full')} disabled={loadingMode !== null || files.length === 0} className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400">
+          {loadingMode === 'full' ? '正在识别全量持仓…' : '解析并导入（全量持仓）'}
+        </button>
+        <button onClick={() => parse('option')} disabled={loadingMode !== null || files.length === 0} className="rounded-md border border-indigo-500 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:border-slate-400 disabled:text-slate-400 dark:bg-slate-900 dark:text-indigo-200">
+          {loadingMode === 'option' ? '正在补充期权详情…' : '补充期权详情（不改动其他持仓）'}
         </button>
         <span className="text-xs text-slate-500">
           {usesServerGateway
@@ -195,6 +209,20 @@ export function ImageImportPanel({ settings, onConfirm, onOpenSettings }: ImageI
           <div className="flex flex-wrap gap-2">
             <button onClick={() => setResult(null)} className="rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100">关闭预览</button>
           </div>
+        </div>
+      )}
+
+      {optionResult && (
+        <div className="space-y-2 rounded-lg border border-emerald-200 bg-white p-3 text-xs dark:border-emerald-800 dark:bg-slate-900">
+          <h3 className="text-sm font-semibold">期权详情识别结果</h3>
+          <p className="text-slate-500">{optionResult.sourceSummary}。已安全补充；正股、ETF 与现金均未改动。</p>
+          {optionResult.options.map((option, index) => (
+            <div key={`${option.underlying}-${option.strike}-${index}`} className="rounded border border-slate-200 p-2 dark:border-slate-700">
+              <span className="font-medium">{option.underlying} {option.optionType.toUpperCase()} {option.strike ?? '行权价待补'}</span>
+              <span className="ml-2 text-slate-500">{option.expiration ?? '到期日待补'} · Δ {option.delta ?? '待补'} · {option.contracts ?? '—'} 张</span>
+            </div>
+          ))}
+          <button onClick={() => setOptionResult(null)} className="rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-100">关闭预览</button>
         </div>
       )}
     </div>

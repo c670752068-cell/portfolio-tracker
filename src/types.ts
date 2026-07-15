@@ -159,3 +159,15 @@ export interface ImportedPortfolio {
   issues: ImportIssue[];
   sourceSummary: string;
 }
+
+export interface ParsedOptionDetail extends OptionDetails {
+  premiumPrice: number | null;
+  contracts: number | null;
+  currency: Currency;
+}
+
+export interface ParsedOptionDetails {
+  options: ParsedOptionDetail[];
+  issues: ImportIssue[];
+  sourceSummary: string;
+}

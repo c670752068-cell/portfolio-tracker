@@ -7,6 +7,8 @@ import type {
   ImportedPortfolio,
   ImportIssue,
   OptionDetails,
+  ParsedOptionDetail,
+  ParsedOptionDetails,
   PortfolioMetrics,
   RiskFinding,
 } from './types';
@@ -254,6 +256,61 @@ export async function parsePortfolioImages(
   return normalizeImportedPortfolio(raw);
 }
 
+export async function parseOptionDetailImages(
+  settings: AppSettings,
+  images: ImageForImport[],
+  callbacks: ImageParseCallbacks = {},
+): Promise<ParsedOptionDetails> {
+  if (images.length === 0) throw new KimiError('请先选择至少一张期权详情截图。');
+  const provider = settings.aiProvider ?? 'zhipu';
+  const model = provider === 'kimi' ? settings.kimiModel : settings.zhipuModel;
+  if (provider === 'kimi' && !KIMI_VISION_MODELS.has(model)) {
+    throw new KimiError('当前选择的模型不支持图片识别', '请到「设置」选择支持图片的 Kimi 模型。');
+  }
+  if (provider === 'zhipu' && !ZHIPU_VISION_MODELS.has(model)) {
+    throw new KimiError('当前选择的智谱模型不支持图片识别', '请到「设置」选择支持图片的智谱模型。');
+  }
+
+  const imageParts: ImagePart[] = images.map((image) => ({
+    type: 'image_url',
+    image_url: { url: image.dataUrl },
+  }));
+  const content: Array<TextPart | ImagePart> = [
+    {
+      type: 'text',
+      text: `你正在读取 ${images.length} 张期权合约详情页。只提取期权详情，不要输出股票持仓或现金。\n\n` +
+        '只输出合法 JSON，不要 Markdown。结构：' +
+        '{"options":[{"underlying":"IGV","optionType":"call","strike":80,"expiration":"2027-01-15","contractMultiplier":100,"delta":0.7921,"theta":-0.0246,"gamma":0.0119,"vega":0.1908,"impliedVolatility":0.363,"underlyingPrice":93.76,"premiumPrice":18.30,"contracts":2,"currency":"USD"}],"issues":[],"sourceSummary":"已识别 1 张期权详情"}\n\n' +
+        '规则：\n' +
+        '1. 读取标的代码、Call/Put、行权价、到期日、合约乘数、Delta、Theta、Gamma、Vega、隐含波动率、标的现价、期权现价 premiumPrice 和持仓张数 contracts。看不到用 null，禁止猜测。\n' +
+        "2. 到期日可能显示为 270115、2027/01/15、JAN 15 '27 等格式，统一输出 YYYY-MM-DD。\n" +
+        '3. impliedVolatility 用小数（36.3% 输出 0.363）；currency 仅用 USD、CNY、HKD 或 OTHER。\n' +
+        '4. 一张截图对应一个合约；多张截图分别输出。只认截图明确显示的数据。',
+    },
+    ...imageParts,
+  ];
+  const messages: AiMessage[] = [
+    { role: 'system', content: '你是期权详情页数据录入助手，只提取可见字段，不提供投资建议。' },
+    { role: 'user', content },
+  ];
+  let raw: string;
+  try {
+    raw = await requestAi(settings, messages, {
+      retryDelaysMs: STANDARD_RETRY_DELAYS_MS,
+      onRetryWait: callbacks.onRetryWait,
+    });
+  } catch (error: unknown) {
+    const shouldFallback = error instanceof KimiError
+      && isRetryableAiFailure(error.failureKind)
+      && provider === 'zhipu'
+      && model !== 'glm-4v-flash';
+    if (!shouldFallback) throw error;
+    callbacks.onNotice?.(`${model} 持续繁忙，已临时换用 glm-4v-flash 重试…`);
+    raw = await requestAi(settings, messages, { modelOverride: 'glm-4v-flash' });
+  }
+  return normalizeParsedOptionDetails(raw);
+}
+
 async function requestAi(
   settings: AppSettings,
   messages: AiMessage[],
@@ -439,6 +496,54 @@ function normalizeImportedPortfolio(raw: string): ImportedPortfolio {
   };
 }
 
+function normalizeParsedOptionDetails(raw: string): ParsedOptionDetails {
+  let data: unknown;
+  try {
+    data = JSON.parse(extractJsonObject(raw));
+  } catch {
+    throw new KimiError('AI 的期权识别结果不是可读取的 JSON', '请重试或减少截图数量。');
+  }
+  if (!isRecord(data)) throw new KimiError('AI 的期权识别结果格式不正确');
+  const issues = asIssues(data.issues);
+  const options = Array.isArray(data.options)
+    ? data.options.map((option) => normalizeParsedOptionDetail(option, issues)).filter((option): option is ParsedOptionDetail => option !== null)
+    : [];
+  return {
+    options,
+    issues,
+    sourceSummary: asText(data.sourceSummary) || `已识别 ${options.length} 张期权详情`,
+  };
+}
+
+function normalizeParsedOptionDetail(value: unknown, issues: ImportIssue[]): ParsedOptionDetail | null {
+  if (!isRecord(value)) return null;
+  const underlying = asText(value.underlying).toUpperCase();
+  if (!underlying) {
+    issues.push({ field: '期权标的代码', reason: '详情页未能确认标的代码，未自动导入该条。', priority: 'required' });
+    return null;
+  }
+  const optionTypeText = asText(value.optionType).toLowerCase();
+  const impliedVolatility = nullableNumber(value.impliedVolatility);
+  return {
+    underlying,
+    optionType: optionTypeText === 'put' || optionTypeText === 'p' ? 'put' : 'call',
+    strike: nullableNonNegative(value.strike),
+    expiration: normalizeOptionExpiration(asText(value.expiration)),
+    contractMultiplier: (nullableNumber(value.contractMultiplier) ?? 0) > 0 ? nullableNumber(value.contractMultiplier)! : 100,
+    delta: nullableNumber(value.delta),
+    theta: nullableNumber(value.theta),
+    gamma: nullableNumber(value.gamma),
+    vega: nullableNumber(value.vega),
+    impliedVolatility: impliedVolatility != null && Math.abs(impliedVolatility) > 1.5
+      ? impliedVolatility / 100
+      : impliedVolatility,
+    underlyingPrice: nullableNonNegative(value.underlyingPrice),
+    premiumPrice: nullableNonNegative(value.premiumPrice),
+    contracts: nullableNonNegative(value.contracts),
+    currency: asCurrency(value.currency),
+  };
+}
+
 function normalizeHolding(value: unknown, issues: ImportIssue[]): ImportedPortfolio['holdings'][number] | null {
   if (!isRecord(value)) return null;
   const assetType = asAssetType(value.assetType);
@@ -613,6 +718,20 @@ function normalizeDate(value: string): string | null {
   if (!match) return null;
   const [, year, month, day] = match;
   return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+}
+
+export function normalizeOptionExpiration(value: string): string | null {
+  const input = value.trim().toUpperCase();
+  const standard = normalizeDate(input);
+  if (standard) return standard;
+  const compact = input.match(/^(\d{2})(\d{2})(\d{2})$/);
+  if (compact) return `20${compact[1]}-${compact[2]}-${compact[3]}`;
+  const english = input.match(/^([A-Z]{3})\s+(\d{1,2})\s+['’]?(\d{2}|\d{4})$/);
+  if (!english) return null;
+  const month = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'].indexOf(english[1]) + 1;
+  if (month === 0) return null;
+  const year = english[3].length === 2 ? `20${english[3]}` : english[3];
+  return `${year}-${String(month).padStart(2, '0')}-${english[2].padStart(2, '0')}`;
 }
 
 function unique(values: string[]): string[] {

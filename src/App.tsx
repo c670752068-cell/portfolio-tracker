@@ -11,9 +11,9 @@ import { analyzePortfolio } from './analyzer';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { computeMetrics } from './metrics';
-import { applyImageImport, countNeedsReview } from './importMerge';
+import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDetailsApplyResult } from './importMerge';
 import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
-import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, PortfolioState } from './types';
+import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState } from './types';
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
 
@@ -30,6 +30,10 @@ interface QuoteStatus {
   error: string;
   summary: string;
 }
+
+type ImportNotice =
+  | { mode: 'full'; result: ImportedPortfolio }
+  | { mode: 'option'; result: OptionDetailsApplyResult };
 
 function generateId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -93,7 +97,7 @@ export default function App() {
     error: '',
     summary: '',
   });
-  const [lastImport, setLastImport] = useState<ImportedPortfolio | null>(null);
+  const [lastImport, setLastImport] = useState<ImportNotice | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const holdingsRef = useRef(portfolio.holdings);
   const quoteRefreshInFlightRef = useRef(false);
@@ -235,7 +239,14 @@ export default function App() {
   function importFromImages(result: ImportedPortfolio) {
     backupPortfolio(portfolio);
     setPortfolio((current) => applyImageImport(current, result, generateId));
-    setLastImport(result);
+    setLastImport({ mode: 'full', result });
+    setTab('dashboard');
+  }
+  function importOptionDetails(result: ParsedOptionDetails) {
+    backupPortfolio(portfolio);
+    const applied = applyOptionDetails(portfolio, result, generateId);
+    setPortfolio(applied.next);
+    setLastImport({ mode: 'option', result: applied });
     setTab('dashboard');
   }
   function undoLastImport() {
@@ -292,7 +303,7 @@ export default function App() {
 
       {tab === 'holdings' && (
         <section className="space-y-4">
-          <ImageImportPanel settings={settings} onConfirm={importFromImages} onOpenSettings={() => setTab('settings')} />
+          <ImageImportPanel settings={settings} onConfirm={importFromImages} onOptionDetails={importOptionDetails} onOpenSettings={() => setTab('settings')} />
           <HoldingsTable
             metrics={metrics.holdingsMetrics}
             displayCurrency={settings.displayCurrency}
@@ -330,23 +341,30 @@ export default function App() {
   );
 }
 
-function ImportResultNotice({ result, onClose, onUndo }: { result: ImportedPortfolio; onClose: () => void; onUndo: () => void }) {
+function ImportResultNotice({ result: notice, onClose, onUndo }: { result: ImportNotice; onClose: () => void; onUndo: () => void }) {
+  const issues = notice.result.issues;
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-semibold">截图识别已自动导入</div>
-          <p className="mt-1 text-xs">
-            本次已替换上一批截图导入（手动添加的条目未受影响）；共导入 {result.holdings.length} 个持仓、{result.cash.length} 个现金条目。
-          </p>
+          <div className="font-semibold">{notice.mode === 'full' ? '截图识别已自动导入' : '期权详情已安全补充'}</div>
+          {notice.mode === 'full' ? (
+            <p className="mt-1 text-xs">
+              本次已替换上一批截图导入（手动添加的条目未受影响）；共导入 {notice.result.holdings.length} 个持仓、{notice.result.cash.length} 个现金条目。
+            </p>
+          ) : (
+            <p className="mt-1 text-xs">
+              已更新 {notice.result.updated.length} 个期权、补充新增 {notice.result.added.length} 个；未动任何正股、ETF 与现金。
+            </p>
+          )}
         </div>
         <button type="button" onClick={onClose} className="text-xs text-emerald-700 hover:underline dark:text-emerald-200">关闭</button>
       </div>
-      {result.issues.length > 0 && (
+      {issues.length > 0 && (
         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-100">
           <div className="font-semibold">下一步建议补充</div>
           <ul className="mt-1 list-disc space-y-1 pl-4">
-            {result.issues.map((issue, index) => (
+            {issues.map((issue, index) => (
               <li key={`${issue.field}-${index}`}>
                 <span className="font-medium">{issue.priority === 'required' ? '需补充：' : '建议补充：'}{issue.field}</span> — {issue.reason}
               </li>

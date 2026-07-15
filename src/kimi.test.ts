@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getAiRuntimeConfig, parsePortfolioImages } from './kimi';
+import { getAiRuntimeConfig, normalizeOptionExpiration, parseOptionDetailImages, parsePortfolioImages } from './kimi';
 import type { AppSettings } from './types';
 
 function settings(overrides: Partial<AppSettings> = {}): AppSettings {
@@ -226,5 +226,61 @@ describe('portfolio import normalization', () => {
     expect(prompt).toContain('绝不能包含空格、CALL、PUT');
     expect(prompt).toContain('shares 相加、buyPrice 加权平均');
     expect(prompt).toContain('不要标成 stock');
+  });
+});
+
+describe('option detail image parsing', () => {
+  it.each([
+    ['270115', '2027-01-15'],
+    ['2027/01/15', '2027-01-15'],
+    ["JAN 15 '27", '2027-01-15'],
+  ])('normalizes broker expiration %s', (input, expected) => {
+    expect(normalizeOptionExpiration(input)).toBe(expected);
+  });
+
+  it('extracts normalized option-only detail fields without creating stock holdings', async () => {
+    setRuntimeConfig();
+    const content = JSON.stringify({
+      options: [{
+        underlying: 'igv', optionType: 'CALL', strike: 80, expiration: '270115',
+        contractMultiplier: 100, delta: 0.7921, theta: -0.0246, gamma: 0.0119,
+        vega: 0.1908, impliedVolatility: 36.3, underlyingPrice: 93.76,
+        premiumPrice: 18.3, contracts: 2, currency: 'USD',
+      }],
+      issues: [], sourceSummary: 'IGV option detail',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(aiResponse(200, {
+      choices: [{ message: { content } }],
+    })));
+
+    const result = await parseOptionDetailImages(zhipuSettings('glm-4v-flash'), screenshot);
+
+    expect(result.options).toEqual([expect.objectContaining({
+      underlying: 'IGV', optionType: 'call', expiration: '2027-01-15',
+      delta: 0.7921, impliedVolatility: 0.363, premiumPrice: 18.3, contracts: 2,
+    })]);
+    expect(result).not.toHaveProperty('holdings');
+    expect(result).not.toHaveProperty('cash');
+  });
+
+  it('sends a dedicated option-detail prompt covering all broker date formats and Greeks', async () => {
+    setRuntimeConfig();
+    const content = JSON.stringify({ options: [], issues: [], sourceSummary: 'none' });
+    const fetchMock = vi.fn().mockResolvedValueOnce(aiResponse(200, {
+      choices: [{ message: { content } }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await parseOptionDetailImages(zhipuSettings('glm-4v-flash'), screenshot);
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const prompt = body.messages[1].content[0].text as string;
+    expect(prompt).toContain('270115');
+    expect(prompt).toContain('2027/01/15');
+    expect(prompt).toContain("JAN 15 '27");
+    expect(prompt).toContain('Delta、Theta、Gamma、Vega');
+    expect(prompt).toContain('premiumPrice');
+    expect(prompt).toContain('contracts');
+    expect(prompt).toContain('不要输出股票持仓或现金');
   });
 });
