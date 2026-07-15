@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeMetrics, sortHoldingMetrics } from './metrics';
+import { leverageFactorFor } from './leverageMap';
 import type { ExchangeRates, PortfolioState } from './types';
 
 const usdRates: ExchangeRates = {
@@ -79,5 +80,91 @@ describe('sortHoldingMetrics', () => {
 
     expect(sortHoldingMetrics(original).map((metric) => metric.holding.symbol)).toEqual(['MSFT', 'NVDA', 'AAPL']);
     expect(original.map((metric) => metric.holding.symbol)).toEqual(['AAPL', 'MSFT', 'NVDA']);
+  });
+});
+
+describe('leverage-adjusted equivalent exposure', () => {
+  it('maps a $5,000 TSLL position to $10,000 of TSLA underlying exposure', () => {
+    const state: PortfolioState = {
+      holdings: [{
+        id: 'tsll', symbol: 'TSLL', name: 'TSLA Bull 2X', shares: 50,
+        buyPrice: 90, currentPrice: 100, sector: '科技', currency: 'USD', assetType: 'leveraged_etf',
+      }],
+      cash: [], updatedAt: 'old',
+    };
+
+    const metrics = computeMetrics(state, usdRates);
+
+    expect(metrics.holdingsMetrics[0]?.equivalentExposure).toBe(10_000);
+    expect(metrics.leveragedEtfExposure).toBe(10_000);
+    expect(metrics.equivalentExposureTotal).toBe(10_000);
+    expect(metrics.underlyingExposure.TSLA).toBe(10_000);
+  });
+
+  it('counts an option without Delta as uncomputable instead of treating premium as exposure', () => {
+    const state: PortfolioState = {
+      holdings: [{
+        id: 'igv', symbol: 'IGV', name: 'IGV CALL', shares: 2, buyPrice: 5,
+        currentPrice: 18, sector: '科技', currency: 'USD', assetType: 'option',
+        option: {
+          underlying: 'IGV', optionType: 'call', strike: 80, expiration: '2027-01-15',
+          contractMultiplier: 100, delta: null, theta: null, gamma: null, vega: null,
+          impliedVolatility: null, underlyingPrice: 93.76,
+        },
+      }],
+      cash: [], updatedAt: 'old',
+    };
+
+    const metrics = computeMetrics(state, usdRates);
+
+    expect(metrics.holdingsMetrics[0]?.equivalentExposure).toBeNull();
+    expect(metrics.uncomputableOptions).toBe(1);
+    expect(metrics.optionDeltaExposure).toBe(0);
+  });
+
+  it('assigns zero equivalent exposure to SGOV and excludes cash from the total', () => {
+    const state: PortfolioState = {
+      holdings: [{
+        id: 'sgov', symbol: 'SGOV', name: 'Treasury ETF', shares: 400,
+        buyPrice: 100, currentPrice: 100, sector: 'ETF / 指数', currency: 'USD', assetType: 'etf',
+      }],
+      cash: [{ amount: 10_000, currency: 'USD' }], updatedAt: 'old',
+    };
+
+    const metrics = computeMetrics(state, usdRates);
+
+    expect(metrics.holdingsMetrics[0]?.equivalentExposure).toBe(0);
+    expect(metrics.equivalentExposureTotal).toBe(0);
+    expect(metrics.equivalentExposurePct).toBe(0);
+  });
+
+  it('makes total equivalent exposure equal plain equity plus leveraged ETF plus option Delta exposure', () => {
+    const state: PortfolioState = {
+      holdings: [
+        { id: 'msft', symbol: 'MSFT', name: 'Microsoft', shares: 10, buyPrice: 100, currentPrice: 100, sector: '科技', currency: 'USD', assetType: 'stock' },
+        { id: 'tsll', symbol: 'TSLL', name: 'TSLA Bull 2X', shares: 10, buyPrice: 100, currentPrice: 100, sector: '科技', currency: 'USD', assetType: 'leveraged_etf' },
+        {
+          id: 'igv', symbol: 'IGV', name: 'IGV CALL', shares: 1, buyPrice: 5, currentPrice: 10,
+          sector: '科技', currency: 'USD', assetType: 'option',
+          option: { underlying: 'IGV', optionType: 'call', strike: 80, expiration: '2027-01-15', contractMultiplier: 100, delta: 0.5, theta: null, gamma: null, vega: null, impliedVolatility: null, underlyingPrice: 100 },
+        },
+      ], cash: [{ amount: 3000, currency: 'USD' }], updatedAt: 'old',
+    };
+
+    const metrics = computeMetrics(state, usdRates);
+
+    expect(metrics.plainEquityExposure).toBe(1000);
+    expect(metrics.leveragedEtfExposure).toBe(2000);
+    expect(metrics.optionDeltaExposure).toBe(5000);
+    expect(metrics.equivalentExposureTotal).toBe(8000);
+    expect(metrics.equivalentExposurePct).toBe(8000 / 6000);
+  });
+
+  it('prefers a manual leverage factor, then map/default, and leaves ordinary assets at 1x', () => {
+    const base = { id: 'x', name: '', shares: 1, buyPrice: 1, currentPrice: 1, sector: '', currency: 'USD' as const };
+    expect(leverageFactorFor({ ...base, symbol: 'TSLL', assetType: 'leveraged_etf', leverageFactor: 1.5 })).toBe(1.5);
+    expect(leverageFactorFor({ ...base, symbol: 'NVDL', assetType: 'leveraged_etf' })).toBe(2);
+    expect(leverageFactorFor({ ...base, symbol: 'UNKNOWN', assetType: 'leveraged_etf' })).toBe(2);
+    expect(leverageFactorFor({ ...base, symbol: 'MSFT', assetType: 'stock' })).toBe(1);
   });
 });

@@ -6,6 +6,7 @@ import type {
 } from './types';
 import { loadExchangeRates, toUsd } from './exchangeRates';
 import { isCashEquivalent } from './assetClass';
+import { leverageFactorFor, leverageUnderlyingFor } from './leverageMap';
 
 export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loadExchangeRates()): PortfolioMetrics {
   const unconvertedItems: string[] = [];
@@ -32,6 +33,13 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
       deltaEquivalentShares != null && option?.underlyingPrice != null
         ? toUsd(deltaEquivalentShares * option.underlyingPrice, h.currency, rates)
         : null;
+    const equivalentExposure = isCashEquivalent(h)
+      ? 0
+      : h.assetType === 'option'
+        ? deltaAdjustedExposure
+        : h.assetType === 'leveraged_etf'
+          ? safeMarketValue * leverageFactorFor(h)
+          : safeMarketValue;
     return {
       holding: h,
       marketValueNative,
@@ -46,6 +54,7 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
       dayChangePct: h.quote?.changePercent ?? null,
       deltaEquivalentShares,
       deltaAdjustedExposure,
+      equivalentExposure,
     };
   });
 
@@ -85,9 +94,13 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
   for (const m of holdingsMetrics) {
     const key = m.holding.sector || '未分类';
     sectorWeights[key] = (sectorWeights[key] ?? 0) + m.weight;
-    if (m.holding.assetType === 'option' && m.deltaAdjustedExposure == null) continue;
-    const exposureKey = m.holding.assetType === 'option' ? m.holding.option?.underlying || m.holding.symbol : m.holding.symbol;
-    const exposure = m.holding.assetType === 'option' ? m.deltaAdjustedExposure ?? 0 : m.marketValue;
+    if (isCashEquivalent(m.holding) || m.equivalentExposure == null) continue;
+    const exposureKey = m.holding.assetType === 'option'
+      ? m.holding.option?.underlying || m.holding.symbol
+      : m.holding.assetType === 'leveraged_etf'
+        ? leverageUnderlyingFor(m.holding) || m.holding.symbol
+        : m.holding.symbol;
+    const exposure = m.equivalentExposure;
     if (exposureKey) underlyingExposure[exposureKey] = (underlyingExposure[exposureKey] ?? 0) + exposure;
   }
 
@@ -99,6 +112,25 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
     (sum, metric) => sum + (metric.deltaAdjustedExposure ?? 0),
     0,
   );
+  const plainEquityExposure = holdingsMetrics.reduce(
+    (sum, metric) => sum + (
+      !isCashEquivalent(metric.holding)
+      && metric.holding.assetType !== 'option'
+      && metric.holding.assetType !== 'leveraged_etf'
+        ? metric.marketValue
+        : 0
+    ),
+    0,
+  );
+  const leveragedEtfExposure = holdingsMetrics.reduce(
+    (sum, metric) => sum + (metric.holding.assetType === 'leveraged_etf' ? metric.equivalentExposure ?? 0 : 0),
+    0,
+  );
+  const optionDeltaExposure = holdingsMetrics.reduce(
+    (sum, metric) => sum + (metric.holding.assetType === 'option' ? metric.deltaAdjustedExposure ?? 0 : 0),
+    0,
+  );
+  const equivalentExposureTotal = plainEquityExposure + leveragedEtfExposure + optionDeltaExposure;
 
   return {
     totalValue,
@@ -119,6 +151,14 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
     optionValue,
     optionWeight: totalValue > 0 ? optionValue / totalValue : 0,
     deltaAdjustedExposure,
+    equivalentExposureTotal,
+    equivalentExposurePct: totalValue > 0 ? equivalentExposureTotal / totalValue : 0,
+    plainEquityExposure,
+    leveragedEtfExposure,
+    optionDeltaExposure,
+    uncomputableOptions: holdingsMetrics.filter(
+      (metric) => metric.holding.assetType === 'option' && metric.deltaAdjustedExposure == null,
+    ).length,
     underlyingExposure,
     unconvertedItems,
     unknownCostItems: holdingsMetrics.filter((metric) => !metric.costKnown).length,

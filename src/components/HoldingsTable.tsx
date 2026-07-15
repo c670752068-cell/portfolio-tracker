@@ -4,6 +4,7 @@ import { formatPct, formatSignedPct } from '../format';
 import { CASH_EQUIVALENT_SYMBOLS, isCashEquivalent } from '../assetClass';
 import { formatDisplayMoney } from '../displayCurrency';
 import { sortHoldingMetrics } from '../metrics';
+import { leverageFactorFor } from '../leverageMap';
 
 interface HoldingsTableProps {
   metrics: HoldingMetric[];
@@ -130,7 +131,7 @@ function Row({ metric, onUpdate, onDelete, displayCurrency, rates }: RowProps) {
     : '';
   return (
     <tr className="align-top hover:bg-slate-50 dark:hover:bg-slate-700/40">
-      <td className="px-3 py-2"><div className="font-medium">{holding.symbol}</div><div className="text-xs text-slate-500">{label} · {holding.currency}</div>{optionDescription && <div className="mt-1 max-w-44 text-xs text-slate-500">{optionDescription}</div>}</td>
+      <td className="px-3 py-2"><div className="font-medium">{holding.symbol}</div><div className="text-xs text-slate-500">{label} · {holding.currency}</div>{holding.assetType === 'leveraged_etf' && <label className="mt-1 block text-xs text-slate-500">杠杆倍数 <input type="number" min={0.5} max={5} step={0.1} value={holding.leverageFactor ?? ''} placeholder={String(leverageFactorFor(holding))} onChange={(event) => onUpdate(holding.id, { leverageFactor: event.target.value === '' ? undefined : Number(event.target.value) })} className="ml-1 w-14 rounded border border-slate-300 bg-transparent px-1 py-0.5 text-right dark:border-slate-600" /></label>}{optionDescription && <div className="mt-1 max-w-44 text-xs text-slate-500">{optionDescription}</div>}</td>
       <td className="px-3 py-2"><input value={holding.name} onChange={(event) => onUpdate(holding.id, { name: event.target.value })} className="w-28 bg-transparent focus:outline-none" placeholder="名称" /><input value={holding.sector} onChange={(event) => onUpdate(holding.id, { sector: event.target.value })} className="mt-1 w-24 bg-transparent text-xs text-slate-500 focus:outline-none" placeholder="行业" /><label className="mt-1 flex items-center gap-1 text-xs text-slate-500"><input type="checkbox" checked={isCashEquivalent(holding)} onChange={(event) => onUpdate(holding.id, { cashEquivalent: event.target.checked })} />现金等价物</label>{holding.missingFields && holding.missingFields.length > 0 && <div className="mt-1 max-w-36 text-xs text-amber-600">待补：{holding.missingFields.join('、')}</div>}{holding.quote?.note && <div className="mt-1 max-w-44 text-xs text-indigo-600 dark:text-indigo-300">{holding.quote.note}</div>}</td>
       <td className="px-3 py-2 text-right tabular-nums"><input type="number" step="any" value={holding.shares} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-slate-500">{isOption ? '合约张数' : '股'}</div></td>
       <td className="px-3 py-2 text-right tabular-nums"><input type="number" step="any" value={holding.buyPrice} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-slate-500">{holding.currency}</div></td>

@@ -56,6 +56,7 @@ export interface Holding {
   confidence?: 'high' | 'medium' | 'low';
   source?: 'manual' | 'image-import';
   cashEquivalent?: boolean;
+  leverageFactor?: number;
   reportedPnl?: number | null;
   reportedPnlPct?: number | null;
   quote?: QuoteSnapshot;
@@ -115,6 +116,7 @@ export interface HoldingMetric {
   weight: number;
   deltaEquivalentShares: number | null;
   deltaAdjustedExposure: number | null;
+  equivalentExposure: number | null;
 }
 
 export interface PortfolioMetrics {
@@ -136,6 +138,12 @@ export interface PortfolioMetrics {
   optionValue: number;
   optionWeight: number;
   deltaAdjustedExposure: number;
+  equivalentExposureTotal: number;
+  equivalentExposurePct: number;
+  plainEquityExposure: number;
+  leveragedEtfExposure: number;
+  optionDeltaExposure: number;
+  uncomputableOptions: number;
   underlyingExposure: Record<string, number>;
   unconvertedItems: string[];
   unknownCostItems: number;
