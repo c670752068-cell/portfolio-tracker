@@ -18,6 +18,8 @@ export function AllocationChart({ metrics }: AllocationChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const slices = buildAllocationSlices(metrics);
+  const isNarrow = size.width > 0 && size.width < 520;
+  const detailSlices = [...slices].sort((left, right) => right.value - left.value);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -48,40 +50,66 @@ export function AllocationChart({ metrics }: AllocationChartProps) {
   }
 
   return (
-    <div ref={containerRef} className="h-72 min-h-72 w-full min-w-0 sm:h-96">
+    <div ref={containerRef} className="min-h-72 w-full min-w-0 sm:h-96">
       {size.width > 1 && size.height > 1 && (
-        <PieChart width={size.width} height={size.height}>
-          <Pie
-            data={slices}
-            dataKey="value"
-            nameKey="name"
-            cx="50%"
-            cy="50%"
-            innerRadius="45%"
-            outerRadius="80%"
-            paddingAngle={2}
-            label={(entry) => {
-              const slice = entry as unknown as AllocationSlice;
-              return slice.showLabel ? `${slice.name} ${formatPct(slice.weight)}` : null;
-            }}
+        <>
+          <PieChart
+            width={size.width}
+            height={isNarrow ? 220 : size.height}
+            margin={isNarrow ? undefined : { top: 24, right: 24, bottom: 24, left: 24 }}
           >
-            {slices.map((s, i) => (
-              <Cell
-                key={`${i}-${s.name}`}
-                fill={s.kind === 'cash' ? '#94a3b8' : s.kind === 'cash-equivalent' ? '#64748b' : COLORS[i % COLORS.length]}
-              />
-            ))}
-          </Pie>
-          <Tooltip
-            formatter={(value, _name, item) => {
-              const slice = item.payload as AllocationSlice;
-              const num = typeof value === 'number' ? value : Number(value);
-              return [`${formatMoney(num)} (${formatPct(slice.weight)})`, slice.name];
-            }}
-          />
-          <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
-        </PieChart>
+            <Pie
+              data={slices}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius="45%"
+              outerRadius={isNarrow ? '82%' : '72%'}
+              paddingAngle={2}
+              label={isNarrow ? false : (entry) => {
+                const slice = entry as unknown as AllocationSlice;
+                return slice.showLabel ? `${slice.name} ${formatPct(slice.weight)}` : null;
+              }}
+            >
+              {slices.map((s, i) => (
+                <Cell key={`${i}-${s.name}`} fill={sliceColor(s, i)} />
+              ))}
+            </Pie>
+            <Tooltip
+              formatter={(value, _name, item) => {
+                const slice = item.payload as AllocationSlice;
+                const num = typeof value === 'number' ? value : Number(value);
+                return [`${formatMoney(num)} (${formatPct(slice.weight)})`, slice.name];
+              }}
+            />
+            {!isNarrow && <Legend wrapperStyle={{ fontSize: '0.75rem' }} />}
+          </PieChart>
+          {isNarrow && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 pb-2 text-xs">
+              {detailSlices.map((slice) => {
+                const index = slices.indexOf(slice);
+                return (
+                  <div key={slice.name} className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: sliceColor(slice, index) }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-slate-600" title={slice.name}>{slice.name}</span>
+                    <span className="shrink-0 font-medium text-slate-800">{formatPct(slice.weight)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
+}
+
+function sliceColor(slice: AllocationSlice, index: number): string {
+  if (slice.kind === 'cash') return '#94a3b8';
+  if (slice.kind === 'cash-equivalent') return '#64748b';
+  return COLORS[index % COLORS.length];
 }

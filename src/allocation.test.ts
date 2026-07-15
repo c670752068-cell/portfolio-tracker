@@ -34,4 +34,16 @@ describe('buildAllocationSlices', () => {
     expect(slices.some((slice) => slice.name.startsWith('其他（'))).toBe(true);
     expect(slices.some((slice) => slice.weight < 0.03 && slice.showLabel)).toBe(false);
   });
+
+  it('uses balanced full-width parentheses for the grouped remainder label', () => {
+    const state: PortfolioState = {
+      holdings: Array.from({ length: 5 }, (_, index) => row(`stock-${index}`, `S${index}`, 5 - index)),
+      cash: [],
+      updatedAt: '2026-07-15T00:00:00.000Z',
+    };
+
+    const slices = buildAllocationSlices(computeMetrics(state, rates), { maxSlices: 3 });
+
+    expect(slices.map((slice) => slice.name)).toContain('其他（3 项）');
+  });
 });

@@ -32,7 +32,7 @@ export function buildAllocationSlices(
     ? [
         ...ranked.slice(0, safeMaxSlices - 1),
         {
-          name: `其他（${ranked.length - (safeMaxSlices - 1)} 项)`,
+          name: `其他（${ranked.length - (safeMaxSlices - 1)} 项）`,
           value: ranked.slice(safeMaxSlices - 1).reduce((sum, slice) => sum + slice.value, 0),
           kind: 'other' as const,
         },
