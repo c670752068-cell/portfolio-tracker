@@ -79,7 +79,10 @@ export async function syncHoldingsWithQuotes(
     return {
       ...holding,
       currentPrice: roundPrice(quote.price),
-      marketValueOverride: undefined,
+      // The 45-minute quant snapshot remains the portfolio value source of
+      // truth. Quotes may add price/day-change metadata, but must not change
+      // its broker-reported market value before the next snapshot arrives.
+      marketValueOverride: holding.source === 'quant-sync' ? holding.marketValueOverride : undefined,
       quote,
     };
   });
@@ -308,7 +311,7 @@ function applyUnderlyingQuoteToOption(holding: Holding, underlyingQuote: QuoteSn
   return {
     ...holding,
     currentPrice: roundPrice(nextPremium),
-    marketValueOverride: undefined,
+    marketValueOverride: holding.source === 'quant-sync' ? holding.marketValueOverride : undefined,
     option: nextOption,
     quote: {
       symbol: holding.symbol,

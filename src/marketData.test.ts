@@ -100,3 +100,41 @@ describe('option quote refresh integration', () => {
     expect(result.holdings[0]?.quote?.source).toBe('proxy');
   });
 });
+
+describe('quant-sync source-of-truth integration', () => {
+  it('keeps a quant stock market value override while attaching a fresh quote', async () => {
+    vi.stubGlobal('window', { location: { protocol: 'https:' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      quotes: [{ symbol: 'MSFT', price: 520, previousClose: 510, change: 10, changePercent: 0.0196, currency: 'USD' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    const synced = holding({ symbol: 'MSFT', source: 'quant-sync', shares: 20, currentPrice: 500, marketValueOverride: 10_005 });
+
+    const result = await syncHoldingsWithQuotes([synced], settings);
+
+    expect(result.holdings[0]?.currentPrice).toBe(520);
+    expect(result.holdings[0]?.marketValueOverride).toBe(10_005);
+    expect(result.holdings[0]?.quote?.change).toBe(10);
+  });
+
+  it('keeps a quant option premium market value while updating its Delta estimate metadata', async () => {
+    vi.stubGlobal('window', { location: { protocol: 'https:' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      quotes: [{ symbol: 'IGV', price: 110, previousClose: 108, change: 2, changePercent: 0.0185, currency: 'USD' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    const synced = holding({
+      symbol: 'IGV', source: 'quant-sync', assetType: 'option', shares: 2, currentPrice: 18,
+      marketValueOverride: 3_616,
+      option: {
+        underlying: 'IGV', optionType: 'call', strike: 80, expiration: '2027-01-15',
+        contractMultiplier: 100, delta: 0.5, theta: null, gamma: null, vega: null,
+        impliedVolatility: null, underlyingPrice: 100,
+      },
+    });
+
+    const result = await syncHoldingsWithQuotes([synced], settings);
+
+    expect(result.holdings[0]?.marketValueOverride).toBe(3_616);
+    expect(result.holdings[0]?.option?.underlyingPrice).toBe(110);
+    expect(result.holdings[0]?.quote?.source).toBe('delta_estimate');
+  });
+});
