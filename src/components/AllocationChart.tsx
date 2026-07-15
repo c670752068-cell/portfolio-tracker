@@ -93,12 +93,12 @@ export function AllocationChart({ metrics, displayCurrency, rates }: AllocationC
               {detailSlices.map((slice) => {
                 const index = slices.indexOf(slice);
                 return (
-                  <div key={slice.name} className="flex min-w-0 items-center gap-2">
+                  <div key={slice.name} className="flex min-w-0 items-start gap-2">
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-sm"
                       style={{ backgroundColor: sliceColor(slice, index) }}
                     />
-                    <span className="min-w-0 flex-1 truncate text-slate-600" title={slice.name}>{slice.name}</span>
+                    <span className="min-w-0 flex-1 break-all leading-tight text-slate-600" title={slice.name}>{slice.name}</span>
                     <span className="shrink-0 text-right font-medium text-slate-800">
                       <span className="block">{formatPct(slice.weight)}</span>
                       <span className="block text-[10px] font-normal text-slate-500">{formatDisplayMoney(slice.value, displayCurrency, rates)}</span>
