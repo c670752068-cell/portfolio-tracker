@@ -160,6 +160,28 @@ describe('leverage-adjusted equivalent exposure', () => {
     expect(metrics.equivalentExposurePct).toBe(8000 / 6000);
   });
 
+  it('converts an option on a 2x ETF into its underlying stock equivalent exposure', () => {
+    const state: PortfolioState = {
+      holdings: [{
+        id: 'msfu-call', symbol: 'MSFU', name: 'MSFU Call', shares: 1, buyPrice: 1,
+        currentPrice: 2, sector: '科技', currency: 'USD', assetType: 'option',
+        option: {
+          underlying: 'MSFU', optionType: 'call', strike: 30, expiration: '2027-01-15',
+          contractMultiplier: 100, delta: 0.5, theta: 0, gamma: 0, vega: 0.1,
+          impliedVolatility: 0.5, underlyingPrice: 25,
+        },
+      }],
+      cash: [], updatedAt: 'old',
+    };
+
+    const metrics = computeMetrics(state, usdRates);
+
+    expect(metrics.holdingsMetrics[0]?.deltaEquivalentShares).toBe(50);
+    expect(metrics.holdingsMetrics[0]?.deltaAdjustedExposure).toBe(2_500);
+    expect(metrics.optionDeltaExposure).toBe(2_500);
+    expect(metrics.underlyingExposure.MSFT).toBe(2_500);
+  });
+
   it('prefers a manual leverage factor, then map/default, and leaves ordinary assets at 1x', () => {
     const base = { id: 'x', name: '', shares: 1, buyPrice: 1, currentPrice: 1, sector: '', currency: 'USD' as const };
     expect(leverageFactorFor({ ...base, symbol: 'TSLL', assetType: 'leveraged_etf', leverageFactor: 1.5 })).toBe(1.5);

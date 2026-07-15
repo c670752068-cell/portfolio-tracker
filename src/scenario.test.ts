@@ -94,6 +94,41 @@ describe('simulateScenario numerical contract', () => {
     expect(result.lines.map((line) => line.symbol)).toEqual(['NVDA', 'NVDL', 'NVDA']);
     expect(result.totalPnl).toBeCloseTo(5_560);
   });
+
+  it('keeps ordinary ETF and broker identity visible in an IGV family result', () => {
+    const igvEtf = metric({
+      id: 'longport-igv', symbol: 'IGV', name: 'IGV', assetType: 'etf', broker: 'LONGPORT', currentPrice: 94,
+    }, 6_768);
+    const igvCall = metric({
+      id: 'futu-igv-call', symbol: 'IGV', name: 'IGV Call', assetType: 'option', broker: 'FUTU', shares: 2,
+      option: {
+        underlying: 'IGV', optionType: 'call', strike: 80, expiration: '2027-01-15',
+        contractMultiplier: 100, delta: 0.8, gamma: 0, theta: 0, vega: 0.1,
+        impliedVolatility: 0.3, underlyingPrice: 94,
+      },
+    }, 3_860);
+    const result = simulateScenario({ family: 'IGV', holdings: [igvEtf, igvCall], spot: 94, targetPrice: 103.4, days: 0, totalAssets: 100_000 });
+
+    expect(result.lines).toEqual([
+      expect.objectContaining({ id: 'longport-igv', kind: 'etf', broker: 'LONGPORT' }),
+      expect.objectContaining({ id: 'futu-igv-call', kind: 'option', broker: 'FUTU' }),
+    ]);
+  });
+
+  it('groups an MSFU call under MSFT and applies the 2x MSFU move before option Greeks', () => {
+    const msfuCall = metric({
+      id: 'msfu-call', symbol: 'MSFU', name: 'MSFU Call', assetType: 'option', shares: 1,
+      option: {
+        underlying: 'MSFU', optionType: 'call', strike: 30, expiration: '2027-01-15',
+        contractMultiplier: 100, delta: 0.5, gamma: 0, theta: 0, vega: 0.1,
+        impliedVolatility: 0.5, underlyingPrice: 25,
+      },
+    }, 200);
+    const result = simulateScenario({ family: 'MSFT', holdings: [msfuCall], spot: 400, targetPrice: 440, days: 0, totalAssets: 100_000 });
+
+    expect(scenarioFamilyFor(msfuCall.holding)).toBe('MSFT');
+    expect(result.lines[0]).toMatchObject({ kind: 'option', pnl: 250 });
+  });
 });
 
 describe('scenarioFamilyFor', () => {

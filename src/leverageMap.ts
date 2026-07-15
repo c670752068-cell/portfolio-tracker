@@ -23,6 +23,18 @@ export const LEVERAGE_MAP: Readonly<Record<string, LeverageInfo>> = {
   AAPU: { factor: 2, underlying: 'AAPL' },
 };
 
+export function leverageInfoForSymbol(symbol: string): LeverageInfo | null {
+  return LEVERAGE_MAP[symbol.trim().toUpperCase()] ?? null;
+}
+
+export function leverageFactorForSymbol(symbol: string): number {
+  return leverageInfoForSymbol(symbol)?.factor ?? 1;
+}
+
+export function leverageUnderlyingForSymbol(symbol: string): string | null {
+  return leverageInfoForSymbol(symbol)?.underlying ?? null;
+}
+
 export function leverageFactorFor(holding: Holding): number {
   if (holding.leverageFactor != null && holding.leverageFactor > 0) return holding.leverageFactor;
   const mapped = LEVERAGE_MAP[holding.symbol.trim().toUpperCase()];
@@ -31,5 +43,5 @@ export function leverageFactorFor(holding: Holding): number {
 }
 
 export function leverageUnderlyingFor(holding: Holding): string | null {
-  return LEVERAGE_MAP[holding.symbol.trim().toUpperCase()]?.underlying ?? null;
+  return leverageUnderlyingForSymbol(holding.symbol);
 }

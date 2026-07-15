@@ -1,4 +1,4 @@
-import { LEVERAGE_MAP } from './leverageMap';
+import { leverageInfoForSymbol } from './leverageMap';
 import type {
   AssetType,
   CashPosition,
@@ -26,17 +26,18 @@ export function mapQuantPositions(
   const cashAmount = payload.net_liquidation - marketValue;
   const cash: CashPosition[] = [];
 
-  if (cashAmount >= 0) {
-    cash.push({
-      amount: roundMoney(cashAmount),
-      currency: 'USD',
-      source: 'quant-sync',
-      note: '按净资产减持仓市值推算',
-    });
-  } else {
+  cash.push({
+    amount: roundMoney(cashAmount),
+    currency: 'USD',
+    source: 'quant-sync',
+    note: cashAmount >= 0
+      ? '按净资产减持仓市值推算'
+      : '净值对账调整（含现金、负债、应计及快照时差）',
+  });
+  if (cashAmount < 0) {
     issues.push({
       field: '现金推算',
-      reason: `净资产低于持仓市值 ${Math.abs(cashAmount).toFixed(2)} USD，未生成负现金条目，请核对券商汇总口径。`,
+      reason: `净资产低于持仓市值 ${Math.abs(cashAmount).toFixed(2)} USD，已计入负的净值对账调整，请核对券商汇总口径。`,
       priority: 'required',
     });
   }
@@ -52,11 +53,11 @@ function mapPosition(
   issues: ImportIssue[],
 ): Holding {
   const symbol = position.symbol.trim().toUpperCase();
-  const mappedLeverage = LEVERAGE_MAP[symbol];
-  const assetType: AssetType = mappedLeverage
-    ? 'leveraged_etf'
-    : position.asset_type === 'option'
-      ? 'option'
+  const mappedLeverage = leverageInfoForSymbol(symbol);
+  const assetType: AssetType = position.asset_type === 'option'
+    ? 'option'
+    : mappedLeverage
+      ? 'leveraged_etf'
       : position.asset_type === 'etf'
         ? 'etf'
         : 'stock';
@@ -82,7 +83,9 @@ function mapPosition(
   return {
     id: `quant-${slug(broker)}-${index}-${slug(symbol)}`,
     symbol,
-    name: enhancement?.name || symbol,
+    name: assetType === 'leveraged_etf' && mappedLeverage
+      ? `${symbol} ${mappedLeverage.factor}× 杠杆 ETF`
+      : enhancement?.name || symbol,
     shares,
     buyPrice: enhancement?.buyPrice ?? 0,
     currentPrice: inferredPrice,
@@ -98,7 +101,9 @@ function mapPosition(
     source: 'quant-sync',
     broker,
     cashEquivalent: enhancement?.cashEquivalent,
-    leverageFactor: enhancement?.leverageFactor ?? mappedLeverage?.factor,
+    leverageFactor: assetType === 'leveraged_etf'
+      ? mappedLeverage?.factor ?? enhancement?.leverageFactor
+      : undefined,
     reportedPnl: enhancement?.reportedPnl,
     reportedPnlPct: enhancement?.reportedPnlPct,
   };

@@ -1,7 +1,12 @@
-import { leverageFactorFor, leverageUnderlyingFor } from './leverageMap';
+import {
+  leverageFactorFor,
+  leverageFactorForSymbol,
+  leverageUnderlyingFor,
+  leverageUnderlyingForSymbol,
+} from './leverageMap';
 import type { Holding, HoldingMetric } from './types';
 
-export type ScenarioKind = 'stock' | 'leveraged_etf' | 'option';
+export type ScenarioKind = 'stock' | 'etf' | 'leveraged_etf' | 'option';
 
 export interface ScenarioInput {
   family: string;
@@ -17,6 +22,7 @@ export interface ScenarioLine {
   symbol: string;
   name: string;
   kind: ScenarioKind;
+  broker?: string;
   pnl: number;
   pnlPct: number;
 }
@@ -69,9 +75,21 @@ export function simulateScenario(input: ScenarioInput): ScenarioResult {
         excluded.push({ id: holding.id, symbol: holding.symbol, reason: '缺少 Delta，无法参与期权情景计算' });
         continue;
       }
+      const optionUnderlying = normalize(option.underlying || holding.symbol);
+      const leveragedFamily = leverageUnderlyingForSymbol(optionUnderlying);
+      let optionPriceChange = dP;
+      if (leveragedFamily === family) {
+        if (option.underlyingPrice == null || !Number.isFinite(option.underlyingPrice) || option.underlyingPrice <= 0) {
+          excluded.push({ id: holding.id, symbol: holding.symbol, reason: '杠杆 ETF 期权缺少标的现价，无法换算到底层正股情景' });
+          continue;
+        }
+        optionPriceChange = option.underlyingPrice * leverageFactorForSymbol(optionUnderlying) * r;
+      }
       const gamma = option.gamma != null && Number.isFinite(option.gamma) ? option.gamma : 0;
       const theta = option.theta != null && Number.isFinite(option.theta) ? option.theta : 0;
-      const premiumChange = option.delta * dP + 0.5 * gamma * dP * dP + theta * days;
+      const premiumChange = option.delta * optionPriceChange
+        + 0.5 * gamma * optionPriceChange * optionPriceChange
+        + theta * days;
       const rawPnl = holding.shares * (option.contractMultiplier || 100) * premiumChange;
       const pnl = Math.max(rawPnl, -Math.max(0, marketValue));
       lines.push(lineFor(holding, 'option', pnl, marketValue));
@@ -85,7 +103,7 @@ export function simulateScenario(input: ScenarioInput): ScenarioResult {
     }
 
     const pnl = marketValue * r;
-    lines.push(lineFor(holding, 'stock', pnl, marketValue));
+    lines.push(lineFor(holding, holding.assetType === 'etf' ? 'etf' : 'stock', pnl, marketValue));
   }
 
   const totalPnl = cleanNumber(lines.reduce((sum, line) => sum + line.pnl, 0));
@@ -100,7 +118,8 @@ export function simulateScenario(input: ScenarioInput): ScenarioResult {
 
 export function scenarioFamilyFor(holding: Holding): string {
   if (holding.assetType === 'option') {
-    return normalize(holding.option?.underlying || holding.symbol);
+    const optionUnderlying = normalize(holding.option?.underlying || holding.symbol);
+    return normalize(leverageUnderlyingForSymbol(optionUnderlying) || optionUnderlying);
   }
   if (holding.assetType === 'leveraged_etf') {
     return normalize(leverageUnderlyingFor(holding) || holding.symbol);
@@ -122,7 +141,13 @@ export function listScenarioFamilies(holdings: HoldingMetric[]): ScenarioFamily[
   for (const { holding } of holdings) {
     const family = scenarioFamilyFor(holding);
     if (!family || families.has(family)) continue;
-    const underlyingPrice = holding.assetType === 'option' ? holding.option?.underlyingPrice : null;
+    const optionUnderlying = holding.assetType === 'option'
+      ? normalize(holding.option?.underlying || holding.symbol)
+      : '';
+    const underlyingPrice = holding.assetType === 'option'
+      && !leverageUnderlyingForSymbol(optionUnderlying)
+      ? holding.option?.underlyingPrice
+      : null;
     if (underlyingPrice != null && underlyingPrice > 0) families.set(family, underlyingPrice);
     else if (holding.assetType === 'leveraged_etf' && normalize(holding.symbol) === family && holding.currentPrice > 0) {
       families.set(family, holding.currentPrice);
@@ -141,6 +166,7 @@ function lineFor(holding: Holding, kind: ScenarioKind, pnl: number, marketValue:
     symbol: holding.symbol,
     name: holding.name || holding.symbol,
     kind,
+    broker: holding.broker,
     pnl: cleanPnl,
     pnlPct: marketValue > 0 ? cleanNumber(cleanPnl / marketValue) : 0,
   };

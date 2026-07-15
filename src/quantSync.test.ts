@@ -84,7 +84,7 @@ describe('mapQuantPositions', () => {
     expect(mapped.issues).toContainEqual(expect.objectContaining({ field: 'IGV 期权增强', priority: 'required' }));
   });
 
-  it('automatically classifies known leveraged symbols and retains an explicit leverage override', () => {
+  it('uses the canonical leverage factor instead of a stale screenshot override', () => {
     const mapped = mapQuantPositions({
       ...payload,
       net_liquidation: 1_000,
@@ -97,14 +97,76 @@ describe('mapQuantPositions', () => {
       }],
     }));
 
-    expect(mapped.holdings[0]).toMatchObject({ assetType: 'leveraged_etf', leverageFactor: 1.5 });
+    expect(mapped.holdings[0]).toMatchObject({
+      assetType: 'leveraged_etf',
+      leverageFactor: 2,
+      name: 'NVDL 2× 杠杆 ETF',
+    });
   });
 
-  it('omits negative derived cash and reports a required issue', () => {
+  it('keeps a signed reconciliation adjustment so total value equals net liquidation', () => {
     const mapped = mapQuantPositions({ ...payload, net_liquidation: 10_000 }, prior());
+    const positionValue = payload.positions.reduce((sum, position) => sum + position.market_value, 0);
 
-    expect(mapped.cash).toEqual([]);
+    expect(mapped.cash).toEqual([
+      expect.objectContaining({
+        amount: Math.round((10_000 - positionValue) * 100) / 100,
+        note: expect.stringContaining('净值对账调整'),
+      }),
+    ]);
     expect(mapped.issues).toContainEqual(expect.objectContaining({ field: '现金推算', priority: 'required' }));
+  });
+
+  it('always preserves option type before applying the leveraged-symbol map', () => {
+    const mapped = mapQuantPositions({
+      ...payload,
+      net_liquidation: 4_000,
+      positions: [
+        { broker: 'ibkr', symbol: 'MSFU', asset_type: 'etf', qty: 30, market_value: 700 },
+        { broker: 'ibkr', symbol: 'MSFU', asset_type: 'option', qty: 2, market_value: 560 },
+        { broker: 'futu', symbol: 'MSFU', asset_type: 'option', qty: 1, market_value: 200 },
+        { broker: 'futu', symbol: 'MSFU', asset_type: 'etf', qty: 113, market_value: 2_540 },
+      ],
+    }, prior({
+      holdings: [{
+        id: 'stale-msfu', symbol: 'MSFU', name: 'DIREXION DAILY MSFT BULL 3X', shares: 10,
+        buyPrice: 20, currentPrice: 25, sector: '科技', currency: 'USD',
+        assetType: 'leveraged_etf', leverageFactor: 3, source: 'image-import',
+      }],
+    }));
+
+    expect(mapped.holdings.map((holding) => holding.assetType)).toEqual([
+      'leveraged_etf', 'option', 'option', 'leveraged_etf',
+    ]);
+    expect(mapped.holdings.filter((holding) => holding.assetType === 'leveraged_etf')).toEqual([
+      expect.objectContaining({ name: 'MSFU 2× 杠杆 ETF', leverageFactor: 2 }),
+      expect.objectContaining({ name: 'MSFU 2× 杠杆 ETF', leverageFactor: 2 }),
+    ]);
+  });
+
+  it('classifies the complete 25-row broker snapshot without changing its cardinality', () => {
+    const positions: QuantPositionsPayload['positions'] = [
+      ['ibkr', 'FNGU', 'etf'], ['ibkr', 'GDX', 'etf'], ['ibkr', 'MAGS', 'etf'],
+      ['ibkr', 'MSFU', 'etf'], ['ibkr', 'NVDA', 'stock'], ['ibkr', 'NVDL', 'etf'],
+      ['ibkr', 'SGOV', 'etf'], ['ibkr', 'SPXL', 'stock'], ['ibkr', 'TQQQ', 'etf'],
+      ['ibkr', 'TSLA', 'stock'], ['ibkr', 'TSLL', 'stock'], ['ibkr', 'UDOW', 'stock'],
+      ['ibkr', 'MSFT', 'option'], ['ibkr', 'MSFU', 'option'], ['ibkr', 'NKE', 'option'],
+      ['ibkr', 'NVDA', 'option'], ['ibkr', 'PDD', 'option'],
+      ['longport', 'NVDA', 'stock'], ['longport', 'MSFT', 'stock'], ['longport', 'IGV', 'etf'],
+      ['futu', 'NVDA', 'stock'], ['futu', 'MSFU', 'option'], ['futu', 'MSFU', 'etf'],
+      ['futu', 'MSFT', 'stock'], ['futu', 'IGV', 'option'],
+    ].map(([broker, symbol, asset_type]) => ({
+      broker, symbol, asset_type: asset_type as 'stock' | 'etf' | 'option', qty: 1, market_value: 1,
+    }));
+    const mapped = mapQuantPositions({ ...payload, positions, net_liquidation: 25 }, prior());
+    const counts = mapped.holdings.reduce<Record<string, number>>((result, holding) => {
+      const type = holding.assetType ?? 'stock';
+      result[type] = (result[type] ?? 0) + 1;
+      return result;
+    }, {});
+
+    expect(mapped.holdings).toHaveLength(25);
+    expect(counts).toEqual({ leveraged_etf: 8, etf: 4, stock: 6, option: 7 });
   });
 });
 

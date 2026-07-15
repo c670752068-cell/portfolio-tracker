@@ -38,7 +38,6 @@ export function CashEditor({ cash, rates, onChange }: CashEditorProps) {
           <input
             type="number"
             step="any"
-            min={0}
             value={c.amount || ''}
             placeholder="金额"
             onChange={(e) => update(i, { amount: Number(e.target.value) })}
@@ -55,6 +54,7 @@ export function CashEditor({ cash, rates, onChange }: CashEditorProps) {
           </select>
           <button onClick={() => remove(i)} className="text-xs text-rose-600">删</button>
           <div className="col-span-6 text-xs text-slate-500">折算显示：{formatMoney(c.amount, c.currency)} {toUsd(c.amount, c.currency, rates) != null && c.currency !== 'USD' ? `≈ ${formatMoney(toUsd(c.amount, c.currency, rates) ?? 0)} USD` : ''}</div>
+          {c.note && <div className="col-span-6 text-xs text-amber-600 dark:text-amber-300">{c.note}</div>}
         </div>
       ))}
       <p className="text-xs text-slate-400">

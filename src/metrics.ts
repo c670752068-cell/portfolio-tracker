@@ -6,7 +6,12 @@ import type {
 } from './types';
 import { loadExchangeRates, toUsd } from './exchangeRates';
 import { isCashEquivalent } from './assetClass';
-import { leverageFactorFor, leverageUnderlyingFor } from './leverageMap';
+import {
+  leverageFactorFor,
+  leverageFactorForSymbol,
+  leverageUnderlyingFor,
+  leverageUnderlyingForSymbol,
+} from './leverageMap';
 
 export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loadExchangeRates()): PortfolioMetrics {
   const unconvertedItems: string[] = [];
@@ -29,9 +34,10 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
     const pnlPct = costKnown && safeCost > 0 ? pnl / safeCost : 0;
     const option = h.assetType === 'option' ? h.option : undefined;
     const deltaEquivalentShares = option?.delta == null ? null : h.shares * multiplier * option.delta;
+    const optionUnderlyingFactor = option ? leverageFactorForSymbol(option.underlying) : 1;
     const deltaAdjustedExposure =
       deltaEquivalentShares != null && option?.underlyingPrice != null
-        ? toUsd(deltaEquivalentShares * option.underlyingPrice, h.currency, rates)
+        ? toUsd(deltaEquivalentShares * option.underlyingPrice * optionUnderlyingFactor, h.currency, rates)
         : null;
     const equivalentExposure = isCashEquivalent(h)
       ? 0
@@ -95,8 +101,9 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
     const key = m.holding.sector || '未分类';
     sectorWeights[key] = (sectorWeights[key] ?? 0) + m.weight;
     if (isCashEquivalent(m.holding) || m.equivalentExposure == null) continue;
+    const optionUnderlying = m.holding.option?.underlying || m.holding.symbol;
     const exposureKey = m.holding.assetType === 'option'
-      ? m.holding.option?.underlying || m.holding.symbol
+      ? leverageUnderlyingForSymbol(optionUnderlying) || optionUnderlying
       : m.holding.assetType === 'leveraged_etf'
         ? leverageUnderlyingFor(m.holding) || m.holding.symbol
         : m.holding.symbol;

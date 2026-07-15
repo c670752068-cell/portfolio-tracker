@@ -99,7 +99,9 @@ export function ScenarioCalculator({ metrics, displayCurrency, rates }: Scenario
                   <div key={line.id} className="flex items-center justify-between gap-3 py-2 text-sm">
                     <div>
                       <div className="font-medium">{line.name}</div>
-                      <div className="text-xs text-slate-500">{line.symbol} · {kindLabel(line.kind)}</div>
+                      <div className="text-xs text-slate-500">
+                        {line.symbol} · {kindLabel(line.kind)}{line.broker ? ` · ${brokerLabel(line.broker)}` : ''}
+                      </div>
                     </div>
                     <div className={`text-right tabular-nums ${pnlClass}`}>
                       <div>{formatDisplayMoney(line.pnl, displayCurrency, rates)}</div>
@@ -121,7 +123,10 @@ export function ScenarioCalculator({ metrics, displayCurrency, rates }: Scenario
           )}
           {result.excluded.length > 0 && (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-              {result.excluded.length} 个期权缺 Delta 未计入——用「补充期权详情」导入后即可参与计算。
+              <p>{result.excluded.length} 个期权未计入：</p>
+              <ul className="mt-1 list-disc space-y-1 pl-4">
+                {result.excluded.map((item) => <li key={item.id}>{item.symbol}：{item.reason}</li>)}
+              </ul>
             </div>
           )}
           <div className="mt-3 space-y-1 text-xs text-slate-500">
@@ -141,7 +146,13 @@ export function ScenarioCalculator({ metrics, displayCurrency, rates }: Scenario
 function kindLabel(kind: ScenarioKind): string {
   if (kind === 'leveraged_etf') return '杠杆 ETF';
   if (kind === 'option') return '期权';
-  return '正股 / 普通 ETF';
+  if (kind === 'etf') return '普通 ETF';
+  return '正股';
+}
+
+function brokerLabel(broker: string): string {
+  const normalized = broker.trim().toUpperCase();
+  return normalized === 'LONGBRIDGE' ? 'LONGPORT' : normalized;
 }
 
 function roundPrice(value: number): number {
