@@ -8,6 +8,7 @@ export interface QuoteSyncResult {
   updatedSymbols: string[];
   failedSymbols: Array<{ symbol: string; reason: string }>;
   skippedSymbols: string[];
+  deltaEstimatedCount: number;
   updatedAt: string;
 }
 
@@ -44,6 +45,7 @@ export async function syncHoldingsWithQuotes(
       updatedSymbols: [],
       failedSymbols: [],
       skippedSymbols: [...new Set(initiallySkipped)],
+      deltaEstimatedCount: 0,
       updatedAt: new Date().toISOString(),
     };
   }
@@ -52,6 +54,7 @@ export async function syncHoldingsWithQuotes(
   const { quotes, failedSymbols } = await fetchQuotes(settings, symbols);
   const updatedSymbols = new Set<string>();
   const skippedSymbols = new Set<string>(initiallySkipped);
+  let deltaEstimatedCount = 0;
 
   const nextHoldings = holdings.map((holding) => {
     if (!shouldSyncHolding(holding)) {
@@ -64,6 +67,7 @@ export async function syncHoldingsWithQuotes(
       const quote = quotes.get(underlyingSymbol);
       if (!quote) return holding;
       const updated = applyUnderlyingQuoteToOption(holding, quote);
+      if (updated.quote?.source === 'delta_estimate') deltaEstimatedCount += 1;
       updatedSymbols.add(underlyingSymbol);
       return updated;
     }
@@ -86,6 +90,7 @@ export async function syncHoldingsWithQuotes(
     updatedSymbols: [...updatedSymbols],
     failedSymbols,
     skippedSymbols: [...skippedSymbols],
+    deltaEstimatedCount,
     updatedAt: new Date().toISOString(),
   };
 }

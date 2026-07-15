@@ -148,6 +148,9 @@ export default function App() {
       const skippedText = result.skippedSymbols.length > 0
         ? `，${result.skippedSymbols.length} 个跳过（非标准代码/缺标的）`
         : '';
+      const optionText = result.deltaEstimatedCount > 0
+        ? `，期权 ${result.deltaEstimatedCount} 个已按 Delta 估算`
+        : '';
       const nextDailySyncKey = dailySyncKey ?? buildDailyQuoteSyncKey(getBeijingQuoteTargetDate(), currentHoldings, settings);
       localStorage.setItem(DAILY_QUOTE_SYNC_KEY, nextDailySyncKey);
       const prefix = reason === 'daily'
@@ -157,7 +160,7 @@ export default function App() {
         loading: false,
         lastSyncedAt: result.updatedAt,
         error: result.failedSymbols.length > 0 ? result.failedSymbols.map((item) => `${item.symbol}: ${item.reason}`).join('；') : '',
-        summary: `${prefix} ${result.updatedSymbols.length}/${result.requestedSymbols.length} 个标的${failedText}${skippedText}`,
+        summary: `${prefix} ${result.updatedSymbols.length}/${result.requestedSymbols.length} 个标的${optionText}${failedText}${skippedText}`,
       });
     } catch (error) {
       setQuoteStatus((status) => ({
