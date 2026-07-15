@@ -11,9 +11,10 @@ import { analyzePortfolio } from './analyzer';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { computeMetrics } from './metrics';
-import { applyImageImport } from './importMerge';
+import { applyImageImport, countNeedsReview } from './importMerge';
 import { loadPortfolio, loadSettings, savePortfolio, saveSettings } from './storage';
 import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, PortfolioState } from './types';
+import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
 
 type Tab = 'dashboard' | 'holdings' | 'analysis' | 'settings';
@@ -84,6 +85,7 @@ export default function App() {
   const [portfolio, setPortfolio] = useState<PortfolioState>(() => loadPortfolio());
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [rates, setRates] = useState<ExchangeRates>(() => loadExchangeRates());
+  const [valueHistory, setValueHistory] = useState<ValuePoint[]>(() => loadValueHistory());
   const [rateError, setRateError] = useState<string>('');
   const [quoteStatus, setQuoteStatus] = useState<QuoteStatus>({
     loading: false,
@@ -195,6 +197,16 @@ export default function App() {
 
   const metrics = useMemo(() => computeMetrics(portfolio, rates), [portfolio, rates]);
   const findings = useMemo(() => analyzePortfolio(metrics), [metrics]);
+  const needsReviewCount = countNeedsReview(portfolio.holdings);
+
+  useEffect(() => {
+    const date = getBeijingDateParts(new Date()).date;
+    setValueHistory((current) => {
+      const next = recordDailyValue(current, date, metrics.totalValue);
+      saveValueHistory(next);
+      return next;
+    });
+  }, [metrics.totalValue]);
 
   function addHolding(h: Omit<Holding, 'id'>) {
     setPortfolio((p) => ({ ...p, holdings: [...p.holdings, { ...h, id: generateId() }] }));
@@ -235,7 +247,11 @@ export default function App() {
         </div>
         <nav className="flex flex-wrap gap-1 text-xs sm:text-sm">
           <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} />
-          <TabBtn label="持仓" active={tab === 'holdings'} onClick={() => setTab('holdings')} />
+          <TabBtn
+            label={<>持仓 {needsReviewCount > 0 && <span className="text-amber-400">●{needsReviewCount}</span>}</>}
+            active={tab === 'holdings'}
+            onClick={() => setTab('holdings')}
+          />
           <TabBtn label="分析" active={tab === 'analysis'} onClick={() => setTab('analysis')} />
           <TabBtn label="设置" active={tab === 'settings'} onClick={() => setTab('settings')} />
         </nav>
@@ -248,6 +264,7 @@ export default function App() {
             rates={rates}
             displayCurrency={settings.displayCurrency}
             onDisplayCurrencyChange={setDisplayCurrency}
+            valueHistory={valueHistory}
             rateError={rateError}
             quoteStatus={quoteStatus}
             canRefreshQuotes={portfolio.holdings.length > 0 && canSyncQuotes(settings)}
@@ -333,7 +350,7 @@ function ImportResultNotice({ result, onClose }: { result: ImportedPortfolio; on
   );
 }
 
-function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function TabBtn({ label, active, onClick }: { label: React.ReactNode; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}

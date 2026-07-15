@@ -1,12 +1,16 @@
 import type { DisplayCurrency, ExchangeRates, PortfolioMetrics } from '../types';
 import { formatPct, formatSignedPct } from '../format';
 import { formatDisplayMoney } from '../displayCurrency';
+import { convertFromUsd } from '../displayCurrency';
+import { Line, LineChart, ResponsiveContainer } from 'recharts';
+import type { ValuePoint } from '../valueHistory';
 
 interface SummaryProps {
   metrics: PortfolioMetrics;
   rates: ExchangeRates;
   displayCurrency: DisplayCurrency;
   onDisplayCurrencyChange: (currency: DisplayCurrency) => void;
+  valueHistory: ValuePoint[];
   rateError: string;
   quoteStatus: {
     loading: boolean;
@@ -18,12 +22,38 @@ interface SummaryProps {
   onRefreshQuotes: () => void;
 }
 
-export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, rateError, quoteStatus, canRefreshQuotes, onRefreshQuotes }: SummaryProps) {
+export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, canRefreshQuotes, onRefreshQuotes }: SummaryProps) {
   const dayClass =
     metrics.dayChange > 0 ? 'text-emerald-600' : metrics.dayChange < 0 ? 'text-rose-600' : 'text-slate-500';
+  const trendPoints = valueHistory.slice(-30).map((point) => ({
+    ...point,
+    value: convertFromUsd(point.totalValueUsd, displayCurrency, rates),
+  }));
+  const trendStart = trendPoints[Math.max(0, trendPoints.length - 8)];
+  const trendEnd = trendPoints.at(-1);
+  const trendPct = trendStart && trendEnd && trendStart.totalValueUsd > 0
+    ? trendEnd.totalValueUsd / trendStart.totalValueUsd - 1
+    : 0;
+  const trendClass = trendPct > 0 ? 'text-emerald-600' : trendPct < 0 ? 'text-rose-600' : 'text-slate-500';
+  const trendColor = trendPct < 0 ? '#e11d48' : '#059669';
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <Card label={`总资产（${displayCurrency}）`} value={formatDisplayMoney(metrics.totalValue, displayCurrency, rates)} />
+      <Card label={`总资产（${displayCurrency}）`} value={formatDisplayMoney(metrics.totalValue, displayCurrency, rates)}>
+        {trendPoints.length >= 2 && (
+          <div className="mt-1">
+            <div className="h-10 w-full" aria-label="近 30 天总资产趋势">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendPoints}>
+                  <Line type="monotone" dataKey="value" stroke={trendColor} strokeWidth={2} dot={false} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className={`text-[11px] ${trendClass}`}>
+              {trendPoints.length >= 8 ? '近 7 天' : '记录以来'} {formatSignedPct(trendPct)}
+            </div>
+          </div>
+        )}
+      </Card>
       <Card
         label={`今日涨跌（${displayCurrency}）`}
         value={formatDisplayMoney(metrics.dayChange, displayCurrency, rates)}
@@ -89,14 +119,16 @@ interface CardProps {
   sub?: string;
   valueClass?: string;
   subClass?: string;
+  children?: React.ReactNode;
 }
 
-function Card({ label, value, sub, valueClass, subClass }: CardProps) {
+function Card({ label, value, sub, valueClass, subClass, children }: CardProps) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
       <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
       <div className={`mt-1 text-lg font-semibold tabular-nums ${valueClass ?? ''}`}>{value}</div>
       {sub && <div className={`text-xs tabular-nums ${subClass ?? 'text-slate-500 dark:text-slate-400'}`}>{sub}</div>}
+      {children}
     </div>
   );
 }

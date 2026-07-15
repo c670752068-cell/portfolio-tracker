@@ -124,3 +124,7 @@ export function computeMetrics(state: PortfolioState, rates: ExchangeRates = loa
     unknownCostItems: holdingsMetrics.filter((metric) => !metric.costKnown).length,
   };
 }
+
+export function sortHoldingMetrics(metrics: HoldingMetric[]): HoldingMetric[] {
+  return [...metrics].sort((left, right) => right.marketValue - left.marketValue);
+}

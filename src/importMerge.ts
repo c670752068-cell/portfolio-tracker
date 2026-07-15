@@ -1,5 +1,11 @@
 import type { Holding, ImportedPortfolio, ImportIssue, PortfolioState } from './types';
 
+export function countNeedsReview(holdings: Holding[]): number {
+  return holdings.filter((holding) => (
+    holding.confidence === 'low' || holding.missingFields?.includes('成本待核对')
+  )).length;
+}
+
 type ImportedHolding = Omit<Holding, 'id'>;
 
 export function mergeImportedHoldings(holdings: ImportedHolding[]): ImportedHolding[] {

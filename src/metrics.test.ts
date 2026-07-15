@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeMetrics } from './metrics';
+import { computeMetrics, sortHoldingMetrics } from './metrics';
 import type { ExchangeRates, PortfolioState } from './types';
 
 const usdRates: ExchangeRates = {
@@ -61,5 +61,23 @@ describe('computeMetrics liquidity', () => {
     expect(metrics.totalPnl).toBe(20);
     expect(metrics.totalPnlPct).toBe(0.2);
     expect(metrics.unknownCostItems).toBe(1);
+  });
+});
+
+describe('sortHoldingMetrics', () => {
+  it('orders holdings by market value descending without mutating the input', () => {
+    const state: PortfolioState = {
+      holdings: [
+        { id: 'aapl', symbol: 'AAPL', name: 'Apple', shares: 10, buyPrice: 1, currentPrice: 1, sector: '科技', currency: 'USD' },
+        { id: 'msft', symbol: 'MSFT', name: 'Microsoft', shares: 30, buyPrice: 1, currentPrice: 1, sector: '科技', currency: 'USD' },
+        { id: 'nvda', symbol: 'NVDA', name: 'Nvidia', shares: 20, buyPrice: 1, currentPrice: 1, sector: '科技', currency: 'USD' },
+      ],
+      cash: [],
+      updatedAt: '2026-07-15T00:00:00.000Z',
+    };
+    const original = computeMetrics(state, usdRates).holdingsMetrics;
+
+    expect(sortHoldingMetrics(original).map((metric) => metric.holding.symbol)).toEqual(['MSFT', 'NVDA', 'AAPL']);
+    expect(original.map((metric) => metric.holding.symbol)).toEqual(['AAPL', 'MSFT', 'NVDA']);
   });
 });

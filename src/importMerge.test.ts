@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyImageImport, crossCheckImportedPnl, mergeImportedHoldings } from './importMerge';
+import { applyImageImport, countNeedsReview, crossCheckImportedPnl, mergeImportedHoldings } from './importMerge';
 import type { Holding, ImportedPortfolio, ImportIssue, PortfolioState } from './types';
 
 type ImportedHolding = Omit<Holding, 'id'>;
@@ -110,5 +110,18 @@ describe('crossCheckImportedPnl', () => {
 
     expect(crossCheckImportedPnl(original, issues)).toEqual(original);
     expect(issues).toEqual([]);
+  });
+});
+
+describe('countNeedsReview', () => {
+  it('counts each low-confidence or cost-check holding once', () => {
+    const holdings: Holding[] = [
+      { ...imported({ confidence: 'low' }), id: 'low' },
+      { ...imported({ symbol: 'MSFT', missingFields: ['成本待核对'] }), id: 'cost' },
+      { ...imported({ symbol: 'AAPL', confidence: 'low', missingFields: ['成本待核对'] }), id: 'both' },
+      { ...imported({ symbol: 'META', confidence: 'high' }), id: 'ok' },
+    ];
+
+    expect(countNeedsReview(holdings)).toBe(3);
   });
 });

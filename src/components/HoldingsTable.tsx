@@ -3,6 +3,7 @@ import type { AssetType, Currency, DisplayCurrency, ExchangeRates, Holding, Hold
 import { formatPct, formatSignedPct } from '../format';
 import { CASH_EQUIVALENT_SYMBOLS, isCashEquivalent } from '../assetClass';
 import { formatDisplayMoney } from '../displayCurrency';
+import { sortHoldingMetrics } from '../metrics';
 
 interface HoldingsTableProps {
   metrics: HoldingMetric[];
@@ -39,6 +40,7 @@ const ASSET_TYPES: Array<{ value: AssetType; label: string }> = [
 
 export function HoldingsTable({ metrics, onUpdate, onDelete, onAdd, displayCurrency, rates }: HoldingsTableProps) {
   const [draft, setDraft] = useState<Omit<Holding, 'id'>>(emptyDraft);
+  const sortedMetrics = sortHoldingMetrics(metrics);
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -93,7 +95,7 @@ export function HoldingsTable({ metrics, onUpdate, onDelete, onAdd, displayCurre
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-              {metrics.map((metric) => <Row key={metric.holding.id} metric={metric} onUpdate={onUpdate} onDelete={onDelete} displayCurrency={displayCurrency} rates={rates} />)}
+              {sortedMetrics.map((metric) => <Row key={metric.holding.id} metric={metric} onUpdate={onUpdate} onDelete={onDelete} displayCurrency={displayCurrency} rates={rates} />)}
             </tbody>
           </table>
         </div>

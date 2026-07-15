@@ -26,6 +26,7 @@ describe('Summary cards', () => {
         rates={rates}
         displayCurrency="USD"
         onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]}
         rateError=""
         quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
         canRefreshQuotes={false}
