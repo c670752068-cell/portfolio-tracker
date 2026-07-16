@@ -13,16 +13,18 @@ export const quantAnalysisFixture = {
     SOXL: {
       available: true,
       gates: {
-        low_zone: { passed: true, current_drawdown_pct: -63.29, threshold_pct: -28 },
+        low_zone: { passed: true, applicable: true, current_drawdown_pct: -63.29, threshold_pct: -28 },
         signal_triggered: {
           passed: false,
+          applicable: true,
           recent_buy_signals: [{ name: 'near_prior_low', label: '接近前低', date: '2026-07-15' }],
         },
-        position_gate: { passed: true, family_share_pct: 3.2, cap_pct: 8 },
-        daily_fuse: { passed: true, buys_today: 0, max_new_buys: 2 },
-        batch_available: { passed: true, next_batch: 2, batch_count: 3 },
+        position_gate: { passed: true, applicable: true, family_share_pct: 3.2, cap_pct: 8 },
+        daily_fuse: { passed: true, applicable: true, buys_today: 0, max_new_buys: 2 },
+        batch_available: { passed: true, applicable: true, next_batch: 2, batch_count: 3 },
         valuation: {
           passed: false,
+          applicable: true,
           available: true,
           reason: 'SOXX 分位 98.7 高估',
           cnn: 46.3,
@@ -47,6 +49,34 @@ export const quantAnalysisFixture = {
         sample_insufficient: true,
         bear_included: true,
       },
+    },
+    AAPL: {
+      available: true,
+      gates: {
+        low_zone: { passed: true, applicable: false, current_drawdown_pct: -8.12, threshold_pct: -15 },
+        signal_triggered: { passed: true, applicable: true, recent_buy_signals: [] },
+        position_gate: { passed: true, applicable: true, family_share_pct: 2, cap_pct: 8 },
+        daily_fuse: { passed: true, applicable: true, buys_today: 0, max_new_buys: 2 },
+        batch_available: { passed: false, applicable: true, next_batch: null, batch_count: 3 },
+        valuation: {
+          passed: false,
+          applicable: true,
+          available: true,
+          reason: '个股 5 年 PE 分位尚未进入低位',
+          cnn: 29,
+          ndx_percentile: 83.1,
+          soxx_percentile: 98.7,
+          stock_percentile: 45,
+        },
+      },
+      gates_passed: 3,
+      gates_total: 5,
+      signal_stats: {},
+      depth_stats: null,
+    },
+    SGOV: {
+      available: false,
+      error: '现金类不参与条件查询',
     },
   },
   holding_costs: {

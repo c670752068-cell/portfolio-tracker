@@ -4,18 +4,52 @@ import { quantAnalysisFixture } from '../testFixtures/quantAnalysis';
 import { ConditionLookup } from './ConditionLookup';
 
 describe('ConditionLookup', () => {
-  it('renders all six production gates and the passed-gate summary', () => {
+  it('uses a locked snapshot-symbol select and filters cash equivalents', () => {
     const html = renderToStaticMarkup(
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
+    expect(html).toContain('<select');
+    expect(html).toContain('value="AAPL"');
+    expect(html).toContain('value="SOXL"');
+    expect(html).not.toContain('value="SGOV"');
+    expect(html).not.toContain('placeholder="例如 SOXL"');
+    expect(html).not.toContain('>查询</button>');
+  });
+
+  it('renders an ETF market group as X/3 and removes daily fuse from display', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+    );
+
+    expect(html).toContain('市场条件满足 1/3');
     expect(html).toContain('低位区');
     expect(html).toContain('买入信号');
-    expect(html).toContain('仓位门');
-    expect(html).toContain('当日熔断');
-    expect(html).toContain('批次');
     expect(html).toContain('估值/情绪');
-    expect(html).toContain('当前满足 4/6 关');
+    expect(html).not.toContain('当日熔断');
+  });
+
+  it('renders a stock market group as X/2 and keeps drawdown as reference only', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('市场条件满足 1/2');
+    expect(html).toContain('价格回撤参考');
+    expect(html).not.toContain('✓ 低位区');
+    expect(html).toContain('CNN 29.00（&lt;30 恐慌开窗）');
+  });
+
+  it('collapses position and batch into an integer-formatted discipline group', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+    );
+
+    expect(html).toContain('<details');
+    expect(html).toContain('纪律闸门（决定允许买多少），不是行情判断');
+    expect(html).toContain('第 2 批 / 共 3 批');
+    expect(html).not.toContain('2.00');
+    expect(html).not.toContain('3.00 批');
     expect(html).toContain('CNN 46.30');
     expect(html).toContain('纳指100 PE 分位 83.10%');
     expect(html).toContain('SOXX 分位 98.70%');
@@ -83,13 +117,4 @@ describe('ConditionLookup', () => {
     expect(html).toContain('含熊市样本：是');
   });
 
-  it('gives a friendly answer and lists the pool for an unmonitored symbol', () => {
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
-    );
-
-    expect(html).toContain('AAPL 不在量化监控池');
-    expect(html).toContain('池内代码');
-    expect(html).toContain('SOXL');
-  });
 });

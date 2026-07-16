@@ -58,10 +58,10 @@ describe('quant analysis contract', () => {
       symbol: 'SOXL',
       analysis: { gates_passed: 4, gates_total: 6 },
     });
-    expect(lookupQuantSymbol(quantAnalysisFixture, 'aapl')).toEqual({
+    expect(lookupQuantSymbol(quantAnalysisFixture, 'amd')).toEqual({
       found: false,
-      symbol: 'AAPL',
-      monitoredSymbols: ['SOXL'],
+      symbol: 'AMD',
+      monitoredSymbols: ['AAPL', 'SGOV', 'SOXL'],
     });
   });
 });
