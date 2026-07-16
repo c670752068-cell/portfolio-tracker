@@ -667,7 +667,14 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
   if (await handleImportArchiveRoute(url, req, res)) return;
   if (await handlePortfolioPositionsRoute(url, req, res)) return;
-  if (await handlePortfolioAnalysisRoute(url, req, res)) return;
+  try {
+    if (await handlePortfolioAnalysisRoute(url, req, res)) return;
+  } catch (error) {
+    console.error('quant analysis route failed:', error instanceof Error ? error.message : String(error));
+    if (!res.headersSent) sendJson(res, 500, { error: { code: 'quant_analysis_error', message: '量化分析服务暂不可用' } });
+    else res.destroy();
+    return;
+  }
   try {
     if (await handleAlertRulesRoute(url, req, res)) return;
   } catch (error) {

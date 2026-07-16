@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
@@ -153,6 +153,46 @@ describe('portfolio positions gateway', () => {
     });
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toEqual(expect.objectContaining({ error: expect.objectContaining({ code: 'invalid_envelope' }) }));
+  });
+
+  it('keeps the gateway alive when quant analysis storage fails', async () => {
+    const port = await freePort();
+    const failureOrigin = `http://127.0.0.1:${port}`;
+    const failureRoot = await mkdtemp(join(tmpdir(), 'portfolio-analysis-failure-'));
+    const blockedRoot = join(failureRoot, 'not-a-directory');
+    await writeFile(blockedRoot, 'blocked');
+    const failureChild = spawn(process.execPath, ['deploy/aliyun-gateway.mjs'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PORT: String(port),
+        HOST: '127.0.0.1',
+        PORTFOLIO_SYNC_TOKEN: 'unit-secret',
+        PORTFOLIO_ANALYSIS_ROOT: blockedRoot,
+      },
+      stdio: 'ignore',
+    });
+    try {
+      await waitUntilReady(failureOrigin);
+      const response = await fetch(`${failureOrigin}/api/portfolio/quant-analysis`, {
+        method: 'POST',
+        headers: { Authorization: AUTHORIZATION, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'futu-assistant',
+          generated_at: '2026-07-15T16:00:00-04:00',
+          rule_version: '2.2',
+          symbols: {},
+        }),
+      });
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({
+        error: { code: 'quant_analysis_error', message: '量化分析服务暂不可用' },
+      });
+      await expect(fetch(`${failureOrigin}/api/health`)).resolves.toMatchObject({ ok: true });
+    } finally {
+      failureChild.kill('SIGTERM');
+      await rm(failureRoot, { recursive: true, force: true });
+    }
   });
 
   it('hides the route as 404 when the feature token is not configured', async () => {
