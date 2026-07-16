@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions } from './quantSync';
+import { applyQuantHoldingCosts, applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions } from './quantSync';
 import type { PortfolioState, QuantPositionsPayload } from './types';
 
 const payload: QuantPositionsPayload = {
@@ -194,6 +194,60 @@ describe('applyQuantSync', () => {
     expect(next.holdings.map((holding) => holding.symbol)).toEqual(['MSFT', 'MSFT', 'SGOV', 'IGV']);
     expect(next.cash.map((cash) => cash.amount)).toEqual([100, 69_018.3]);
     expect(mapped.issues).toContainEqual(expect.objectContaining({ field: 'MSFT 重复持仓' }));
+  });
+});
+
+describe('applyQuantHoldingCosts', () => {
+  it('applies complete cross-broker stock costs without contaminating same-symbol options', () => {
+    const mapped = mapQuantPositions({
+      ...payload,
+      net_liquidation: 30_000,
+      positions: [
+        { broker: 'ibkr', symbol: 'MSFU', asset_type: 'etf', qty: 30, market_value: 750 },
+        { broker: 'futu', symbol: 'MSFU', asset_type: 'etf', qty: 113, market_value: 2_825 },
+        { broker: 'ibkr', symbol: 'MSFU', asset_type: 'option', qty: 2, market_value: 560 },
+        { broker: 'longport', symbol: 'MSFT', asset_type: 'stock', qty: 20, market_value: 8_000 },
+        { broker: 'futu', symbol: 'MSFT', asset_type: 'stock', qty: 33, market_value: 13_200 },
+      ],
+    }, prior({
+      holdings: [{
+        id: 'msfu-option', symbol: 'MSFU', name: 'MSFU Call', shares: 2, buyPrice: 2.81,
+        currentPrice: 3, sector: '科技', currency: 'USD', assetType: 'option', source: 'image-import',
+        costOverride: 562,
+        option: {
+          underlying: 'MSFU', optionType: 'call', strike: 30, expiration: '2027-01-15',
+          contractMultiplier: 100, delta: 0.4, theta: null, gamma: null, vega: null,
+          impliedVolatility: null, underlyingPrice: 25,
+        },
+      }],
+    }));
+
+    const enriched = applyQuantHoldingCosts(mapped.holdings, {
+      MSFU: { weighted_average_cost: 24.499093, currency: 'USD', coverage: 'complete', auto_fill_allowed: true },
+      MSFT: { weighted_average_cost: 389.613434, currency: 'USD', coverage: 'complete', auto_fill_allowed: true },
+    });
+
+    expect(enriched.filter((holding) => holding.symbol === 'MSFU' && holding.assetType !== 'option'))
+      .toEqual([
+        expect.objectContaining({ buyPrice: 24.499093, costOverride: undefined }),
+        expect.objectContaining({ buyPrice: 24.499093, costOverride: undefined }),
+      ]);
+    expect(enriched.filter((holding) => holding.symbol === 'MSFT'))
+      .toEqual([
+        expect.objectContaining({ buyPrice: 389.613434 }),
+        expect.objectContaining({ buyPrice: 389.613434 }),
+      ]);
+    expect(enriched.find((holding) => holding.assetType === 'option'))
+      .toMatchObject({ buyPrice: 2.81, costOverride: 562 });
+  });
+
+  it('leaves incomplete costs and non-synced holdings untouched', () => {
+    const synced = { id: 'nvda', symbol: 'NVDA', name: 'NVDA', shares: 5, buyPrice: 0, currentPrice: 200, sector: '', currency: 'USD' as const, assetType: 'stock' as const, source: 'quant-sync' as const };
+    const manual = { ...synced, id: 'manual', buyPrice: 150, source: 'manual' as const };
+
+    expect(applyQuantHoldingCosts([synced, manual], {
+      NVDA: { weighted_average_cost: 199.49, currency: 'USD', coverage: 'partial', auto_fill_allowed: false },
+    })).toEqual([synced, manual]);
   });
 });
 

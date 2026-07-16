@@ -17,7 +17,7 @@ import { fetchQuantAnalysis, isQuantAnalysisStale } from './quantAnalysis';
 import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDetailsApplyResult } from './importMerge';
 import { dedupeImportIssues } from './importIssues';
 import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
-import { applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions, type QuantMappedPortfolio } from './quantSync';
+import { applyQuantHoldingCosts, applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions, type QuantMappedPortfolio } from './quantSync';
 import { getServerAlertRulesUrl, getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, hasServerGateway } from './runtimeConfig';
 import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState, QuantAnalysisSnapshot } from './types';
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
@@ -121,6 +121,7 @@ export default function App() {
   const [marketNow, setMarketNow] = useState(() => new Date());
   const holdingsRef = useRef(portfolio.holdings);
   const portfolioRef = useRef(portfolio);
+  const quantAnalysisRef = useRef<QuantAnalysisSnapshot | null>(null);
   const quoteRefreshInFlightRef = useRef(false);
   const quantAutoSyncKeyRef = useRef('');
   const quantAnalysisAutoLoadKeyRef = useRef('');
@@ -212,7 +213,11 @@ export default function App() {
     try {
       const snapshot = await fetchQuantPositions(url, settings.quantSyncToken.trim());
       const current = portfolioRef.current;
-      const mapped = mapQuantPositions(snapshot.payload, current);
+      const rawMapped = mapQuantPositions(snapshot.payload, current);
+      const mapped = {
+        ...rawMapped,
+        holdings: applyQuantHoldingCosts(rawMapped.holdings, quantAnalysisRef.current?.holding_costs || {}),
+      };
       backupPortfolio(current);
       const next = applyQuantSync(current, mapped);
       portfolioRef.current = next;
@@ -244,7 +249,15 @@ export default function App() {
     setQuantAnalysisStatus((status) => ({ ...status, loading: true, error: '' }));
     try {
       const snapshot = await fetchQuantAnalysis(url);
+      quantAnalysisRef.current = snapshot;
       setQuantAnalysis(snapshot);
+      const current = portfolioRef.current;
+      const enrichedHoldings = applyQuantHoldingCosts(current.holdings, snapshot.holding_costs || {});
+      if (enrichedHoldings.some((holding, index) => holding !== current.holdings[index])) {
+        const next = { ...current, holdings: enrichedHoldings, updatedAt: new Date().toISOString() };
+        portfolioRef.current = next;
+        setPortfolio(next);
+      }
       setQuantAnalysisStatus({ loading: false, error: '', stale: isQuantAnalysisStale(snapshot.generated_at) });
     } catch (error) {
       setQuantAnalysisStatus((status) => ({

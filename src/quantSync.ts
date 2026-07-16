@@ -5,6 +5,7 @@ import type {
   Holding,
   ImportIssue,
   PortfolioState,
+  QuantHoldingCost,
   QuantPosition,
   QuantPositionsPayload,
   QuantPositionsSnapshot,
@@ -152,6 +153,27 @@ export function applyQuantSync(current: PortfolioState, mapped: QuantMappedPortf
     ],
     updatedAt: new Date().toISOString(),
   };
+}
+
+export function applyQuantHoldingCosts(
+  holdings: readonly Holding[],
+  costs: Readonly<Record<string, QuantHoldingCost>>,
+): Holding[] {
+  return holdings.map((holding) => {
+    if (holding.source !== 'quant-sync' || holding.assetType === 'option') return holding;
+    const cost = costs[holding.symbol.trim().toUpperCase()];
+    if (cost?.coverage !== 'complete'
+      || !cost.auto_fill_allowed
+      || typeof cost.weighted_average_cost !== 'number'
+      || cost.weighted_average_cost <= 0) {
+      return holding;
+    }
+    return {
+      ...holding,
+      buyPrice: cost.weighted_average_cost,
+      costOverride: undefined,
+    };
+  });
 }
 
 export function isQuantSnapshotStale(pushedAt: string, now = Date.now()): boolean {
