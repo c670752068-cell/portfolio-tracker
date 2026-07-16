@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { AlertRule } from '../alertRules';
-import type { QuantHoldingCost } from '../types';
+import type { Holding, QuantHoldingCost } from '../types';
 import { AlertRulesPanel } from './AlertRulesPanel';
 
 const noopCallbacks = {
@@ -12,6 +12,7 @@ const noopCallbacks = {
 
 function renderPanel(overrides: {
   rules?: AlertRule[];
+  holdings?: Holding[];
   holdingCosts?: Record<string, QuantHoldingCost>;
   initialRuleType?: 'target_price' | 'gain_pct';
   initialSymbol?: string;
@@ -19,7 +20,7 @@ function renderPanel(overrides: {
   return renderToStaticMarkup(
     <AlertRulesPanel
       rules={overrides.rules ?? []}
-      symbols={['FNGU', 'MSFT', 'SOXL']}
+      holdings={overrides.holdings ?? [holding('FNGU'), holding('MSFT'), holding('SOXL')]}
       holdingCosts={overrides.holdingCosts ?? {}}
       initialRuleType={overrides.initialRuleType}
       initialSymbol={overrides.initialSymbol}
@@ -28,6 +29,23 @@ function renderPanel(overrides: {
       {...noopCallbacks}
     />,
   );
+}
+
+function holding(symbol: string, overrides: Partial<Holding> = {}): Holding {
+  return {
+    id: `${symbol}-${overrides.id || 'row'}`,
+    symbol,
+    name: symbol,
+    shares: 10,
+    buyPrice: 10,
+    currentPrice: 20,
+    sector: '科技',
+    currency: 'USD',
+    assetType: 'stock',
+    source: 'quant-sync',
+    broker: 'IBKR',
+    ...overrides,
+  };
 }
 
 describe('AlertRulesPanel forms', () => {
@@ -62,8 +80,9 @@ describe('AlertRulesPanel forms', () => {
       },
     });
 
-    expect(html).toContain('三券商加权成本');
-    expect(html).toContain('value="22.5"');
+    expect(html).toContain('$22.50（券商加权）');
+    expect(html).toContain('已按股数加权');
+    expect(html).not.toContain('value="22.5"');
     expect(html).not.toContain('需要你核对');
   });
 
@@ -81,11 +100,42 @@ describe('AlertRulesPanel forms', () => {
       },
     });
 
-    expect(html).toContain('部分账户参考成本');
+    expect(html).toContain('成本不可用');
     expect(html).toContain('19.8');
-    expect(html).toContain('需要你核对或手动输入');
-    expect(html).toContain('我已核对成本价');
-    expect(html).not.toContain('value="19.8"');
+    expect(html).toContain('仅可用目标价规则');
+    expect(html).not.toContain('手动输入');
+    expect(html).not.toContain('我已核对');
+  });
+
+  it('locks the symbol to current holdings, deduplicates option underlyings, and filters cash equivalents', () => {
+    const html = renderPanel({
+      holdings: [
+        holding('MSFU', { id: 'etf', assetType: 'leveraged_etf', broker: 'IBKR', marketValueOverride: 250 }),
+        holding('MSFU', {
+          id: 'call',
+          assetType: 'option',
+          broker: 'FUTU',
+          marketValueOverride: 400,
+          option: { underlying: 'MSFU', optionType: 'call', strike: 30, expiration: '2027-01-15', contractMultiplier: 100, delta: 0.4, theta: null, gamma: null, vega: null, impliedVolatility: null, underlyingPrice: 25 },
+        }),
+        holding('MSFT', { broker: 'LONGPORT', marketValueOverride: 500 }),
+        holding('SGOV', { assetType: 'etf', cashEquivalent: true }),
+      ],
+      initialSymbol: 'MSFU',
+    });
+
+    expect(html).toContain('<select');
+    expect(html).not.toContain('datalist');
+    expect(html.match(/value="MSFU"/g)).toHaveLength(1);
+    expect(html).toContain('MSFU · $650.00 · FUTU / IBKR');
+    expect(html).toContain('MSFT · $500.00 · LONGPORT');
+    expect(html).not.toContain('SGOV');
+  });
+
+  it('disables gain rules when the selected holding has no complete broker cost', () => {
+    const html = renderPanel({ initialRuleType: 'target_price', initialSymbol: 'SOXL' });
+
+    expect(html).toContain('<option value="gain_pct" disabled="">涨幅阈值（成本不可用）</option>');
   });
 });
 

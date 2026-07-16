@@ -343,9 +343,6 @@ export default function App() {
   const needsReviewCount = countNeedsReview(portfolio.holdings);
   const deltaEstimatedCount = metrics.holdingsMetrics.filter((metric) => metric.holding.quote?.source === 'delta_estimate').length;
   const dayChangeStatus = dayChangeSessionText(marketNow, quoteStatus.lastSyncedAt, deltaEstimatedCount);
-  const alertSymbols = useMemo(() => [...new Set(portfolio.holdings.map((holding) => (
-    holding.assetType === 'option' ? holding.option?.underlying || holding.symbol : holding.symbol
-  )).map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))].sort(), [portfolio.holdings]);
   const latestAlert = useMemo(() => [...alertRules]
     .filter((rule) => rule.last_reminder_at)
     .sort((left, right) => String(right.last_reminder_at).localeCompare(String(left.last_reminder_at)))[0], [alertRules]);
@@ -528,7 +525,7 @@ export default function App() {
           <ScenarioCalculator metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
           <AlertRulesPanel
             rules={alertRules}
-            symbols={alertSymbols}
+            holdings={portfolio.holdings}
             holdingCosts={quantAnalysis?.holding_costs || {}}
             loading={alertRulesStatus.loading}
             error={alertRulesStatus.error}

@@ -1,9 +1,39 @@
-import type { QuantHoldingCost } from './types';
+import { isCashEquivalent } from './assetClass';
+import type { Holding, QuantHoldingCost } from './types';
 
 export const ALERT_RULES_REFRESH_MS = 35 * 60 * 1000;
 
 export type AlertRuleType = 'target_price' | 'gain_pct';
 export type AlertDirection = 'above' | 'below';
+
+export interface AlertHoldingOption {
+  symbol: string;
+  label: string;
+}
+
+export function buildAlertHoldingOptions(holdings: Holding[]): AlertHoldingOption[] {
+  const grouped = new Map<string, { marketValue: number; brokers: Set<string> }>();
+  for (const holding of holdings) {
+    if (isCashEquivalent(holding)) continue;
+    const symbol = (holding.assetType === 'option'
+      ? holding.option?.underlying || holding.symbol
+      : holding.symbol).trim().toUpperCase();
+    if (!symbol) continue;
+    const multiplier = holding.assetType === 'option' ? holding.option?.contractMultiplier ?? 100 : 1;
+    const marketValue = holding.marketValueOverride
+      ?? Math.abs(holding.shares) * holding.currentPrice * multiplier;
+    const current = grouped.get(symbol) ?? { marketValue: 0, brokers: new Set<string>() };
+    current.marketValue += Number.isFinite(marketValue) ? marketValue : 0;
+    current.brokers.add(holding.broker?.trim().toUpperCase() || '手动');
+    grouped.set(symbol, current);
+  }
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([symbol, item]) => ({
+      symbol,
+      label: `${symbol} · $${item.marketValue.toFixed(2)} · ${[...item.brokers].sort().join(' / ')}`,
+    }));
+}
 
 export interface AlertRuleDraft {
   id?: string;

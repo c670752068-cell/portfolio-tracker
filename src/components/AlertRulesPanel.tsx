@@ -1,10 +1,10 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { dispatchAlertRuleMutation, resolveHoldingCostSuggestion, type AlertRule, type AlertRuleDraft, type AlertRuleType } from '../alertRules';
-import type { QuantHoldingCost } from '../types';
+import { buildAlertHoldingOptions, dispatchAlertRuleMutation, resolveHoldingCostSuggestion, type AlertRule, type AlertRuleDraft, type AlertRuleType } from '../alertRules';
+import type { Holding, QuantHoldingCost } from '../types';
 
 interface AlertRulesPanelProps {
   rules: AlertRule[];
-  symbols: string[];
+  holdings: Holding[];
   holdingCosts: Record<string, QuantHoldingCost>;
   initialRuleType?: AlertRuleType;
   initialSymbol?: string;
@@ -25,7 +25,6 @@ interface FormState {
   gainPct: number;
   approachPct: number;
   reduceToPct: number;
-  costConfirmed: boolean;
 }
 
 function newForm(type: AlertRuleType, symbol: string, holdingCosts: Record<string, QuantHoldingCost>): FormState {
@@ -39,7 +38,6 @@ function newForm(type: AlertRuleType, symbol: string, holdingCosts: Record<strin
     gainPct: 20,
     approachPct: 5,
     reduceToPct: 5,
-    costConfirmed: !suggestion.requiresConfirmation,
   };
 }
 
@@ -57,7 +55,8 @@ function reminderTypeLabel(type: AlertRule['last_alert_type']): string {
 }
 
 export function AlertRulesPanel(props: AlertRulesPanelProps) {
-  const firstSymbol = props.initialSymbol || props.symbols[0] || '';
+  const holdingOptions = useMemo(() => buildAlertHoldingOptions(props.holdings), [props.holdings]);
+  const firstSymbol = props.initialSymbol || holdingOptions[0]?.symbol || '';
   const [form, setForm] = useState(() => newForm(props.initialRuleType || 'target_price', firstSymbol, props.holdingCosts));
   const [saving, setSaving] = useState(false);
   const [localError, setLocalError] = useState('');
@@ -76,8 +75,8 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
     setForm((current) => ({
       ...current,
       symbol: normalized,
+      type: current.type === 'gain_pct' && nextSuggestion.automaticValue === null ? 'target_price' : current.type,
       costBasis: nextSuggestion.automaticValue ?? 0,
-      costConfirmed: !nextSuggestion.requiresConfirmation,
     }));
   }
 
@@ -93,7 +92,6 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
       gainPct: rule.gain_pct ?? 20,
       approachPct: rule.approach_pct,
       reduceToPct: rule.reduce_to_pct ?? 5,
-      costConfirmed: Boolean(rule.cost_basis) || !costSuggestion.requiresConfirmation,
     });
   }
 
@@ -101,15 +99,15 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
     event.preventDefault();
     setLocalError('');
     if (!form.symbol) {
-      setLocalError('请填写股票代码');
+      setLocalError('请选择当前持仓');
       return;
     }
     if (form.type === 'target_price' && form.targetPrice <= 0) {
       setLocalError('目标价必须大于 0');
       return;
     }
-    if (form.type === 'gain_pct' && (form.costBasis <= 0 || !form.costConfirmed)) {
-      setLocalError('请填写并核对成本价');
+    if (form.type === 'gain_pct' && form.costBasis <= 0) {
+      setLocalError('券商未提供完整成本，仅可用目标价规则');
       return;
     }
     const draft: AlertRuleDraft = form.type === 'target_price'
@@ -166,13 +164,15 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
               <span className="mb-1 block font-medium">规则类型</span>
               <select value={form.type} onChange={(event) => setRuleType(event.target.value as AlertRuleType)} className={inputClass}>
                 <option value="target_price">目标价</option>
-                <option value="gain_pct">涨幅阈值</option>
+                <option value="gain_pct" disabled={suggestion.automaticValue === null}>涨幅阈值{suggestion.automaticValue === null ? '（成本不可用）' : ''}</option>
               </select>
             </label>
             <label className="text-sm">
               <span className="mb-1 block font-medium">股票代码</span>
-              <input list="alert-rule-symbols" value={form.symbol} onChange={(event) => setSymbol(event.target.value)} className={inputClass} placeholder="FNGU" />
-              <datalist id="alert-rule-symbols">{props.symbols.map((symbol) => <option key={symbol} value={symbol} />)}</datalist>
+              <select value={form.symbol} onChange={(event) => setSymbol(event.target.value)} className={inputClass}>
+                {holdingOptions.length === 0 && <option value="">暂无可用持仓</option>}
+                {holdingOptions.map((option) => <option key={option.symbol} value={option.symbol}>{option.label}</option>)}
+              </select>
             </label>
           </div>
 
@@ -185,16 +185,11 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
           ) : (
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="text-sm"><span className="mb-1 block font-medium">成本价（USD）</span><input type="number" min="0" step="any" value={form.costBasis || ''} onChange={(event) => setForm((current) => ({ ...current, costBasis: Number(event.target.value), costConfirmed: suggestion.coverage === 'complete' }))} className={inputClass} /></label>
+                <div className="text-sm"><span className="mb-1 block font-medium">成本价（USD）</span><div className={`${inputClass} cursor-not-allowed bg-slate-50 dark:bg-slate-950`}>{suggestion.automaticValue == null ? '成本不可用' : `$${suggestion.automaticValue.toFixed(2)}（券商加权）`}</div></div>
                 <label className="text-sm"><span className="mb-1 block font-medium">涨幅阈值</span><select value={form.gainPct} onChange={(event) => setForm((current) => ({ ...current, gainPct: Number(event.target.value) }))} className={inputClass}><option value={20}>+20%</option><option value={30}>+30%</option></select></label>
               </div>
-              {suggestion.coverage === 'complete' && <p className="text-xs text-emerald-700 dark:text-emerald-300">已自动填入三券商加权成本。</p>}
-              {suggestion.coverage === 'partial' && (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-                  部分账户参考成本：${suggestion.referenceValue?.toFixed(2)}，需要你核对或手动输入。
-                  <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={form.costConfirmed} onChange={(event) => setForm((current) => ({ ...current, costConfirmed: event.target.checked }))} />我已核对成本价</label>
-                </div>
-              )}
+              {suggestion.coverage === 'complete' && <p className="text-xs text-emerald-700 dark:text-emerald-300">成本来自三券商持仓，已按股数加权。</p>}
+              {suggestion.coverage !== 'complete' && <p className="text-xs text-amber-700 dark:text-amber-300">成本不可用{suggestion.referenceValue == null ? '' : `（部分账户参考 $${suggestion.referenceValue.toFixed(2)}）`}；券商未提供完整成本，仅可用目标价规则。</p>}
               <p className="text-xs text-slate-500">到达后提醒：卖出 50% 仓位，留 50% 博弈。</p>
             </div>
           )}
