@@ -47,6 +47,7 @@ beforeAll(async () => {
       HOST: '127.0.0.1',
       PORTFOLIO_SYNC_TOKEN: 'unit-secret',
       PORTFOLIO_POSITIONS_ROOT: storageRoot,
+      PORTFOLIO_ANALYSIS_ROOT: join(storageRoot, 'analysis'),
     },
     stdio: 'ignore',
   });
@@ -110,6 +111,48 @@ describe('portfolio positions gateway', () => {
     const response = await fetch(`${origin}/api/health`);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(expect.objectContaining({ ok: true }));
+  });
+
+  it('atomically stores and publicly returns a valid quant analysis snapshot', async () => {
+    const snapshot = {
+      source: 'futu-assistant',
+      generated_at: '2026-07-15T16:00:00-04:00',
+      rule_version: '2.2',
+      disclaimer: '认知参考；历史统计不代表未来收益',
+      context: {},
+      symbols: { SOXL: { gates: {}, gates_passed: 0, gates_total: 6 } },
+      holding_costs: { MSFT: { weighted_average_cost: 115, currency: 'USD', coverage: 'complete', auto_fill_allowed: true } },
+    };
+
+    const post = await fetch(`${origin}/api/portfolio/quant-analysis`, {
+      method: 'POST',
+      headers: { Authorization: AUTHORIZATION, 'Content-Type': 'application/json' },
+      body: JSON.stringify(snapshot),
+    });
+    expect(post.status).toBe(200);
+    expect(await post.json()).toEqual({ ok: true, symbol_count: 1, generated_at: snapshot.generated_at });
+
+    const get = await fetch(`${origin}/api/portfolio/quant-analysis`);
+    expect(get.status).toBe(200);
+    expect(await get.json()).toEqual(snapshot);
+    expect(JSON.parse(await readFile(join(storageRoot, 'analysis', 'latest.json'), 'utf8'))).toEqual(snapshot);
+  });
+
+  it('protects quant analysis writes and validates the export envelope', async () => {
+    const unauthorized = await fetch(`${origin}/api/portfolio/quant-analysis`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer wrong-value', 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const invalid = await fetch(`${origin}/api/portfolio/quant-analysis`, {
+      method: 'POST',
+      headers: { Authorization: AUTHORIZATION, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'other', generated_at: 'invalid', symbols: [] }),
+    });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual(expect.objectContaining({ error: expect.objectContaining({ code: 'invalid_envelope' }) }));
   });
 
   it('hides the route as 404 when the feature token is not configured', async () => {

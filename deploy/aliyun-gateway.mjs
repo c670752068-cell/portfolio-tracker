@@ -28,6 +28,7 @@ const IMPORT_ARCHIVE_MAX_BYTES = 200 * 1024 * 1024;
 const PORTFOLIO_SYNC_TOKEN = process.env.PORTFOLIO_SYNC_TOKEN || '';
 const PORTFOLIO_POSITIONS_ROOT = resolve(process.env.PORTFOLIO_POSITIONS_ROOT || '/opt/portfolio-tracker-data/positions');
 const PORTFOLIO_POSITIONS_MAX_BYTES = 2 * 1024 * 1024;
+const PORTFOLIO_ANALYSIS_ROOT = resolve(process.env.PORTFOLIO_ANALYSIS_ROOT || '/opt/portfolio-tracker-data/analysis');
 
 const AI_ROUTES = {
   '/api/zhipu/chat/completions': 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
@@ -386,6 +387,71 @@ async function handlePortfolioPositionsRoute(url, req, res) {
   return true;
 }
 
+async function handlePortfolioAnalysisRoute(url, req, res) {
+  if (url.pathname !== '/api/portfolio/quant-analysis') return false;
+  if (!PORTFOLIO_SYNC_TOKEN) {
+    positionsRouteNotFound(res);
+    return true;
+  }
+  const latestPath = join(PORTFOLIO_ANALYSIS_ROOT, 'latest.json');
+  if (req.method === 'GET') {
+    try {
+      const payload = await readFile(latestPath, 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      res.end(payload);
+    } catch {
+      sendJson(res, 404, { error: { code: 'no_data', message: '尚无量化分析数据' } });
+    }
+    return true;
+  }
+  if (req.method !== 'POST') {
+    positionsRouteNotFound(res);
+    return true;
+  }
+  if (!positionsAuthorizationMatches(req)) {
+    sendJson(res, 401, { error: { code: 'unauthorized', message: '认证失败' } });
+    return true;
+  }
+  let body;
+  try {
+    body = await readPositionsBody(req);
+  } catch (error) {
+    sendJson(res, error.status || 400, { error: { code: 'request_body_error', message: error.message } });
+    return true;
+  }
+  let snapshot;
+  try {
+    snapshot = JSON.parse(body.toString('utf8'));
+  } catch {
+    sendJson(res, 400, { error: { code: 'invalid_json', message: '请求体不是合法 JSON' } });
+    return true;
+  }
+  const symbolsValid = snapshot?.symbols && typeof snapshot.symbols === 'object' && !Array.isArray(snapshot.symbols);
+  const generatedAtValid = typeof snapshot?.generated_at === 'string' && !Number.isNaN(Date.parse(snapshot.generated_at));
+  if (snapshot?.source !== 'futu-assistant' || typeof snapshot?.rule_version !== 'string' || !symbolsValid || !generatedAtValid) {
+    sendJson(res, 400, { error: { code: 'invalid_envelope', message: '量化分析 source、generated_at、rule_version 或 symbols 不合法' } });
+    return true;
+  }
+  await mkdir(PORTFOLIO_ANALYSIS_ROOT, { recursive: true });
+  const temporaryPath = join(PORTFOLIO_ANALYSIS_ROOT, `.latest-${process.pid}-${randomBytes(4).toString('hex')}.tmp`);
+  try {
+    await writeFile(temporaryPath, body, { mode: 0o600 });
+    await rename(temporaryPath, latestPath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+  sendJson(res, 200, {
+    ok: true,
+    symbol_count: Object.keys(snapshot.symbols).length,
+    generated_at: snapshot.generated_at,
+  });
+  return true;
+}
+
 function asNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value !== 'string') return null;
@@ -556,6 +622,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
   if (await handleImportArchiveRoute(url, req, res)) return;
   if (await handlePortfolioPositionsRoute(url, req, res)) return;
+  if (await handlePortfolioAnalysisRoute(url, req, res)) return;
   if (req.method === 'GET' && url.pathname === '/api/health') {
     sendJson(res, 200, { ok: true, service: 'portfolio-ai-gateway', time: new Date().toISOString() });
     return;
