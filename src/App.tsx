@@ -15,6 +15,7 @@ import { MARKET_SESSION_REFRESH_MS, dayChangeSessionText, isRegularSession, mark
 import { computeMetrics } from './metrics';
 import { fetchQuantAnalysis, isQuantAnalysisStale } from './quantAnalysis';
 import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDetailsApplyResult } from './importMerge';
+import { dedupeImportIssues } from './importIssues';
 import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
 import { applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions, type QuantMappedPortfolio } from './quantSync';
 import { getServerAlertRulesUrl, getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, hasServerGateway } from './runtimeConfig';
@@ -540,7 +541,7 @@ export default function App() {
 }
 
 function ImportResultNotice({ result: notice, onClose, onUndo }: { result: ImportNotice; onClose: () => void; onUndo: () => void }) {
-  const issues = notice.result.issues;
+  const issues = dedupeImportIssues(notice.result.issues);
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
       <div className="flex items-start justify-between gap-3">

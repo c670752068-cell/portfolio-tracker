@@ -4,6 +4,8 @@ import {
   deleteAlertRule,
   dispatchAlertRuleMutation,
   fetchAlertRules,
+  formatAlertCurrentPrice,
+  formatAlertDistance,
   resolveHoldingCostSuggestion,
   saveAlertRule,
   type AlertRule,
@@ -102,6 +104,22 @@ describe('alert-rules server CRUD', () => {
 });
 
 describe('alert cost and callback policy', () => {
+  it('labels the quote timestamp and the directional distance without making the user infer it', () => {
+    const checked = { ...targetRule, last_checked_at: '2026-07-15T15:10:00.000Z' };
+
+    expect(formatAlertCurrentPrice(checked, new Date('2026-07-15T15:20:00.000Z')))
+      .toBe('当前价 $38.00 @ 11:10 ET');
+    expect(formatAlertCurrentPrice(checked, new Date('2026-07-15T21:00:00.000Z')))
+      .toBe('上一交易日收盘 $38.00 @ 11:10 ET');
+    expect(formatAlertDistance(checked)).toBe('还需上涨 5.00%');
+    expect(formatAlertDistance({
+      ...checked,
+      direction: 'below',
+      target_price: 36,
+      distance_pct: 5.56,
+    })).toBe('还需下跌 5.56%');
+  });
+
   it('auto-fills only a complete broker-weighted cost', () => {
     expect(resolveHoldingCostSuggestion({
       weighted_average_cost: 22.5,

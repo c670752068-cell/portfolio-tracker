@@ -2,6 +2,8 @@ import type { QuantAnalysisSnapshot, QuantSignalStatWindow, QuantSymbolAnalysis 
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+const NEW_YORK_TIME_ZONE = 'America/New_York';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -67,6 +69,24 @@ export function quantAnalysisAgeHours(generatedAt: string, now = Date.now()): nu
   const timestamp = Date.parse(generatedAt);
   if (!Number.isFinite(timestamp)) return null;
   return Math.max(0, Math.floor((now - timestamp) / HOUR_MS));
+}
+
+export function quantAnalysisFreshnessText(generatedAt: string, now = Date.now()): string {
+  const timestamp = Date.parse(generatedAt);
+  if (!Number.isFinite(timestamp)) return '快照时间无效';
+  const date = new Date(timestamp);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: NEW_YORK_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const ageMinutes = Math.max(0, Math.floor((now - timestamp) / MINUTE_MS));
+  return `快照 ${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute} ET，${ageMinutes} 分钟前`;
 }
 
 export type QuantSymbolLookup =

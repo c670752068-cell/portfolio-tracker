@@ -4,6 +4,7 @@ import {
   isQuantAnalysisStale,
   lookupQuantSymbol,
   parseQuantAnalysis,
+  quantAnalysisFreshnessText,
   quantAnalysisAgeHours,
 } from './quantAnalysis';
 import { quantAnalysisFixture } from './testFixtures/quantAnalysis';
@@ -50,6 +51,13 @@ describe('quant analysis contract', () => {
 
     expect(quantAnalysisAgeHours(generatedAt, Date.parse('2026-07-16T15:59:59.000Z'))).toBe(25);
     expect(quantAnalysisAgeHours('not-a-date')).toBeNull();
+  });
+
+  it('formats the successful snapshot refresh timestamp and exact age in minutes', () => {
+    expect(quantAnalysisFreshnessText(
+      '2026-07-15T14:00:00.000Z',
+      Date.parse('2026-07-15T14:12:59.000Z'),
+    )).toBe('快照 2026-07-15 10:00 ET，12 分钟前');
   });
 
   it('normalizes a query and returns the monitored pool when the symbol is outside it', () => {

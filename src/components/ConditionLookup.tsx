@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
-import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours } from '../quantAnalysis';
+import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import type { Holding, QuantAnalysisSnapshot, QuantGateResult, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 
 interface ConditionLookupProps {
@@ -85,7 +85,7 @@ function StatWindow({ label, stat }: { label: string; stat: QuantSignalStatWindo
       {stat.sample_insufficient || stat.n < 20 || stat.win_rate === null ? (
         <div className="mt-1 text-amber-700 dark:text-amber-300">样本不足，勿下结论（n={stat.n}）</div>
       ) : (
-        <div className="mt-1 text-slate-600 dark:text-slate-300">历史成功率 {(stat.win_rate * 100).toFixed(1)}%（n={stat.n}）</div>
+        <div className="mt-1 text-slate-600 dark:text-slate-300">历史成功率 {(stat.win_rate * 100).toFixed(2)}%（n={stat.n}）</div>
       )}
     </div>
   );
@@ -99,7 +99,7 @@ function DepthStat({ stat }: { stat: NonNullable<QuantSymbolAnalysis['depth_stat
       {insufficient ? (
         <div className="mt-1 text-amber-700 dark:text-amber-300">样本不足，勿下结论（n={stat.n}）</div>
       ) : (
-        <div className="mt-1 text-slate-600 dark:text-slate-300">60 日历史成功率 {(stat.win_rate_60d! * 100).toFixed(1)}%（n={stat.n}）</div>
+        <div className="mt-1 text-slate-600 dark:text-slate-300">60 日历史成功率 {(stat.win_rate_60d! * 100).toFixed(2)}%（n={stat.n}）</div>
       )}
       <div className="mt-1 text-xs text-slate-500">含熊市样本：{stat.bear_included ? '是' : '否'}</div>
     </div>
@@ -222,6 +222,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
           </div>
           {onRefresh && <button type="button" onClick={onRefresh} disabled={loading} className="rounded-md bg-slate-200 px-3 py-2 text-sm dark:bg-slate-700">{loading ? '读取中…' : '刷新快照'}</button>}
         </div>
+        {snapshot && <p className="mt-2 text-xs text-slate-500">{quantAnalysisFreshnessText(snapshot.generated_at)}</p>}
         <select aria-label="量化监控标的" value={selectedSymbol} onChange={(event) => setSymbol(event.target.value)} className="mt-4 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-600">
           {monitoredSymbols.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>

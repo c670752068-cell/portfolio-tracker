@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { quantAnalysisFixture } from '../testFixtures/quantAnalysis';
 import { ConditionLookup } from './ConditionLookup';
 
@@ -9,6 +9,8 @@ const holdings = [
   { id: 'tqqq', symbol: 'TQQQ', name: 'TQQQ', shares: 10, buyPrice: 50, currentPrice: 60, sector: 'ETF', currency: 'USD' as const, assetType: 'leveraged_etf' as const, broker: 'LONGPORT' },
   { id: 'sgov', symbol: 'SGOV', name: '现金类', shares: 10, buyPrice: 100, currentPrice: 100, sector: '现金', currency: 'USD' as const, assetType: 'etf' as const, broker: 'IBKR', cashEquivalent: true },
 ];
+
+afterEach(() => vi.useRealTimers());
 
 describe('ConditionLookup', () => {
   it('uses a locked snapshot-symbol select and filters cash equivalents', () => {
@@ -22,6 +24,17 @@ describe('ConditionLookup', () => {
     expect(html).not.toContain('value="SGOV"');
     expect(html).not.toContain('placeholder="例如 SOXL"');
     expect(html).not.toContain('>查询</button>');
+  });
+
+  it('shows successful refresh feedback with the snapshot timestamp and minute age', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-15T14:12:59.000Z'));
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} onRefresh={() => undefined} />,
+    );
+
+    expect(html).toContain('快照 2026-07-15 10:00 ET，12 分钟前');
   });
 
   it('renders an ETF market group as X/3 and removes daily fuse from display', () => {
@@ -84,7 +97,7 @@ describe('ConditionLookup', () => {
     expect(html).toContain('样本不足，勿下结论');
     expect(html).toContain('n=19');
     expect(html).toContain('20 日');
-    expect(html).toContain('55');
+    expect(html).toContain('55.00%');
     expect(html).toContain('历史统计不代表未来收益');
   });
 
@@ -120,7 +133,7 @@ describe('ConditionLookup', () => {
     );
 
     expect(html).toContain('回撤深度 60%');
-    expect(html).toContain('60 日历史成功率 68.0%（n=25）');
+    expect(html).toContain('60 日历史成功率 68.00%（n=25）');
     expect(html).toContain('含熊市样本：是');
   });
 

@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { buildAlertHoldingOptions, dispatchAlertRuleMutation, resolveHoldingCostSuggestion, type AlertRule, type AlertRuleDraft, type AlertRuleType } from '../alertRules';
+import { buildAlertHoldingOptions, dispatchAlertRuleMutation, formatAlertCurrentPrice, formatAlertDistance, resolveHoldingCostSuggestion, type AlertRule, type AlertRuleDraft, type AlertRuleType } from '../alertRules';
 import type { Holding, QuantHoldingCost } from '../types';
 
 interface AlertRulesPanelProps {
@@ -210,8 +210,8 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
                 <div key={rule.id} className="py-3 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="font-semibold">{rule.symbol} · {rule.type === 'target_price' ? `目标价 $${target?.toFixed(2)}` : `成本 $${rule.cost_basis?.toFixed(2)} +${rule.gain_pct}%`}</div>
-                      <div className="mt-1 text-xs text-slate-500">当前价 {rule.current_price == null ? '待盘中检查' : `$${rule.current_price.toFixed(2)}`} · 距目标 {rule.distance_pct == null ? '暂无' : `${rule.distance_pct.toFixed(2)}%`}</div>
+                      <div className="font-semibold">{rule.symbol} · {rule.type === 'target_price' ? `目标价 $${target?.toFixed(2)}` : `成本 $${rule.cost_basis?.toFixed(2)} +${Number(rule.gain_pct).toFixed(2)}%`}</div>
+                      <div className="mt-1 text-xs text-slate-500">{formatAlertCurrentPrice(rule)} · {formatAlertDistance(rule)}</div>
                       <div className="mt-1 text-xs text-slate-500">最近提醒 {rule.last_reminder_at || '尚未触发'}</div>
                     </div>
                     <div className="flex gap-2"><button type="button" onClick={() => editRule(rule)} className={smallButtonClass}>编辑</button><button type="button" onClick={() => void props.onDelete(rule.id)} className={smallButtonClass}>删除</button></div>

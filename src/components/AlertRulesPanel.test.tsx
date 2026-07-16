@@ -153,6 +153,7 @@ describe('AlertRulesPanel rule list', () => {
         enabled: true,
         current_price: 38,
         distance_pct: 5,
+        last_checked_at: '2026-07-15T15:10:00.000Z',
         last_reminder_at: '2026-07-15 10:35 ET',
       }],
     });
@@ -160,8 +161,8 @@ describe('AlertRulesPanel rule list', () => {
     expect(html).toContain('FNGU');
     expect(html).toContain('当前价');
     expect(html).toContain('38');
-    expect(html).toContain('距目标');
-    expect(html).toContain('5.00%');
+    expect(html).toContain('@ 11:10 ET');
+    expect(html).toContain('还需上涨 5.00%');
     expect(html).toContain('最近提醒');
     expect(html).toContain('2026-07-15 10:35 ET');
     expect(html).toContain('编辑');

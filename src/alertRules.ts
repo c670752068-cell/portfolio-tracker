@@ -1,4 +1,5 @@
 import { isCashEquivalent } from './assetClass';
+import { isRegularSession } from './marketSession';
 import type { Holding, QuantHoldingCost } from './types';
 
 export const ALERT_RULES_REFRESH_MS = 35 * 60 * 1000;
@@ -54,6 +55,7 @@ export interface AlertRule extends AlertRuleDraft {
   distance_pct?: number | null;
   last_reminder_at?: string | null;
   last_alert_type?: 'approach' | 'reached' | null;
+  last_checked_at?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -73,6 +75,38 @@ function targetPrice(rule: AlertRule): number | null {
   if (rule.type === 'target_price') return typeof rule.target_price === 'number' ? rule.target_price : null;
   if (typeof rule.cost_basis !== 'number' || typeof rule.gain_pct !== 'number') return null;
   return rule.cost_basis * (1 + rule.gain_pct / 100);
+}
+
+function formatNewYorkTime(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/New_York',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+}
+
+export function formatAlertCurrentPrice(rule: AlertRule, now = new Date()): string {
+  if (rule.current_price == null) return '当前价 待盘中检查';
+  const label = isRegularSession(now) ? '当前价' : '上一交易日收盘';
+  const checkedAt = formatNewYorkTime(rule.last_checked_at);
+  return `${label} $${rule.current_price.toFixed(2)}${checkedAt ? ` @ ${checkedAt} ET` : ''}`;
+}
+
+export function formatAlertDistance(rule: AlertRule): string {
+  if (rule.distance_pct == null) return '距目标 暂无';
+  const direction = rule.type === 'gain_pct' ? 'above' : rule.direction ?? 'above';
+  const target = targetPrice(rule);
+  const reached = rule.current_price != null && target != null
+    ? direction === 'above' ? rule.current_price >= target : rule.current_price <= target
+    : rule.last_alert_type === 'reached';
+  if (direction === 'above') {
+    return `${reached ? '已高于目标' : '还需上涨'} ${rule.distance_pct.toFixed(2)}%`;
+  }
+  return `${reached ? '已低于目标' : '还需下跌'} ${rule.distance_pct.toFixed(2)}%`;
 }
 
 function normalizeRule(value: unknown): AlertRule {
