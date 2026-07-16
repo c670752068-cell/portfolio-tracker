@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AllocationChart } from './components/AllocationChart';
 import { AnalysisPanel } from './components/AnalysisPanel';
+import { AlertRulesPanel } from './components/AlertRulesPanel';
 import { ConditionLookup } from './components/ConditionLookup';
 import { CashEditor } from './components/CashEditor';
 import { HoldingsTable } from './components/HoldingsTable';
@@ -10,6 +11,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { ScenarioCalculator } from './components/ScenarioCalculator';
 import { Summary } from './components/Summary';
 import { analyzePortfolio } from './analyzer';
+import { deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { MARKET_SESSION_REFRESH_MS, dayChangeSessionText, isRegularSession, marketSessionDateKey } from './marketSession';
@@ -18,7 +20,7 @@ import { fetchQuantAnalysis, isQuantAnalysisStale } from './quantAnalysis';
 import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDetailsApplyResult } from './importMerge';
 import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
 import { applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions, type QuantMappedPortfolio } from './quantSync';
-import { getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, hasServerGateway } from './runtimeConfig';
+import { getServerAlertRulesUrl, getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, hasServerGateway } from './runtimeConfig';
 import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState, QuantAnalysisSnapshot } from './types';
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
@@ -50,6 +52,11 @@ interface QuantAnalysisStatus {
   loading: boolean;
   error: string;
   stale: boolean;
+}
+
+interface AlertRulesStatus {
+  loading: boolean;
+  error: string;
 }
 
 type ImportNotice =
@@ -109,6 +116,8 @@ export default function App() {
   });
   const [quantAnalysis, setQuantAnalysis] = useState<QuantAnalysisSnapshot | null>(null);
   const [quantAnalysisStatus, setQuantAnalysisStatus] = useState<QuantAnalysisStatus>({ loading: false, error: '', stale: false });
+  const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
+  const [alertRulesStatus, setAlertRulesStatus] = useState<AlertRulesStatus>({ loading: false, error: '' });
   const [lastImport, setLastImport] = useState<ImportNotice | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [marketNow, setMarketNow] = useState(() => new Date());
@@ -117,6 +126,7 @@ export default function App() {
   const quoteRefreshInFlightRef = useRef(false);
   const quantAutoSyncKeyRef = useRef('');
   const quantAnalysisAutoLoadKeyRef = useRef('');
+  const alertRulesAutoLoadKeyRef = useRef('');
 
   useEffect(() => {
     savePortfolio(portfolio);
@@ -247,6 +257,21 @@ export default function App() {
     }
   }, []);
 
+  const refreshAlertRules = useCallback(async () => {
+    const url = getServerAlertRulesUrl();
+    if (!url) {
+      setAlertRulesStatus({ loading: false, error: '目标提醒仅在 VPS 入口可用' });
+      return;
+    }
+    setAlertRulesStatus({ loading: true, error: '' });
+    try {
+      setAlertRules(await fetchAlertRules(url));
+      setAlertRulesStatus({ loading: false, error: '' });
+    } catch (error) {
+      setAlertRulesStatus({ loading: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }, []);
+
   useEffect(() => {
     const url = getServerPortfolioPositionsUrl();
     if (!url) return;
@@ -262,6 +287,13 @@ export default function App() {
     quantAnalysisAutoLoadKeyRef.current = url;
     void refreshQuantAnalysis();
   }, [refreshQuantAnalysis]);
+
+  useEffect(() => {
+    const url = getServerAlertRulesUrl();
+    if (!url || alertRulesAutoLoadKeyRef.current === url) return;
+    alertRulesAutoLoadKeyRef.current = url;
+    void refreshAlertRules();
+  }, [refreshAlertRules]);
 
   useEffect(() => {
     if (!settings.autoRefreshQuotes || !canSyncQuotes(settings)) return undefined;
@@ -296,6 +328,12 @@ export default function App() {
   const needsReviewCount = countNeedsReview(portfolio.holdings);
   const deltaEstimatedCount = metrics.holdingsMetrics.filter((metric) => metric.holding.quote?.source === 'delta_estimate').length;
   const dayChangeStatus = dayChangeSessionText(marketNow, quoteStatus.lastSyncedAt, deltaEstimatedCount);
+  const alertSymbols = useMemo(() => [...new Set(portfolio.holdings.map((holding) => (
+    holding.assetType === 'option' ? holding.option?.underlying || holding.symbol : holding.symbol
+  )).map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))].sort(), [portfolio.holdings]);
+  const latestAlert = useMemo(() => [...alertRules]
+    .filter((rule) => rule.last_reminder_at)
+    .sort((left, right) => String(right.last_reminder_at).localeCompare(String(left.last_reminder_at)))[0], [alertRules]);
 
   useEffect(() => {
     const date = getBeijingDateParts(new Date()).date;
@@ -350,6 +388,36 @@ export default function App() {
     clearPortfolioBackup();
     setLastImport(null);
   }
+  async function upsertAlertRule(draft: AlertRuleDraft) {
+    const url = getServerAlertRulesUrl();
+    if (!url) throw new Error('目标提醒仅在 VPS 入口可用');
+    setAlertRulesStatus({ loading: true, error: '' });
+    try {
+      const saved = await saveAlertRule(url, draft);
+      setAlertRules((current) => {
+        const index = current.findIndex((rule) => rule.id === saved.id);
+        if (index < 0) return [...current, saved];
+        return current.map((rule) => rule.id === saved.id ? saved : rule);
+      });
+      setAlertRulesStatus({ loading: false, error: '' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAlertRulesStatus({ loading: false, error: message });
+      throw new Error(message, { cause: error });
+    }
+  }
+  async function removeAlertRule(id: string) {
+    const url = getServerAlertRulesUrl();
+    if (!url) return;
+    setAlertRulesStatus({ loading: true, error: '' });
+    try {
+      await deleteAlertRule(url, id);
+      setAlertRules((current) => current.filter((rule) => rule.id !== id));
+      setAlertRulesStatus({ loading: false, error: '' });
+    } catch (error) {
+      setAlertRulesStatus({ loading: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
 
   return (
     <div className="mx-auto min-h-full max-w-5xl px-3 py-4 sm:px-6">
@@ -374,6 +442,11 @@ export default function App() {
 
       {tab === 'dashboard' && (
         <section className="space-y-4">
+          {latestAlert && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+              <strong>{latestAlert.symbol} 目标提醒已触发</strong> · {latestAlert.last_reminder_at}。只提醒不下单，请在券商 App 手动执行。
+            </div>
+          )}
           <Summary
             metrics={metrics}
             rates={rates}
@@ -436,7 +509,19 @@ export default function App() {
       )}
 
       {tab === 'calculator' && (
-        <ScenarioCalculator metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
+        <section className="space-y-4">
+          <ScenarioCalculator metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
+          <AlertRulesPanel
+            rules={alertRules}
+            symbols={alertSymbols}
+            holdingCosts={quantAnalysis?.holding_costs || {}}
+            loading={alertRulesStatus.loading}
+            error={alertRulesStatus.error}
+            onCreate={upsertAlertRule}
+            onUpdate={upsertAlertRule}
+            onDelete={removeAlertRule}
+          />
+        </section>
       )}
 
       {tab === 'settings' && (

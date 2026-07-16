@@ -43,6 +43,10 @@ export function getServerQuantAnalysisUrl(): string {
   return apiUrl('/api/portfolio/quant-analysis');
 }
 
+export function getServerAlertRulesUrl(): string {
+  return apiUrl('/api/portfolio/alert-rules');
+}
+
 export function hasServerGateway(): boolean {
   return Boolean(runtimeApiBaseUrl());
 }
