@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  ALERT_RULES_REFRESH_MS,
   deleteAlertRule,
   dispatchAlertRuleMutation,
   fetchAlertRules,
@@ -28,6 +29,10 @@ const targetRule: AlertRule = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('alert-rules server CRUD', () => {
+  it('refreshes the shared banner state on the same 35-minute cadence', () => {
+    expect(ALERT_RULES_REFRESH_MS).toBe(35 * 60 * 1000);
+  });
+
   it('loads the shared server rules with GET semantics', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ rules: [targetRule] }), {

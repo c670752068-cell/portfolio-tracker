@@ -1,5 +1,7 @@
 import type { QuantHoldingCost } from './types';
 
+export const ALERT_RULES_REFRESH_MS = 35 * 60 * 1000;
+
 export type AlertRuleType = 'target_price' | 'gain_pct';
 export type AlertDirection = 'above' | 'below';
 

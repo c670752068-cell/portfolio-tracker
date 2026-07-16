@@ -11,7 +11,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { ScenarioCalculator } from './components/ScenarioCalculator';
 import { Summary } from './components/Summary';
 import { analyzePortfolio } from './analyzer';
-import { deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
+import { ALERT_RULES_REFRESH_MS, deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { MARKET_SESSION_REFRESH_MS, dayChangeSessionText, isRegularSession, marketSessionDateKey } from './marketSession';
@@ -293,6 +293,21 @@ export default function App() {
     if (!url || alertRulesAutoLoadKeyRef.current === url) return;
     alertRulesAutoLoadKeyRef.current = url;
     void refreshAlertRules();
+  }, [refreshAlertRules]);
+
+  useEffect(() => {
+    if (!getServerAlertRulesUrl()) return undefined;
+    const refreshVisibleAlertRules = () => {
+      if (document.visibilityState !== 'hidden') void refreshAlertRules();
+    };
+    const timer = window.setInterval(refreshVisibleAlertRules, ALERT_RULES_REFRESH_MS);
+    window.addEventListener('focus', refreshVisibleAlertRules);
+    document.addEventListener('visibilitychange', refreshVisibleAlertRules);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshVisibleAlertRules);
+      document.removeEventListener('visibilitychange', refreshVisibleAlertRules);
+    };
   }, [refreshAlertRules]);
 
   useEffect(() => {
