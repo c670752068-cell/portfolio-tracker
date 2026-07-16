@@ -14,6 +14,14 @@ import { createReadStream } from 'node:fs';
 import { access, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { rename } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
+import {
+  createAlertRulesRoute,
+  formatAlertNotification,
+  readAlertRules,
+  runAlertTrackerCycle,
+  sendBarkNotification,
+  startAlertTracker,
+} from './alert-tracker.mjs';
 
 const PORT = Number(process.env.PORT || 8789);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -29,6 +37,9 @@ const PORTFOLIO_SYNC_TOKEN = process.env.PORTFOLIO_SYNC_TOKEN || '';
 const PORTFOLIO_POSITIONS_ROOT = resolve(process.env.PORTFOLIO_POSITIONS_ROOT || '/opt/portfolio-tracker-data/positions');
 const PORTFOLIO_POSITIONS_MAX_BYTES = 2 * 1024 * 1024;
 const PORTFOLIO_ANALYSIS_ROOT = resolve(process.env.PORTFOLIO_ANALYSIS_ROOT || '/opt/portfolio-tracker-data/analysis');
+const PORTFOLIO_ALERTS_ROOT = resolve(process.env.PORTFOLIO_ALERTS_ROOT || '/opt/portfolio-tracker-data/alerts');
+const BARK_DEVICE_KEY = process.env.BARK_DEVICE_KEY || '';
+const BARK_BASE_URL = process.env.BARK_BASE_URL || 'https://api.day.app';
 
 const AI_ROUTES = {
   '/api/zhipu/chat/completions': 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
@@ -560,6 +571,40 @@ async function fetchFreeQuote(symbol) {
   }
 }
 
+async function fetchAlertQuotes(symbols) {
+  const rows = await Promise.all(symbols.map(async (symbol) => {
+    try {
+      return [symbol, (await fetchFreeQuote(symbol)).price];
+    } catch {
+      return null;
+    }
+  }));
+  return Object.fromEntries(rows.filter(Boolean));
+}
+
+const handleAlertRulesRoute = createAlertRulesRoute({ alertsRoot: PORTFOLIO_ALERTS_ROOT, sendJson });
+
+async function runConfiguredAlertCycle() {
+  const rules = await readAlertRules(PORTFOLIO_ALERTS_ROOT);
+  return runAlertTrackerCycle({
+    now: new Date(),
+    alertsRoot: PORTFOLIO_ALERTS_ROOT,
+    rules,
+    fetchQuotes: fetchAlertQuotes,
+    notify: async (event) => {
+      const rule = rules.find((candidate) => candidate.id === event.ruleId);
+      if (!rule) return false;
+      const notification = formatAlertNotification(rule, event);
+      return sendBarkNotification({
+        baseUrl: BARK_BASE_URL,
+        deviceKey: BARK_DEVICE_KEY,
+        title: notification.title,
+        body: notification.body,
+      });
+    },
+  });
+}
+
 async function proxyQuotes(req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
   const symbols = [...new Set((url.searchParams.get('symbols') || '').split(',').map((value) => value.trim().toUpperCase()).filter(Boolean))].slice(0, 50);
@@ -623,6 +668,14 @@ const server = createServer(async (req, res) => {
   if (await handleImportArchiveRoute(url, req, res)) return;
   if (await handlePortfolioPositionsRoute(url, req, res)) return;
   if (await handlePortfolioAnalysisRoute(url, req, res)) return;
+  try {
+    if (await handleAlertRulesRoute(url, req, res)) return;
+  } catch (error) {
+    console.error('alert rules route failed:', error instanceof Error ? error.message : String(error));
+    if (!res.headersSent) sendJson(res, 500, { error: { code: 'alert_rules_error', message: '提醒规则服务暂不可用' } });
+    else res.destroy();
+    return;
+  }
   if (req.method === 'GET' && url.pathname === '/api/health') {
     sendJson(res, 200, { ok: true, service: 'portfolio-ai-gateway', time: new Date().toISOString() });
     return;
@@ -643,3 +696,6 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`portfolio-ai-gateway listening on ${HOST}:${PORT}${STATIC_ROOT ? `; static=${STATIC_ROOT}` : ''}`);
 });
+
+const stopAlertTracker = startAlertTracker({ runCycle: runConfiguredAlertCycle });
+server.on('close', stopAlertTracker);
