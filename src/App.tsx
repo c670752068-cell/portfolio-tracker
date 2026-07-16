@@ -498,6 +498,7 @@ export default function App() {
       {tab === 'conditions' && (
         <ConditionLookup
           snapshot={quantAnalysis}
+          holdings={portfolio.holdings}
           loading={quantAnalysisStatus.loading}
           error={quantAnalysisStatus.error}
           onRefresh={refreshQuantAnalysis}

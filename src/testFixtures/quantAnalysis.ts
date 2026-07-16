@@ -87,4 +87,50 @@ export const quantAnalysisFixture = {
       auto_fill_allowed: true,
     },
   },
+  sell: {
+    shadow: true,
+    symbols: {
+      MSFT: {
+        family: 'MSFT',
+        market_value: 5000,
+        held_symbols: ['MSFT', 'MSFU'],
+        repair: {
+          status: 'repairing',
+          base_date: '2026-03-30',
+          window_open: false,
+          priority: ['option', 'leveraged_2x', 'underlying'],
+          source: 'rebound_cycle_state',
+        },
+        contentment: {
+          available: true,
+          triggered: true,
+          asset_gain_pct: 18,
+          qqq_gain_pct: 20,
+          gap_vs_qqq_pct: -2,
+          signal: 'near',
+          minimum_reduction_pct: 50,
+          observation: true,
+        },
+        convergence: {
+          triggered: true,
+          count: 6,
+          minimum_assets: 5,
+          symbols: ['MSFT', 'AAPL', 'NVDA', 'AMZN', 'META', 'GOOGL'],
+          action: '清仓杠杆品种或调仓 SGOV，仅手动操作',
+          observation: true,
+        },
+        playbook: {
+          available: true,
+          label: '个股',
+          sell_steps: [
+            { gain_min_pct: 5, gain_max_pct: 7, sell_position_pct: 2 },
+            { gain_min_pct: 7, gain_max_pct: 10, sell_position_pct: 3 },
+            { gain_min_pct: 10, gain_max_pct: 999, sell_position_pct: 4 },
+          ],
+          risk_first_order: ['option', 'leveraged_2x', 'underlying'],
+        },
+        recent_signals: [{ name: 'five_day_gain', label: '5日涨幅过热', date: '2026-07-15' }],
+      },
+    },
+  },
 } as const;

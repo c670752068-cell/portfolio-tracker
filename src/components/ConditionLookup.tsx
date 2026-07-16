@@ -1,15 +1,23 @@
 import { useMemo, useState } from 'react';
+import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
 import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours } from '../quantAnalysis';
-import type { QuantAnalysisSnapshot, QuantGateResult, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
+import type { Holding, QuantAnalysisSnapshot, QuantGateResult, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 
 interface ConditionLookupProps {
   snapshot: QuantAnalysisSnapshot | null;
+  holdings?: Holding[];
   initialSymbol?: string;
   loading?: boolean;
   error?: string;
   onRefresh?: () => void;
 }
+
+const RISK_ROLE_LABELS: Record<string, string> = {
+  option: '期权',
+  leveraged_2x: '两三倍杠杆',
+  underlying: '正股/单倍 ETF',
+};
 
 const MARKET_GATES = [
   ['low_zone', '低位区'],
@@ -133,7 +141,58 @@ function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
   );
 }
 
-export function ConditionLookup({ snapshot, initialSymbol = '', loading = false, error = '', onRefresh }: ConditionLookupProps) {
+function ObservationBadge({ visible }: { visible: boolean }) {
+  return visible ? <span className="ml-1 text-amber-700 dark:text-amber-300">（观察期，未正式生效）</span> : null;
+}
+
+function SellWindow({ item }: { item: QuantSellFamily }) {
+  const repairText = item.repair.window_open
+    ? '修复完成，可开始分批减仓：优先减期权与两三倍杠杆，不要一次性减完'
+    : item.repair.status === 'repairing'
+      ? `卖出窗口未开启：深跌修复期内，耐心持有（基准日 ${item.repair.base_date || '暂无'}）`
+      : '修复期状态暂不可用，当前不生成卖出动作';
+  return (
+    <div className="mt-3 space-y-3 text-sm">
+      <div className={`rounded-lg border p-3 ${item.repair.window_open ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/20' : 'border-slate-200 dark:border-slate-700'}`}>
+        <div className="font-semibold">{repairText}</div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <div className="font-semibold">知足常乐<ObservationBadge visible={item.contentment.observation} /></div>
+          {!item.contentment.available ? <p className="mt-1 text-slate-500">该持仓族暂无反弹基准对比数据。</p> : (
+            <>
+              <p className="mt-1 text-slate-500">本标的 {numberText(item.contentment.asset_gain_pct, '%')} · QQQ {numberText(item.contentment.qqq_gain_pct, '%')} · 差距 {numberText(item.contentment.gap_vs_qqq_pct, ' 点')}</p>
+              <p className={`mt-1 font-medium ${item.contentment.triggered ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>{item.contentment.triggered ? `建议至少减仓 ${integerText(item.contentment.minimum_reduction_pct)}%` : '尚未接近或超过 QQQ，不触发该依据'}</p>
+            </>
+          )}
+        </div>
+        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <div className="font-semibold">补涨收敛<ObservationBadge visible={item.convergence.observation} /></div>
+          <p className="mt-1 text-slate-500">大科技追平 QQQ：{integerText(item.convergence.count)}/{integerText(item.convergence.minimum_assets)} 只</p>
+          <p className={`mt-1 font-medium ${item.convergence.triggered ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>{item.convergence.triggered ? `市场亢奋·${item.convergence.action.replace('，仅手动操作', '')}` : '尚未达到补涨收敛门槛'}</p>
+        </div>
+      </div>
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <div className="font-semibold">止盈阶梯参考</div>
+        {!item.playbook.available ? <p className="mt-1 text-slate-500">该持仓族尚未配置止盈剧本。</p> : (
+          <>
+            <ul className="mt-2 space-y-1 text-slate-600 dark:text-slate-300">
+              {item.playbook.sell_steps.map((step) => <li key={`${step.gain_min_pct}-${step.gain_max_pct}`}>盈利 {step.gain_min_pct.toFixed(2)}%{step.gain_max_pct >= 999 ? '+' : `–${step.gain_max_pct.toFixed(2)}%`}：减总仓 {step.sell_position_pct.toFixed(2)}%</li>)}
+            </ul>
+            <p className="mt-2 text-xs text-slate-500">优先顺序：{item.playbook.risk_first_order.map((role) => RISK_ROLE_LABELS[role] || role).join(' → ')}</p>
+          </>
+        )}
+      </div>
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <div className="font-semibold">近期卖出信号</div>
+        {item.recent_signals.length === 0 ? <p className="mt-1 text-slate-500">最近没有触发 sell 向信号。</p> : <ul className="mt-1 space-y-1 text-slate-600 dark:text-slate-300">{item.recent_signals.map((signal) => <li key={`${signal.name}-${signal.date}`}>{signal.label} {signal.date}</li>)}</ul>}
+      </div>
+      <p className="text-xs font-medium text-amber-700 dark:text-amber-300">只提醒不下单；由你在券商 App 手动执行。</p>
+    </div>
+  );
+}
+
+export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', loading = false, error = '', onRefresh }: ConditionLookupProps) {
   const monitoredSymbols = useMemo(() => snapshot
     ? Object.keys(snapshot.symbols).filter((item) => !CASH_EQUIVALENT_SYMBOLS.has(item.toUpperCase())).sort()
     : [], [snapshot]);
@@ -144,6 +203,14 @@ export function ConditionLookup({ snapshot, initialSymbol = '', loading = false,
   const selectedSymbol = monitoredSymbols.includes(symbol) ? symbol : firstSymbol;
   const result = useMemo(() => snapshot && selectedSymbol ? lookupQuantSymbol(snapshot, selectedSymbol) : null, [snapshot, selectedSymbol]);
   const snapshotAgeHours = snapshot ? quantAnalysisAgeHours(snapshot.generated_at) : null;
+  const sellOptions = useMemo(() => buildAlertHoldingOptions(holdings), [holdings]);
+  const [sellSymbol, setSellSymbol] = useState(sellOptions[0]?.symbol || '');
+  const selectedSellSymbol = sellOptions.some((item) => item.symbol === sellSymbol)
+    ? sellSymbol
+    : sellOptions[0]?.symbol || '';
+  const sellFamily = snapshot?.sell
+    ? Object.values(snapshot.sell.symbols).find((item) => item.family === selectedSellSymbol || item.held_symbols.includes(selectedSellSymbol))
+    : undefined;
 
   return (
     <section className="space-y-4">
@@ -202,6 +269,18 @@ export function ConditionLookup({ snapshot, initialSymbol = '', loading = false,
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900">{snapshot.disclaimer}</div>
         </>
+      )}
+
+      {snapshot && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+          <h3 className="text-lg font-semibold">卖出窗口</h3>
+          <p className="mt-1 text-sm text-slate-500">从当前持仓选择标的，查看量化系统给出的修复期、知足常乐、补涨收敛与止盈阶梯依据。</p>
+          <select aria-label="卖出持仓标的" value={selectedSellSymbol} onChange={(event) => setSellSymbol(event.target.value)} className="mt-3 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-600">
+            {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}
+            {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{item.label}</option>)}
+          </select>
+          {!snapshot.sell ? <p className="mt-3 text-sm text-slate-500">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily ? <p className="mt-3 text-sm text-slate-500">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} />}
+        </div>
       )}
     </section>
   );

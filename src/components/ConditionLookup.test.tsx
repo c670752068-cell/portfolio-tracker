@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { quantAnalysisFixture } from '../testFixtures/quantAnalysis';
 import { ConditionLookup } from './ConditionLookup';
 
+const holdings = [
+  { id: 'msft', symbol: 'MSFT', name: '微软', shares: 10, buyPrice: 300, currentPrice: 400, sector: '科技', currency: 'USD' as const, assetType: 'stock' as const, broker: 'IBKR' },
+  { id: 'msfu-option', symbol: 'MSFU CALL', name: 'MSFU Call', shares: 2, buyPrice: 2, currentPrice: 3, sector: '科技', currency: 'USD' as const, assetType: 'option' as const, broker: 'FUTU', option: { underlying: 'MSFU', optionType: 'call' as const, strike: 30, expiration: '2027-01-15', contractMultiplier: 100, delta: 0.4, theta: null, gamma: null, vega: null, impliedVolatility: null, underlyingPrice: 25 } },
+  { id: 'tqqq', symbol: 'TQQQ', name: 'TQQQ', shares: 10, buyPrice: 50, currentPrice: 60, sector: 'ETF', currency: 'USD' as const, assetType: 'leveraged_etf' as const, broker: 'LONGPORT' },
+  { id: 'sgov', symbol: 'SGOV', name: '现金类', shares: 10, buyPrice: 100, currentPrice: 100, sector: '现金', currency: 'USD' as const, assetType: 'etf' as const, broker: 'IBKR', cashEquivalent: true },
+];
+
 describe('ConditionLookup', () => {
   it('uses a locked snapshot-symbol select and filters cash equivalents', () => {
     const html = renderToStaticMarkup(
@@ -115,6 +122,24 @@ describe('ConditionLookup', () => {
     expect(html).toContain('回撤深度 60%');
     expect(html).toContain('60 日历史成功率 68.0%（n=25）');
     expect(html).toContain('含熊市样本：是');
+  });
+
+  it('renders a held-only sell selector and the server-authored repair window', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('aria-label="卖出持仓标的"');
+    expect(html).toContain('value="MSFT"');
+    expect(html).toContain('value="MSFU"');
+    expect(html).toContain('value="TQQQ"');
+    expect(html).not.toContain('value="SGOV"');
+    expect(html).toContain('卖出窗口未开启：深跌修复期内，耐心持有（基准日 2026-03-30）');
+    expect(html).toContain('建议至少减仓 50%');
+    expect(html).toContain('市场亢奋·清仓杠杆品种或调仓 SGOV');
+    expect(html).toContain('（观察期，未正式生效）');
+    expect(html).toContain('5日涨幅过热 2026-07-15');
+    expect(html).toContain('只提醒不下单；由你在券商 App 手动执行。');
   });
 
 });

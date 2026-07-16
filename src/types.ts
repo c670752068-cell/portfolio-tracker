@@ -157,6 +157,55 @@ export interface QuantHoldingCost {
   auto_fill_allowed: boolean;
 }
 
+export interface QuantSellBasis {
+  observation: boolean;
+}
+
+export interface QuantSellFamily {
+  family: string;
+  market_value: number;
+  held_symbols: readonly string[];
+  repair: {
+    status: string;
+    base_date: string | null;
+    window_open: boolean;
+    priority: readonly string[];
+    source?: string;
+  };
+  contentment: QuantSellBasis & {
+    available: boolean;
+    triggered: boolean;
+    asset_gain_pct?: number;
+    qqq_gain_pct?: number;
+    gap_vs_qqq_pct?: number;
+    signal?: string;
+    minimum_reduction_pct?: number;
+  };
+  convergence: QuantSellBasis & {
+    triggered: boolean;
+    count: number;
+    minimum_assets: number;
+    symbols: readonly string[];
+    action: string;
+  };
+  playbook: {
+    available: boolean;
+    label?: string;
+    sell_steps: ReadonlyArray<{
+      gain_min_pct: number;
+      gain_max_pct: number;
+      sell_position_pct: number;
+    }>;
+    risk_first_order: readonly string[];
+  };
+  recent_signals: ReadonlyArray<{ name: string; label: string; date: string }>;
+}
+
+export interface QuantSellSnapshot {
+  shadow: boolean;
+  symbols: Record<string, QuantSellFamily>;
+}
+
 export interface QuantAnalysisSnapshot {
   source: 'futu-assistant';
   generated_at: string;
@@ -165,6 +214,7 @@ export interface QuantAnalysisSnapshot {
   context: Record<string, unknown>;
   symbols: Record<string, QuantSymbolAnalysis>;
   holding_costs?: Record<string, QuantHoldingCost>;
+  sell?: QuantSellSnapshot;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */
