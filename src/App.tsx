@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AllocationChart } from './components/AllocationChart';
-import { AnalysisPanel } from './components/AnalysisPanel';
 import { AlertRulesPanel } from './components/AlertRulesPanel';
 import { ConditionLookup } from './components/ConditionLookup';
 import { CashEditor } from './components/CashEditor';
 import { HoldingsTable } from './components/HoldingsTable';
 import { ImageImportPanel } from './components/ImageImportPanel';
-import { RiskList } from './components/RiskList';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ScenarioCalculator } from './components/ScenarioCalculator';
 import { Summary } from './components/Summary';
-import { analyzePortfolio } from './analyzer';
 import { ALERT_RULES_REFRESH_MS, deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
@@ -25,7 +22,7 @@ import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
 
-type Tab = 'dashboard' | 'holdings' | 'analysis' | 'conditions' | 'calculator' | 'settings';
+type Tab = 'dashboard' | 'holdings' | 'conditions' | 'calculator' | 'settings';
 type QuoteRefreshReason = 'manual' | 'daily' | 'session';
 
 const DAILY_QUOTE_SYNC_KEY = 'portfolio-tracker:daily-quote-sync-key-v1';
@@ -339,7 +336,6 @@ export default function App() {
   }, []);
 
   const metrics = useMemo(() => computeMetrics(portfolio, rates), [portfolio, rates]);
-  const findings = useMemo(() => analyzePortfolio(metrics, settings.exposureTargetPct), [metrics, settings.exposureTargetPct]);
   const needsReviewCount = countNeedsReview(portfolio.holdings);
   const deltaEstimatedCount = metrics.holdingsMetrics.filter((metric) => metric.holding.quote?.source === 'delta_estimate').length;
   const dayChangeStatus = dayChangeSessionText(marketNow, quoteStatus.lastSyncedAt, deltaEstimatedCount);
@@ -445,7 +441,6 @@ export default function App() {
             active={tab === 'holdings'}
             onClick={() => setTab('holdings')}
           />
-          <TabBtn label="分析" active={tab === 'analysis'} onClick={() => setTab('analysis')} />
           <TabBtn label="条件查询" active={tab === 'conditions'} onClick={() => setTab('conditions')} />
           <TabBtn label="计算器" active={tab === 'calculator'} onClick={() => setTab('calculator')} />
           <TabBtn label="设置" active={tab === 'settings'} onClick={() => setTab('settings')} />
@@ -482,10 +477,6 @@ export default function App() {
             <h3 className="mb-2 text-sm font-semibold">资产占比</h3>
             <AllocationChart metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-            <h3 className="mb-2 text-sm font-semibold">本地风险扫描</h3>
-            <RiskList findings={findings} />
-          </div>
         </section>
       )}
 
@@ -501,13 +492,6 @@ export default function App() {
             onDelete={deleteHolding}
           />
           <CashEditor cash={portfolio.cash} rates={rates} onChange={setCash} />
-        </section>
-      )}
-
-      {tab === 'analysis' && (
-        <section className="space-y-4">
-          <RiskList findings={findings} />
-          <AnalysisPanel onOpenConditionLookup={() => setTab('conditions')} />
         </section>
       )}
 

@@ -9,8 +9,6 @@ import type {
   OptionDetails,
   ParsedOptionDetail,
   ParsedOptionDetails,
-  PortfolioMetrics,
-  RiskFinding,
 } from './types';
 import { classifyAiFailure, isRetryableAiFailure, type AiFailureKind } from './aiFailure';
 import { isMixedContentBlocked, sanitizeEndpointUrl } from './endpointUrl';
@@ -112,72 +110,6 @@ export function activeAiApiKey(settings: AppSettings): string {
 export function activeAiEndpoint(settings: AppSettings): string {
   return getAiRuntimeConfig(settings).endpoint;
 }
-
-function buildAnalysisPrompt(metrics: PortfolioMetrics, localFindings: RiskFinding[]): AiMessage[] {
-  const summary = {
-    valuationCurrency: 'USD',
-    totalValue: round(metrics.totalValue),
-    totalCost: round(metrics.totalCost),
-    totalPnl: round(metrics.totalPnl),
-    totalPnlPct: pct(metrics.totalPnlPct),
-    cashWeight: pct(metrics.cashWeight),
-    optionPremiumWeight: pct(metrics.optionWeight),
-    optionDeltaAdjustedExposure: round(metrics.deltaAdjustedExposure),
-    sectorWeights: Object.fromEntries(
-      Object.entries(metrics.sectorWeights).map(([key, value]) => [key, pct(value)]),
-    ),
-    underlyingExposure: Object.fromEntries(
-      Object.entries(metrics.underlyingExposure).map(([key, value]) => [key, round(value)]),
-    ),
-    holdings: metrics.holdingsMetrics.map((metric) => ({
-      symbol: metric.holding.symbol,
-      name: metric.holding.name,
-      type: metric.holding.assetType ?? 'stock',
-      sector: metric.holding.sector,
-      marketValueUsd: round(metric.marketValue),
-      weight: pct(metric.weight),
-      pnlPct: pct(metric.pnlPct),
-      costKnown: metric.costKnown,
-      option: metric.holding.option
-        ? {
-            underlying: metric.holding.option.underlying,
-            expiration: metric.holding.option.expiration,
-            delta: metric.holding.option.delta,
-            equivalentShares: metric.deltaEquivalentShares,
-            deltaAdjustedExposureUsd: metric.deltaAdjustedExposure,
-          }
-        : undefined,
-    })),
-    localFindings: localFindings.map((finding) => `[${finding.level}] ${finding.title} — ${finding.detail}`),
-  };
-
-  return [
-    {
-      role: 'system',
-      content:
-        '你是一名严谨、克制的投资组合风险分析助手。基于已计算数据给出结构化中文说明。' +
-        '严格遵守：不作买卖指令、不预测短期涨跌、不把长到期期权仅因其是期权就判为风险；优先说明集中度、行业相关性、现金流动性、短期期权到期、期权浮亏、杠杆 ETF、数据缺口。' +
-        '清楚区分“已知数据”“风险提示”“需要用户补充确认的信息”。输出 Markdown，使用「## 总体结论」「## 主要风险」「## 需补充的数据」三个二级标题。',
-    },
-    {
-      role: 'user',
-      content: `组合快照（JSON）：\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\``,
-    },
-  ];
-}
-
-export async function analyzeWithAi(
-  settings: AppSettings,
-  metrics: PortfolioMetrics,
-  localFindings: RiskFinding[],
-): Promise<string> {
-  const data = await requestAi(settings, buildAnalysisPrompt(metrics, localFindings), {
-    retryDelaysMs: STANDARD_RETRY_DELAYS_MS,
-  });
-  return data;
-}
-
-export const analyzeWithKimi = analyzeWithAi;
 
 export async function testAiConnection(settings: AppSettings): Promise<string> {
   const label = activeAiProviderLabel(settings);
@@ -740,12 +672,4 @@ function unique(values: string[]): string[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-
-function round(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function pct(value: number): string {
-  return `${(value * 100).toFixed(2)}%`;
 }

@@ -227,12 +227,6 @@ export interface PortfolioMetrics {
   unknownCostItems: number;
 }
 
-export interface RiskFinding {
-  level: 'info' | 'warn' | 'critical';
-  title: string;
-  detail: string;
-}
-
 export interface ImportIssue {
   field: string;
   reason: string;
