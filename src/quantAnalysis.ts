@@ -1,6 +1,7 @@
 import type { QuantAnalysisSnapshot, QuantSignalStatWindow, QuantSymbolAnalysis } from './types';
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -60,6 +61,12 @@ export async function fetchQuantAnalysis(url: string): Promise<QuantAnalysisSnap
 export function isQuantAnalysisStale(generatedAt: string, now = Date.now()): boolean {
   const timestamp = Date.parse(generatedAt);
   return !Number.isFinite(timestamp) || now - timestamp > STALE_AFTER_MS;
+}
+
+export function quantAnalysisAgeHours(generatedAt: string, now = Date.now()): number | null {
+  const timestamp = Date.parse(generatedAt);
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, Math.floor((now - timestamp) / HOUR_MS));
 }
 
 export type QuantSymbolLookup =

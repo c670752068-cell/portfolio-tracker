@@ -4,6 +4,7 @@ import {
   isQuantAnalysisStale,
   lookupQuantSymbol,
   parseQuantAnalysis,
+  quantAnalysisAgeHours,
 } from './quantAnalysis';
 import { quantAnalysisFixture } from './testFixtures/quantAnalysis';
 
@@ -42,6 +43,13 @@ describe('quant analysis contract', () => {
     expect(isQuantAnalysisStale(generatedAt, Date.parse('2026-07-16T13:59:59.000Z'))).toBe(false);
     expect(isQuantAnalysisStale(generatedAt, Date.parse('2026-07-16T14:00:01.000Z'))).toBe(true);
     expect(isQuantAnalysisStale('not-a-date')).toBe(true);
+  });
+
+  it('reports whole elapsed hours for the stale-data banner', () => {
+    const generatedAt = '2026-07-15T14:00:00.000Z';
+
+    expect(quantAnalysisAgeHours(generatedAt, Date.parse('2026-07-16T15:59:59.000Z'))).toBe(25);
+    expect(quantAnalysisAgeHours('not-a-date')).toBeNull();
   });
 
   it('normalizes a query and returns the monitored pool when the symbol is outside it', () => {

@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { isQuantAnalysisStale, lookupQuantSymbol } from '../quantAnalysis';
-import type { QuantAnalysisSnapshot, QuantGateResult, QuantSignalStatWindow } from '../types';
+import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours } from '../quantAnalysis';
+import type { QuantAnalysisSnapshot, QuantGateResult, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 
 interface ConditionLookupProps {
   snapshot: QuantAnalysisSnapshot | null;
@@ -46,6 +46,10 @@ function gateDetail(key: string, gate: QuantGateResult): string {
   if (key === 'batch_available') {
     return `下一批 ${numberText(gate.next_batch)} / 共 ${numberText(gate.batch_count)} 批`;
   }
+  if (key === 'valuation') {
+    const reason = String(gate.reason || '按量化系统当前估值与情绪规则判定');
+    return `${reason}；CNN ${numberText(gate.cnn)}；纳指100 PE 分位 ${numberText(gate.ndx_percentile, '%')}；SOXX 分位 ${numberText(gate.soxx_percentile, '%')}；个股 PE 分位 ${numberText(gate.stock_percentile, '%')}`;
+  }
   return String(gate.reason || '按量化系统当前估值与情绪规则判定');
 }
 
@@ -62,11 +66,27 @@ function StatWindow({ label, stat }: { label: string; stat: QuantSignalStatWindo
   );
 }
 
+function DepthStat({ stat }: { stat: NonNullable<QuantSymbolAnalysis['depth_stats']> }) {
+  const insufficient = stat.sample_insufficient || stat.n < 20 || stat.win_rate_60d === null;
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+      <div className="font-medium">回撤深度 {stat.level_pct}%</div>
+      {insufficient ? (
+        <div className="mt-1 text-amber-700 dark:text-amber-300">样本不足，勿下结论（n={stat.n}）</div>
+      ) : (
+        <div className="mt-1 text-slate-600 dark:text-slate-300">60 日历史成功率 {(stat.win_rate_60d! * 100).toFixed(1)}%（n={stat.n}）</div>
+      )}
+      <div className="mt-1 text-xs text-slate-500">含熊市样本：{stat.bear_included ? '是' : '否'}</div>
+    </div>
+  );
+}
+
 export function ConditionLookup({ snapshot, initialSymbol = '', loading = false, error = '', onRefresh }: ConditionLookupProps) {
   const firstSymbol = initialSymbol || (snapshot ? Object.keys(snapshot.symbols).sort()[0] || '' : '');
   const [draft, setDraft] = useState(firstSymbol);
   const [symbol, setSymbol] = useState(firstSymbol);
   const result = useMemo(() => snapshot && symbol ? lookupQuantSymbol(snapshot, symbol) : null, [snapshot, symbol]);
+  const snapshotAgeHours = snapshot ? quantAnalysisAgeHours(snapshot.generated_at) : null;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -93,7 +113,7 @@ export function ConditionLookup({ snapshot, initialSymbol = '', loading = false,
       {!snapshot && !error && <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800">{loading ? '正在读取量化系统快照…' : '暂无量化分析快照。'}</div>}
 
       {snapshot && isQuantAnalysisStale(snapshot.generated_at) && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">快照已超过 24 小时，请刷新后再判断当前条件。</div>
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">量化分析数据 {snapshotAgeHours === null ? '时间未知' : `${snapshotAgeHours} 小时前`}，可能过期。</div>
       )}
 
       {snapshot && result && !result.found && (
@@ -141,9 +161,7 @@ export function ConditionLookup({ snapshot, initialSymbol = '', loading = false,
                 </div>
               </div>
             ))}
-            {result.analysis.depth_stats && (
-              <p className="mt-3 text-xs text-slate-500">回撤深度 {result.analysis.depth_stats.level_pct}%：样本 n={result.analysis.depth_stats.n}；熊市样本{result.analysis.depth_stats.bear_included ? '已包含' : '未包含'}。</p>
-            )}
+            {result.analysis.depth_stats && <DepthStat stat={result.analysis.depth_stats} />}
             <p className="mt-3 text-xs font-medium text-amber-700 dark:text-amber-300">历史统计不代表未来收益；概率禁止相乘。</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900">{snapshot.disclaimer}</div>
