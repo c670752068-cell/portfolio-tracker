@@ -178,4 +178,13 @@ describe('portfolio positions gateway', () => {
     expect(script).toContain("printf -v PORTFOLIO_SYNC_ENV 'PORTFOLIO_SYNC_TOKEN=%q '");
     expect(script).toContain('${PORTFOLIO_SYNC_ENV}');
   });
+
+  it('deploys the alert tracker, backs up the gateway, and passes Bark only when explicitly supplied', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('portfolio-gateway.mjs.bak-');
+    expect(script).toContain('scp deploy/alert-tracker.mjs');
+    expect(script).toContain("printf -v BARK_ENV 'BARK_DEVICE_KEY=%q '");
+    expect(script).toContain('${BARK_ENV}');
+    expect(script).not.toContain('BARK_DEVICE_KEY=${BARK_DEVICE_KEY:-}');
+  });
 });
