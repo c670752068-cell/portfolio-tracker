@@ -18,6 +18,7 @@ interface SummaryProps {
     error: string;
     summary: string;
   };
+  dayChangeStatusText?: string;
   canRefreshQuotes: boolean;
   onRefreshQuotes: () => void;
   exposureTargetPct: number;
@@ -35,7 +36,7 @@ interface SummaryProps {
   onRefreshQuant: () => void;
 }
 
-export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, canRefreshQuotes, onRefreshQuotes, exposureTargetPct, quantStatus, quantSyncEnabled, quantGatewayAvailable, quantTokenConfigured, onRefreshQuant }: SummaryProps) {
+export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, dayChangeStatusText, canRefreshQuotes, onRefreshQuotes, exposureTargetPct, quantStatus, quantSyncEnabled, quantGatewayAvailable, quantTokenConfigured, onRefreshQuant }: SummaryProps) {
   const dayClass =
     metrics.dayChange > 0 ? 'text-emerald-600' : metrics.dayChange < 0 ? 'text-rose-600' : 'text-slate-500';
   const trendPoints = valueHistory.slice(-30).map((point) => ({
@@ -73,7 +74,13 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
         sub={formatSignedPct(metrics.dayChangePct)}
         valueClass={dayClass}
         subClass={dayClass}
-      />
+      >
+        {dayChangeStatusText && (
+          <div className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+            {dayChangeStatusText}
+          </div>
+        )}
+      </Card>
       <Card label={`持仓市值（${displayCurrency}）`} value={formatDisplayMoney(metrics.equityValue, displayCurrency, rates)} sub={`${formatPct(1 - metrics.cashWeight)}`} />
       <Card
         label={`现金及等价物（${displayCurrency}）`}
@@ -122,7 +129,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
         <div>
           <span className="font-medium text-slate-700 dark:text-slate-200">行情同步：</span>
           <span className="text-slate-500 dark:text-slate-400">
-            {quoteStatus.loading ? '正在刷新…' : quoteStatus.summary || (canRefreshQuotes ? '北京时间每天 7 点后自动刷新一次' : '未配置行情源')}
+            {quoteStatus.loading ? '正在刷新…' : quoteStatus.summary || (canRefreshQuotes ? '美股盘中每 35 分钟自动刷新' : '未配置行情源')}
           </span>
           {quoteStatus.lastSyncedAt && <span className="ml-2 text-slate-400">{new Date(quoteStatus.lastSyncedAt).toLocaleString()}</span>}
           {quoteStatus.error && <span className="ml-2 text-amber-600 dark:text-amber-300">{quoteStatus.error}</span>}

@@ -37,6 +37,7 @@ describe('Summary cards', () => {
         valueHistory={[]}
         rateError=""
         quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        dayChangeStatusText="已收盘"
         canRefreshQuotes={false}
         onRefreshQuotes={() => undefined}
         exposureTargetPct={100}
@@ -47,6 +48,7 @@ describe('Summary cards', () => {
     expect(html).not.toContain('总盈亏');
     expect(html).toContain('总资产（USD）');
     expect(html).toContain('持仓市值（USD）');
+    expect(html).toContain('已收盘');
   });
 
   it('shows equivalent exposure decomposition, target, and uncomputable option warning', () => {
@@ -108,5 +110,20 @@ describe('Summary cards', () => {
     expect(pagesHtml).toContain('量化同步仅在 VPS 入口可用');
     expect(staleHtml).toContain('数据截至 2026-07-15（IBKR 快照日）');
     expect(staleHtml).toContain('数据陈旧');
+  });
+
+  it('describes the 35-minute regular-session quote schedule', () => {
+    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD"
+        onDisplayCurrencyChange={() => undefined} valueHistory={[]} rateError=""
+        quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        dayChangeStatusText="盘中"
+        canRefreshQuotes onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        {...quantProps}
+      />,
+    );
+    expect(html).toContain('美股盘中每 35 分钟自动刷新');
   });
 });
