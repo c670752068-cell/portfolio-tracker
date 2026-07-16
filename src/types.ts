@@ -117,6 +117,56 @@ export interface QuantPositionsSnapshot {
   source: 'futu-assistant';
 }
 
+export interface QuantGateResult {
+  passed: boolean;
+  [key: string]: unknown;
+}
+
+export interface QuantSignalStatWindow {
+  n: number;
+  win_rate: number | null;
+  sample_insufficient: boolean;
+}
+
+export interface QuantSignalStats {
+  d5: QuantSignalStatWindow;
+  d20: QuantSignalStatWindow;
+  d60: QuantSignalStatWindow;
+}
+
+export interface QuantSymbolAnalysis {
+  available: boolean;
+  error?: string;
+  gates?: Record<string, QuantGateResult>;
+  gates_passed?: number;
+  gates_total?: number;
+  signal_stats?: Record<string, QuantSignalStats>;
+  depth_stats?: {
+    level_pct: number;
+    win_rate_60d: number | null;
+    n: number;
+    sample_insufficient: boolean;
+    bear_included: boolean;
+  } | null;
+}
+
+export interface QuantHoldingCost {
+  weighted_average_cost: number | null;
+  currency: 'USD';
+  coverage: 'complete' | 'partial' | 'unavailable';
+  auto_fill_allowed: boolean;
+}
+
+export interface QuantAnalysisSnapshot {
+  source: 'futu-assistant';
+  generated_at: string;
+  rule_version: string;
+  disclaimer: string;
+  context: Record<string, unknown>;
+  symbols: Record<string, QuantSymbolAnalysis>;
+  holding_costs?: Record<string, QuantHoldingCost>;
+}
+
 /** Rates are quoted as "how many units of the currency equal one USD". */
 export interface ExchangeRates {
   USD: number;

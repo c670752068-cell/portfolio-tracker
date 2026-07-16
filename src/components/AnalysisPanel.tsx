@@ -1,71 +1,17 @@
-import { useState } from 'react';
-import { KimiError, activeAiApiKey, activeAiProviderLabel, analyzeWithAi } from '../kimi';
-import type { AppSettings, PortfolioMetrics, RiskFinding } from '../types';
-
 interface AnalysisPanelProps {
-  settings: AppSettings;
-  metrics: PortfolioMetrics;
-  localFindings: RiskFinding[];
+  onOpenConditionLookup: () => void;
 }
 
-export function AnalysisPanel({ settings, metrics, localFindings }: AnalysisPanelProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
-  const [result, setResult] = useState<string>('');
-  const aiLabel = activeAiProviderLabel(settings);
-
-  async function run() {
-    setLoading(true);
-    setError(null);
-    setResult('');
-    try {
-      const content = await analyzeWithAi(settings, metrics, localFindings);
-      setResult(content);
-    } catch (err: unknown) {
-      if (err instanceof KimiError) {
-        setError({ message: err.message, hint: err.hint });
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        setError({ message: msg });
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const disabled = loading || metrics.totalValue <= 0;
-
+export function AnalysisPanel({ onOpenConditionLookup }: AnalysisPanelProps) {
   return (
-    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">{aiLabel} 组合风险解读</h3>
-        <button
-          onClick={run}
-          disabled={disabled}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400"
-        >
-          {loading ? '分析中…' : `调用 ${aiLabel} 分析`}
-        </button>
-      </div>
-      {!activeAiApiKey(settings).trim() && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-100">
-          未配置 {aiLabel} API Key。请到「设置」中填入 API Key。仅保存在本机浏览器，不会上传仓库。
-        </div>
-      )}
-      <p className="text-xs leading-relaxed text-slate-500">
-        AI 只基于当前已录入的数据生成教育性风险解读，不构成投资、交易或税务建议。期权将优先关注短到期、较大浮亏及已识别的 Delta 暴露。
+    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+      <h3 className="text-sm font-semibold">分析统一使用量化系统数据</h3>
+      <p className="text-sm leading-relaxed text-slate-500">
+        组合分析不再调用通用 AI。请在「条件查询」中查看生产规则的买入六关、门槛证据和历史事件样本。
       </p>
-      {error && (
-        <div className="rounded border border-rose-300 bg-rose-50 p-2 text-xs text-rose-800 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-100">
-          <div className="font-semibold">分析失败：{error.message}</div>
-          {error.hint && <div className="mt-1 opacity-90">{error.hint}</div>}
-        </div>
-      )}
-      {result && (
-        <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm leading-relaxed dark:bg-slate-900">
-          {result}
-        </pre>
-      )}
+      <button type="button" onClick={onOpenConditionLookup} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+        打开条件查询
+      </button>
     </div>
   );
 }

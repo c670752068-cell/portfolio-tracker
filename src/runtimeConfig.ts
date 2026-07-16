@@ -39,6 +39,10 @@ export function getServerPortfolioPositionsUrl(): string {
   return apiUrl('/api/portfolio/positions');
 }
 
+export function getServerQuantAnalysisUrl(): string {
+  return apiUrl('/api/portfolio/quant-analysis');
+}
+
 export function hasServerGateway(): boolean {
   return Boolean(runtimeApiBaseUrl());
 }

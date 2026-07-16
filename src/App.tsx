@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AllocationChart } from './components/AllocationChart';
 import { AnalysisPanel } from './components/AnalysisPanel';
+import { ConditionLookup } from './components/ConditionLookup';
 import { CashEditor } from './components/CashEditor';
 import { HoldingsTable } from './components/HoldingsTable';
 import { ImageImportPanel } from './components/ImageImportPanel';
@@ -13,15 +14,16 @@ import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { MARKET_SESSION_REFRESH_MS, dayChangeSessionText, isRegularSession, marketSessionDateKey } from './marketSession';
 import { computeMetrics } from './metrics';
+import { fetchQuantAnalysis, isQuantAnalysisStale } from './quantAnalysis';
 import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDetailsApplyResult } from './importMerge';
 import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
 import { applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions, type QuantMappedPortfolio } from './quantSync';
-import { getServerPortfolioPositionsUrl, hasServerGateway } from './runtimeConfig';
-import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState } from './types';
+import { getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, hasServerGateway } from './runtimeConfig';
+import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState, QuantAnalysisSnapshot } from './types';
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
 
-type Tab = 'dashboard' | 'holdings' | 'analysis' | 'calculator' | 'settings';
+type Tab = 'dashboard' | 'holdings' | 'analysis' | 'conditions' | 'calculator' | 'settings';
 type QuoteRefreshReason = 'manual' | 'daily' | 'session';
 
 const DAILY_QUOTE_SYNC_KEY = 'portfolio-tracker:daily-quote-sync-key-v1';
@@ -42,6 +44,12 @@ interface QuantStatus {
   stale: boolean;
   error: string;
   summary: string;
+}
+
+interface QuantAnalysisStatus {
+  loading: boolean;
+  error: string;
+  stale: boolean;
 }
 
 type ImportNotice =
@@ -99,6 +107,8 @@ export default function App() {
     error: '',
     summary: '',
   });
+  const [quantAnalysis, setQuantAnalysis] = useState<QuantAnalysisSnapshot | null>(null);
+  const [quantAnalysisStatus, setQuantAnalysisStatus] = useState<QuantAnalysisStatus>({ loading: false, error: '', stale: false });
   const [lastImport, setLastImport] = useState<ImportNotice | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [marketNow, setMarketNow] = useState(() => new Date());
@@ -106,6 +116,7 @@ export default function App() {
   const portfolioRef = useRef(portfolio);
   const quoteRefreshInFlightRef = useRef(false);
   const quantAutoSyncKeyRef = useRef('');
+  const quantAnalysisAutoLoadKeyRef = useRef('');
 
   useEffect(() => {
     savePortfolio(portfolio);
@@ -216,6 +227,26 @@ export default function App() {
     }
   }, [settings.quantSyncToken]);
 
+  const refreshQuantAnalysis = useCallback(async () => {
+    const url = getServerQuantAnalysisUrl();
+    if (!url) {
+      setQuantAnalysisStatus({ loading: false, error: '量化条件查询仅在 VPS 入口可用', stale: false });
+      return;
+    }
+    setQuantAnalysisStatus((status) => ({ ...status, loading: true, error: '' }));
+    try {
+      const snapshot = await fetchQuantAnalysis(url);
+      setQuantAnalysis(snapshot);
+      setQuantAnalysisStatus({ loading: false, error: '', stale: isQuantAnalysisStale(snapshot.generated_at) });
+    } catch (error) {
+      setQuantAnalysisStatus((status) => ({
+        ...status,
+        loading: false,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }, []);
+
   useEffect(() => {
     const url = getServerPortfolioPositionsUrl();
     if (!url) return;
@@ -224,6 +255,13 @@ export default function App() {
     quantAutoSyncKeyRef.current = key;
     void refreshQuantPositions();
   }, [refreshQuantPositions]);
+
+  useEffect(() => {
+    const url = getServerQuantAnalysisUrl();
+    if (!url || quantAnalysisAutoLoadKeyRef.current === url) return;
+    quantAnalysisAutoLoadKeyRef.current = url;
+    void refreshQuantAnalysis();
+  }, [refreshQuantAnalysis]);
 
   useEffect(() => {
     if (!settings.autoRefreshQuotes || !canSyncQuotes(settings)) return undefined;
@@ -328,6 +366,7 @@ export default function App() {
             onClick={() => setTab('holdings')}
           />
           <TabBtn label="分析" active={tab === 'analysis'} onClick={() => setTab('analysis')} />
+          <TabBtn label="条件查询" active={tab === 'conditions'} onClick={() => setTab('conditions')} />
           <TabBtn label="计算器" active={tab === 'calculator'} onClick={() => setTab('calculator')} />
           <TabBtn label="设置" active={tab === 'settings'} onClick={() => setTab('settings')} />
         </nav>
@@ -383,8 +422,17 @@ export default function App() {
       {tab === 'analysis' && (
         <section className="space-y-4">
           <RiskList findings={findings} />
-          <AnalysisPanel settings={settings} metrics={metrics} localFindings={findings} />
+          <AnalysisPanel onOpenConditionLookup={() => setTab('conditions')} />
         </section>
+      )}
+
+      {tab === 'conditions' && (
+        <ConditionLookup
+          snapshot={quantAnalysis}
+          loading={quantAnalysisStatus.loading}
+          error={quantAnalysisStatus.error}
+          onRefresh={refreshQuantAnalysis}
+        />
       )}
 
       {tab === 'calculator' && (
