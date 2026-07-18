@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AlertRule } from '../alertRules';
 import type { Holding, QuantHoldingCost } from '../types';
 import { AlertRulesPanel } from './AlertRulesPanel';
@@ -9,6 +9,8 @@ const noopCallbacks = {
   onUpdate: vi.fn(),
   onDelete: vi.fn(),
 };
+
+afterEach(() => vi.useRealTimers());
 
 function renderPanel(overrides: {
   rules?: AlertRule[];
@@ -141,6 +143,8 @@ describe('AlertRulesPanel forms', () => {
 
 describe('AlertRulesPanel rule list', () => {
   it('shows current price, distance, last reminder, and edit/delete controls', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-15T15:10:00.000Z'));
     const html = renderPanel({
       rules: [{
         id: 'fngu-target',

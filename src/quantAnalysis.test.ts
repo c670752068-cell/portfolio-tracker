@@ -21,6 +21,15 @@ describe('quant analysis contract', () => {
     expect(JSON.stringify(parsed)).not.toContain('probability');
   });
 
+  it('rejects a malformed backend panic-window contract', () => {
+    const malformed = {
+      ...quantAnalysisFixture,
+      panic_window: { ...quantAnalysisFixture.panic_window, symbols: { SOXL: { applicable: true } } },
+    };
+
+    expect(() => parseQuantAnalysis(malformed)).toThrow('恐慌抢买窗口格式无效');
+  });
+
   it('loads the latest public snapshot with GET semantics', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(quantAnalysisFixture), {

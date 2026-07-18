@@ -49,6 +49,27 @@ describe('ConditionLookup', () => {
     expect(html).not.toContain('当日熔断');
   });
 
+  it('renders the server-authored panic status above an applicable 3x symbol card', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+    );
+
+    expect(html.indexOf('恐慌抢买窗口')).toBeLessThan(html.indexOf('SOXL 买入条件'));
+    expect(html).toContain('疯狂提醒中');
+    expect(html).toContain('深度位 ✓');
+    expect(html).toContain('恐慌位 ✓');
+    expect(html).toContain('目标 20% / 当前 3.2%');
+    expect(html).toContain('value="16"');
+  });
+
+  it('does not render a panic status for a symbol absent from the backend block', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+    );
+
+    expect(html).not.toContain('恐慌抢买窗口');
+  });
+
   it('renders a stock market group as X/2 and keeps drawdown as reference only', () => {
     const html = renderToStaticMarkup(
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,

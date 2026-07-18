@@ -206,6 +206,51 @@ export interface QuantSellSnapshot {
   symbols: Record<string, QuantSellFamily>;
 }
 
+export interface QuantPanicSymbolStatus {
+  applicable: boolean;
+  state: string;
+  state_label: string;
+  stop_reason: string | null;
+  depth: {
+    open: boolean;
+    current_pct: number;
+    threshold_pct: number;
+    label: string;
+    explanation: string;
+  };
+  panic: {
+    open: boolean;
+    threshold_pct: number;
+    label: string;
+    explanation: string;
+    triggered_session: string | null;
+    triggered_at: string | null;
+  };
+  target: {
+    target_pct: number;
+    current_pct: number;
+    progress_pct: number;
+    label: string;
+  };
+  display: {
+    title: string;
+    state_label: string;
+    depth_open_text: string;
+    panic_open_text: string;
+    progress_text: string;
+  };
+}
+
+export interface QuantPanicWindowSnapshot {
+  applicable: boolean;
+  state: string;
+  state_label: string;
+  stop_reason: string | null;
+  current_family_pct: number;
+  generated_at: string;
+  symbols: Record<string, QuantPanicSymbolStatus>;
+}
+
 export interface QuantAnalysisSnapshot {
   source: 'futu-assistant';
   generated_at: string;
@@ -214,6 +259,7 @@ export interface QuantAnalysisSnapshot {
   context: Record<string, unknown>;
   symbols: Record<string, QuantSymbolAnalysis>;
   holding_costs?: Record<string, QuantHoldingCost>;
+  panic_window?: QuantPanicWindowSnapshot;
   sell?: QuantSellSnapshot;
 }
 

@@ -32,6 +32,36 @@ function validateSymbolAnalysis(value: unknown, symbol: string): asserts value i
   }
 }
 
+function validatePanicWindow(value: unknown): void {
+  if (value === undefined) return;
+  if (!isRecord(value)
+    || typeof value.applicable !== 'boolean'
+    || typeof value.state !== 'string'
+    || typeof value.current_family_pct !== 'number'
+    || typeof value.generated_at !== 'string'
+    || !isRecord(value.symbols)) {
+    throw new Error('恐慌抢买窗口格式无效');
+  }
+  for (const status of Object.values(value.symbols)) {
+    if (!isRecord(status)
+      || typeof status.applicable !== 'boolean'
+      || typeof status.state !== 'string'
+      || !isRecord(status.depth)
+      || typeof status.depth.open !== 'boolean'
+      || !isRecord(status.panic)
+      || typeof status.panic.open !== 'boolean'
+      || !isRecord(status.target)
+      || typeof status.target.progress_pct !== 'number'
+      || !isRecord(status.display)
+      || typeof status.display.title !== 'string'
+      || typeof status.display.depth_open_text !== 'string'
+      || typeof status.display.panic_open_text !== 'string'
+      || typeof status.display.progress_text !== 'string') {
+      throw new Error('恐慌抢买窗口格式无效');
+    }
+  }
+}
+
 export function parseQuantAnalysis(value: unknown): QuantAnalysisSnapshot {
   if (!isRecord(value)
     || value.source !== 'futu-assistant'
@@ -45,6 +75,7 @@ export function parseQuantAnalysis(value: unknown): QuantAnalysisSnapshot {
   for (const [symbol, analysis] of Object.entries(value.symbols)) {
     validateSymbolAnalysis(analysis, symbol);
   }
+  validatePanicWindow(value.panic_window);
   return value as unknown as QuantAnalysisSnapshot;
 }
 

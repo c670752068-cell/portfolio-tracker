@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
 import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
-import type { Holding, QuantAnalysisSnapshot, QuantGateResult, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
+import type { Holding, QuantAnalysisSnapshot, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 
 interface ConditionLookupProps {
   snapshot: QuantAnalysisSnapshot | null;
@@ -145,6 +145,28 @@ function ObservationBadge({ visible }: { visible: boolean }) {
   return visible ? <span className="ml-1 text-amber-700 dark:text-amber-300">（观察期，未正式生效）</span> : null;
 }
 
+function PanicWindowStatus({ status }: { status: QuantPanicSymbolStatus }) {
+  return (
+    <div className="mb-4 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm dark:border-rose-800 dark:bg-rose-950/30">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong>{status.display.title}</strong>
+        <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-800 dark:bg-rose-900/60 dark:text-rose-100">{status.display.state_label}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-medium">
+        <span>{status.display.depth_open_text}</span>
+        <span>{status.display.panic_open_text}</span>
+      </div>
+      <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">{status.depth.explanation}</div>
+      <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">{status.panic.explanation}</div>
+      <div className="mt-3 flex items-center gap-3">
+        <progress className="h-2 flex-1 accent-rose-600" max={100} value={status.target.progress_pct} />
+        <span className="text-xs font-semibold">{status.display.progress_text}</span>
+      </div>
+      {status.stop_reason && <div className="mt-2 text-xs text-slate-500">停止原因：{status.stop_reason}</div>}
+    </div>
+  );
+}
+
 function SellWindow({ item }: { item: QuantSellFamily }) {
   const repairText = item.repair.window_open
     ? '修复完成，可开始分批减仓：优先减期权与两三倍杠杆，不要一次性减完'
@@ -211,6 +233,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
   const sellFamily = snapshot?.sell
     ? Object.values(snapshot.sell.symbols).find((item) => item.family === selectedSellSymbol || item.held_symbols.includes(selectedSellSymbol))
     : undefined;
+  const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
 
   return (
     <section className="space-y-4">
@@ -245,6 +268,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
       {snapshot && result?.found && (
         <>
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+            {panicStatus?.applicable && <PanicWindowStatus status={panicStatus} />}
             <h3 className="text-lg font-semibold">{result.symbol} 买入条件</h3>
             {!result.analysis.available ? (
               <p className="mt-3 text-amber-700 dark:text-amber-300">当前无可用判定：{result.analysis.error || '数据未生成'}</p>

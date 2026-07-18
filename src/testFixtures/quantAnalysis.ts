@@ -87,6 +87,26 @@ export const quantAnalysisFixture = {
       auto_fill_allowed: true,
     },
   },
+  panic_window: {
+    applicable: true,
+    state: 'firing',
+    state_label: '疯狂提醒中',
+    stop_reason: null,
+    current_family_pct: 3.2,
+    generated_at: '2026-07-17T09:31:00-04:00',
+    symbols: {
+      SOXL: {
+        applicable: true,
+        state: 'firing',
+        state_label: '疯狂提醒中',
+        stop_reason: null,
+        depth: { open: true, current_pct: 63.29, threshold_pct: 27.1, label: '深度位', explanation: '当前回撤 63.29%，达到 27.10%' },
+        panic: { open: true, threshold_pct: 10, label: '恐慌位', explanation: '当日恐慌阈值已触发', triggered_session: 'regular', triggered_at: '2026-07-17T09:31:00-04:00' },
+        target: { target_pct: 20, current_pct: 3.2, progress_pct: 16, label: '3 倍族合计目标' },
+        display: { title: '恐慌抢买窗口', state_label: '疯狂提醒中', depth_open_text: '深度位 ✓', panic_open_text: '恐慌位 ✓', progress_text: '目标 20% / 当前 3.2%' },
+      },
+    },
+  },
   sell: {
     shadow: true,
     symbols: {
