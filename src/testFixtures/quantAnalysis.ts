@@ -52,6 +52,11 @@ export const quantAnalysisFixture = {
     },
     AAPL: {
       available: true,
+      depth_window: {
+        applicable: true, open: true, current_pct: 22.5, threshold_pct: 21.7,
+        price_session: 'afterhours', win_rate_60d: 0.68, n: 25,
+        sample_insufficient: false, bear_included: true,
+      },
       gates: {
         low_zone: { passed: true, applicable: false, current_drawdown_pct: -8.12, threshold_pct: -15 },
         signal_triggered: { passed: true, applicable: true, recent_buy_signals: [] },
@@ -60,7 +65,8 @@ export const quantAnalysisFixture = {
         batch_available: { passed: false, applicable: true, next_batch: null, batch_count: 3 },
         valuation: {
           passed: false,
-          applicable: true,
+          applicable: false,
+          reference_only: true,
           available: true,
           reason: '个股 5 年 PE 分位尚未进入低位',
           cnn: 29,

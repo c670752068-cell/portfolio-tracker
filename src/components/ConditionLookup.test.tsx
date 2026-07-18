@@ -37,14 +37,14 @@ describe('ConditionLookup', () => {
     expect(html).toContain('快照 2026-07-15 10:00 ET，12 分钟前');
   });
 
-  it('renders an ETF market group as X/3 and removes daily fuse from display', () => {
+  it('removes the production signal row while keeping the 3x depth and macro conditions', () => {
     const html = renderToStaticMarkup(
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
-    expect(html).toContain('市场条件满足 1/3');
+    expect(html).toContain('市场条件满足 1/2');
     expect(html).toContain('低位区');
-    expect(html).toContain('买入信号');
+    expect(html).not.toContain('买入信号');
     expect(html).toContain('估值/情绪');
     expect(html).not.toContain('当日熔断');
   });
@@ -70,15 +70,20 @@ describe('ConditionLookup', () => {
     expect(html).not.toContain('恐慌抢买窗口');
   });
 
-  it('renders a stock market group as X/2 and keeps drawdown as reference only', () => {
+  it('renders stock own-depth first and removes CNN SOXX and NDX from its card', () => {
     const html = renderToStaticMarkup(
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
     );
 
-    expect(html).toContain('市场条件满足 1/2');
-    expect(html).toContain('价格回撤参考');
-    expect(html).not.toContain('✓ 低位区');
-    expect(html).toContain('CNN 29.00（&lt;30 恐慌开窗）');
+    expect(html).toContain('深度买入窗口（个股）');
+    expect(html).toContain('深度位 ✓');
+    expect(html).toContain('当前回撤 22.50%');
+    expect(html).toContain('阈值 21.70%');
+    expect(html).toContain('60 日历史成功率 68.00%（n=25）');
+    expect(html).toContain('个股 PE 分位 45.00%');
+    expect(html).not.toContain('CNN 29.00');
+    expect(html).not.toContain('SOXX');
+    expect(html).not.toContain('纳指100');
   });
 
   it('collapses position and batch into an integer-formatted discipline group', () => {

@@ -21,7 +21,6 @@ const RISK_ROLE_LABELS: Record<string, string> = {
 
 const MARKET_GATES = [
   ['low_zone', '低位区'],
-  ['signal_triggered', '买入信号'],
   ['valuation', '估值/情绪'],
 ] as const;
 
@@ -45,16 +44,6 @@ function isApplicable(gate: QuantGateResult | undefined): boolean {
 function gateDetail(key: string, gate: QuantGateResult): string {
   if (key === 'low_zone') {
     return `距最近 250 个交易日高点回撤 ${numberText(gate.current_drawdown_pct, '%')}；达到 ${numberText(gate.threshold_pct, '%')} 进入低位区`;
-  }
-  if (key === 'signal_triggered') {
-    const signals = Array.isArray(gate.recent_buy_signals) ? gate.recent_buy_signals : [];
-    return signals.length > 0
-      ? signals.map((item) => {
-          if (typeof item !== 'object' || item === null) return '';
-          const signal = item as Record<string, unknown>;
-          return `${String(signal.label || signal.name || '信号')} ${String(signal.date || '')}`.trim();
-        }).filter(Boolean).join('、')
-      : '最近闭合交易日没有触发生产买入信号';
   }
   if (key === 'position_gate') {
     return `同族仓位 ${numberText(gate.family_share_pct, '%')} / 上限 ${numberText(gate.cap_pct, '%')}`;
@@ -106,6 +95,42 @@ function DepthStat({ stat }: { stat: NonNullable<QuantSymbolAnalysis['depth_stat
   );
 }
 
+function sessionLabel(value: string): string {
+  return ({ overnight: '夜盘', premarket: '盘前', afterhours: '盘后', regular: '盘中' } as Record<string, string>)[value] || value;
+}
+
+function StockDepthWindow({ analysis }: { analysis: QuantSymbolAnalysis }) {
+  const depth = analysis.depth_window;
+  if (!depth?.applicable) return null;
+  return (
+    <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm dark:border-emerald-800 dark:bg-emerald-950/20">
+      <div className="font-semibold">深度买入窗口（个股）</div>
+      <div className="mt-2 font-medium">深度位 {depth.open ? '✓' : '✗'} · 当前回撤 {numberText(depth.current_pct, '%')} · 阈值 {numberText(depth.threshold_pct, '%')}</div>
+      <div className="mt-1 text-xs text-slate-500">取价时段：{sessionLabel(depth.price_session)}</div>
+      <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+        {depth.sample_insufficient || depth.win_rate_60d === null
+          ? `60 日样本不足（n=${depth.n}）`
+          : `60 日历史成功率 ${(depth.win_rate_60d * 100).toFixed(2)}%（n=${depth.n}）`}
+      </div>
+    </div>
+  );
+}
+
+function ReferenceInfo({ gate }: { gate: QuantGateResult | undefined }) {
+  if (!gate) return null;
+  const stockOnly = gate.reference_only === true;
+  return (
+    <details className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+      <summary className="cursor-pointer font-semibold">参考信息（不参与开窗）</summary>
+      <div className="mt-2 text-xs text-slate-500">
+        {stockOnly
+          ? `个股 PE 分位 ${numberText(gate.stock_percentile, '%')}`
+          : `CNN ${numberText(gate.cnn)}；纳指100 PE 分位 ${numberText(gate.ndx_percentile, '%')}；SOXX 分位 ${numberText(gate.soxx_percentile, '%')}`}
+      </div>
+    </details>
+  );
+}
+
 function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
   const gates = analysis.gates ?? {};
   const marketGates = MARKET_GATES
@@ -115,19 +140,21 @@ function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
   const lowZone = gates.low_zone;
   return (
     <div className="mt-3 space-y-3">
-      <div className="flex items-center justify-between gap-3">
+      <StockDepthWindow analysis={analysis} />
+      {marketGates.length > 0 && <div className="flex items-center justify-between gap-3">
         <strong>市场条件满足 {marketPassed}/{marketGates.length}</strong>
         <span className="text-xs text-slate-500">市场判断</span>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      </div>}
+      {marketGates.length > 0 && <div className="grid gap-2 sm:grid-cols-2">
         {marketGates.map((item) => <GateCard key={item.key} gateKey={item.key} label={item.label} gate={item.gate} />)}
-      </div>
-      {lowZone && !isApplicable(lowZone) && (
+      </div>}
+      {lowZone && !isApplicable(lowZone) && !analysis.depth_window?.applicable && (
         <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">
           <div className="font-semibold">价格回撤参考</div>
           <div className="mt-1 text-xs text-slate-500">距最近 250 个交易日高点回撤 {numberText(lowZone.current_drawdown_pct, '%')}，不参与个股市场条件计数。</div>
         </div>
       )}
+      <ReferenceInfo gate={gates.valuation} />
       <details className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <summary className="cursor-pointer font-semibold">纪律闸门（决定允许买多少），不是行情判断</summary>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -278,7 +305,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
             <h3 className="font-semibold">历史事件统计</h3>
             {Object.keys(result.analysis.signal_stats || {}).length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">当前买入信号没有可展示的历史事件样本。</p>
+              <p className="mt-2 text-sm text-slate-500">当前没有可展示的历史事件样本。</p>
             ) : Object.entries(result.analysis.signal_stats || {}).map(([name, stats]) => (
               <div key={name} className="mt-3">
                 <div className="text-sm font-medium">{name}</div>

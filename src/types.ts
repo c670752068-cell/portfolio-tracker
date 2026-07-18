@@ -148,6 +148,17 @@ export interface QuantSymbolAnalysis {
     sample_insufficient: boolean;
     bear_included: boolean;
   } | null;
+  depth_window?: {
+    applicable: boolean;
+    open: boolean;
+    current_pct: number;
+    threshold_pct: number;
+    price_session: string;
+    win_rate_60d: number | null;
+    n: number;
+    sample_insufficient: boolean;
+    bear_included: boolean;
+  };
 }
 
 export interface QuantHoldingCost {
