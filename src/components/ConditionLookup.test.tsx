@@ -26,6 +26,18 @@ describe('ConditionLookup', () => {
     expect(html).not.toContain('>查询</button>');
   });
 
+  it('adds server-summary status dots to both existing selectors', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="SOXL" />,
+    );
+
+    expect(html).toContain('🟢 SOXL · 可买');
+    expect(html).toContain('🟡 AMZN · 接近');
+    expect(html).toContain('🔴 MSFT');
+    expect(html).toContain('· 可卖</option>');
+    expect(html).toContain('⚪ AAPL · 无');
+  });
+
   it('shows successful refresh feedback with the snapshot timestamp and minute age', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-15T14:12:59.000Z'));

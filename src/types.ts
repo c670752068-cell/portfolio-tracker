@@ -262,6 +262,45 @@ export interface QuantPanicWindowSnapshot {
   symbols: Record<string, QuantPanicSymbolStatus>;
 }
 
+export interface QuantBuyOpportunity {
+  symbol: string;
+  kind: string;
+  reason: string;
+  drawdown_pct: number;
+  threshold_pct: number;
+  win_rate_60d: number | null;
+  n: number;
+  sample_insufficient: boolean;
+  price_session: string | null;
+  panic_session: string | null;
+  excess_pct?: number;
+  gap_pct?: number;
+}
+
+export interface QuantSellOpportunity {
+  symbol: string;
+  trigger: string;
+  detail: string;
+  shadow: boolean;
+}
+
+export interface QuantDepthPresentation {
+  status: 'ready' | 'near' | 'far';
+  gap_pct: number;
+  excess_pct: number;
+  progress_pct: number;
+}
+
+export interface QuantOpportunitySummary {
+  buy_ready: readonly QuantBuyOpportunity[];
+  buy_near: readonly QuantBuyOpportunity[];
+  sell_ready: readonly QuantSellOpportunity[];
+  idle_symbols: readonly string[];
+  idle_count: number;
+  depth_states: Record<string, QuantDepthPresentation>;
+  generated_at: string;
+}
+
 export interface QuantAnalysisSnapshot {
   source: 'futu-assistant';
   generated_at: string;
@@ -272,6 +311,7 @@ export interface QuantAnalysisSnapshot {
   holding_costs?: Record<string, QuantHoldingCost>;
   panic_window?: QuantPanicWindowSnapshot;
   sell?: QuantSellSnapshot;
+  summary?: QuantOpportunitySummary;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */

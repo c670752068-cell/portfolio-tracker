@@ -62,6 +62,24 @@ function validatePanicWindow(value: unknown): void {
   }
 }
 
+function validateOpportunitySummary(value: unknown): void {
+  if (value === undefined) return;
+  if (!isRecord(value)
+    || !Array.isArray(value.buy_ready)
+    || !Array.isArray(value.buy_near)
+    || !Array.isArray(value.sell_ready)
+    || !Array.isArray(value.idle_symbols)
+    || typeof value.idle_count !== 'number'
+    || !isRecord(value.depth_states)
+    || typeof value.generated_at !== 'string') {
+    throw new Error('今日机会一览格式无效');
+  }
+  const rows = [...value.buy_ready, ...value.buy_near, ...value.sell_ready];
+  if (rows.some((item) => !isRecord(item) || typeof item.symbol !== 'string')) {
+    throw new Error('今日机会一览格式无效');
+  }
+}
+
 export function parseQuantAnalysis(value: unknown): QuantAnalysisSnapshot {
   if (!isRecord(value)
     || value.source !== 'futu-assistant'
@@ -76,6 +94,7 @@ export function parseQuantAnalysis(value: unknown): QuantAnalysisSnapshot {
     validateSymbolAnalysis(analysis, symbol);
   }
   validatePanicWindow(value.panic_window);
+  validateOpportunitySummary(value.summary);
   return value as unknown as QuantAnalysisSnapshot;
 }
 

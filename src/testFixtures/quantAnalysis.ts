@@ -80,6 +80,19 @@ export const quantAnalysisFixture = {
       signal_stats: {},
       depth_stats: null,
     },
+    AMZN: {
+      available: true,
+      depth_window: {
+        applicable: true, open: false, current_pct: 15.2, threshold_pct: 17.5,
+        price_session: 'premarket', win_rate_60d: 0.59, n: 22,
+        sample_insufficient: false, bear_included: true,
+      },
+      gates: {},
+      gates_passed: 0,
+      gates_total: 0,
+      signal_stats: {},
+      depth_stats: null,
+    },
     SGOV: {
       available: false,
       error: '现金类不参与条件查询',
@@ -158,5 +171,31 @@ export const quantAnalysisFixture = {
         recent_signals: [{ name: 'five_day_gain', label: '5日涨幅过热', date: '2026-07-15' }],
       },
     },
+  },
+  summary: {
+    buy_ready: [{
+      symbol: 'SOXL', kind: 'etf3x', reason: '深度位+恐慌位双开',
+      drawdown_pct: -63.29, threshold_pct: -27.1, win_rate_60d: 0.6,
+      n: 18, sample_insufficient: true, price_session: 'regular',
+      panic_session: 'regular', excess_pct: 36.19,
+    }],
+    buy_near: [{
+      symbol: 'AMZN', kind: 'stock', reason: '距自身深度阈值还差 2.30 点',
+      gap_pct: 2.3, drawdown_pct: -15.2, threshold_pct: -17.5,
+      win_rate_60d: 0.59, n: 22, sample_insufficient: false,
+      price_session: 'premarket', panic_session: null,
+    }],
+    sell_ready: [{
+      symbol: 'MSFT', trigger: '知足常乐',
+      detail: '自基准日 +18.00% vs QQQ +20.00%', shadow: true,
+    }],
+    idle_symbols: ['AAPL'],
+    idle_count: 1,
+    depth_states: {
+      AAPL: { status: 'ready', gap_pct: 0, excess_pct: 0.8, progress_pct: 100 },
+      AMZN: { status: 'near', gap_pct: 2.3, excess_pct: 0, progress_pct: 86.857143 },
+      SOXL: { status: 'ready', gap_pct: 0, excess_pct: 36.19, progress_pct: 100 },
+    },
+    generated_at: '2026-07-15T10:00:00-04:00',
   },
 } as const;

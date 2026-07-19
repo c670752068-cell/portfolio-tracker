@@ -78,7 +78,7 @@ describe('quant analysis contract', () => {
     expect(lookupQuantSymbol(quantAnalysisFixture, 'amd')).toEqual({
       found: false,
       symbol: 'AMD',
-      monitoredSymbols: ['AAPL', 'SGOV', 'SOXL'],
+      monitoredSymbols: ['AAPL', 'AMZN', 'SGOV', 'SOXL'],
     });
   });
 });

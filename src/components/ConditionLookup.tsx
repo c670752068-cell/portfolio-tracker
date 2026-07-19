@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
+import { opportunityStatusLabel } from '../opportunityPresentation';
 import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import type { Holding, QuantAnalysisSnapshot, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
+import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview';
 
 interface ConditionLookupProps {
   snapshot: QuantAnalysisSnapshot | null;
@@ -261,9 +263,25 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
     ? Object.values(snapshot.sell.symbols).find((item) => item.family === selectedSellSymbol || item.held_symbols.includes(selectedSellSymbol))
     : undefined;
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
+  const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
+    const family = snapshot?.sell
+      ? Object.values(snapshot.sell.symbols).find((item) => item.family === optionSymbol || item.held_symbols.includes(optionSymbol))
+      : undefined;
+    const readyFamily = family && snapshot?.summary?.sell_ready.some((item) => item.symbol === family.family);
+    return readyFamily ? `🔴 ${fallbackLabel} · 可卖` : `⚪ ${fallbackLabel} · 无`;
+  };
+  const selectOpportunity = (nextSymbol: string, side: OpportunitySide) => {
+    if (side === 'buy') setSymbol(nextSymbol);
+    else setSellSymbol(nextSymbol);
+    window.requestAnimationFrame(() => {
+      document.getElementById(side === 'buy' ? 'buy-condition-detail' : 'sell-window-detail')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   return (
     <section className="space-y-4">
+      {snapshot && <OpportunityOverview snapshot={snapshot} onSelect={selectOpportunity} />}
       <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -274,7 +292,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
         </div>
         {snapshot && <p className="mt-2 text-xs text-slate-500">{quantAnalysisFreshnessText(snapshot.generated_at)}</p>}
         <select aria-label="量化监控标的" value={selectedSymbol} onChange={(event) => setSymbol(event.target.value)} className="mt-4 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-600">
-          {monitoredSymbols.map((item) => <option key={item} value={item}>{item}</option>)}
+          {monitoredSymbols.map((item) => <option key={item} value={item}>{opportunityStatusLabel(snapshot?.summary, item)}</option>)}
         </select>
       </div>
 
@@ -294,7 +312,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
 
       {snapshot && result?.found && (
         <>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+          <div id="buy-condition-detail" className="scroll-mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
             {panicStatus?.applicable && <PanicWindowStatus status={panicStatus} />}
             <h3 className="text-lg font-semibold">{result.symbol} 买入条件</h3>
             {!result.analysis.available ? (
@@ -324,12 +342,12 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
       )}
 
       {snapshot && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+        <div id="sell-window-detail" className="scroll-mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
           <h3 className="text-lg font-semibold">卖出窗口</h3>
           <p className="mt-1 text-sm text-slate-500">从当前持仓选择标的，查看量化系统给出的修复期、知足常乐、补涨收敛与止盈阶梯依据。</p>
           <select aria-label="卖出持仓标的" value={selectedSellSymbol} onChange={(event) => setSellSymbol(event.target.value)} className="mt-3 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-600">
             {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}
-            {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{item.label}</option>)}
+            {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{sellStatusLabel(item.symbol, item.label)}</option>)}
           </select>
           {!snapshot.sell ? <p className="mt-3 text-sm text-slate-500">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily ? <p className="mt-3 text-sm text-slate-500">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} />}
         </div>
