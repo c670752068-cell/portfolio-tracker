@@ -68,4 +68,16 @@ describe('OpportunityOverview', () => {
     expect(onSelect).toHaveBeenNthCalledWith(1, 'AMZN', 'buy');
     expect(onSelect).toHaveBeenNthCalledWith(2, 'MSFT', 'sell');
   });
+
+  it('renders a compact first-glance variant from the same summary', () => {
+    const html = renderToStaticMarkup(
+      <OpportunityOverview snapshot={quantAnalysisFixture} compact />,
+    );
+
+    expect(html).toContain('今日：可买 1 · 接近 1 · 可卖 1');
+    expect(html).toContain('🟢 SOXL');
+    expect(html).toContain('🟡 AMZN');
+    expect(html).toContain('🔴 MSFT');
+    expect(html).not.toContain('可卖出（持仓中有触发依据）');
+  });
 });

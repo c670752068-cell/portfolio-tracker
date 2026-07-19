@@ -6,6 +6,7 @@ export type OpportunitySide = 'buy' | 'sell';
 interface OpportunityOverviewProps {
   snapshot: QuantAnalysisSnapshot;
   onSelect?: (symbol: string, side: OpportunitySide) => void;
+  compact?: boolean;
 }
 
 function pct(value: number): string {
@@ -49,7 +50,52 @@ function EmptyLine({ children }: { children: string }) {
   return <p className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500 dark:border-slate-700">{children}</p>;
 }
 
-export function OpportunityOverview({ snapshot, onSelect }: OpportunityOverviewProps) {
+function CompactOpportunityOverview({
+  snapshot,
+  onSelect,
+}: Pick<OpportunityOverviewProps, 'snapshot' | 'onSelect'>) {
+  const summary = snapshot.summary!;
+  const allEmpty = summary.buy_ready.length === 0
+    && summary.buy_near.length === 0
+    && summary.sell_ready.length === 0;
+  return (
+    <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">今日机会</h2>
+        <span className="text-xs text-slate-500">{quantAnalysisFreshnessText(summary.generated_at)}</span>
+      </div>
+      <p className="mt-2 text-sm font-semibold">
+        今日：可买 {summary.buy_ready.length} · 接近 {summary.buy_near.length} · 可卖 {summary.sell_ready.length}
+      </p>
+      {allEmpty ? (
+        <div className="mt-3 rounded-lg bg-slate-100 p-4 text-center dark:bg-slate-900">
+          <strong className="text-lg">今日无操作窗口，耐心等待</strong>
+        </div>
+      ) : (
+        <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+          {summary.buy_ready.map((item) => (
+            <button key={`ready-${item.symbol}`} type="button" onClick={() => onSelect?.(item.symbol, 'buy')} className="rounded-full bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-200 dark:bg-emerald-950 dark:text-emerald-200">
+              🟢 {item.symbol}
+            </button>
+          ))}
+          {summary.buy_near.map((item) => (
+            <button key={`near-${item.symbol}`} type="button" onClick={() => onSelect?.(item.symbol, 'buy')} className="rounded-full bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-200">
+              🟡 {item.symbol}
+            </button>
+          ))}
+          {summary.sell_ready.map((item) => (
+            <button key={`sell-${item.symbol}`} type="button" onClick={() => onSelect?.(item.symbol, 'sell')} className="rounded-full bg-rose-100 px-3 py-2 text-sm font-semibold text-rose-900 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-200">
+              🔴 {item.symbol}{item.shadow ? '（观察期）' : ''}
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="mt-3 text-xs text-slate-500">点击标的直接查看量化系统详情；只提醒不下单。</p>
+    </section>
+  );
+}
+
+export function OpportunityOverview({ snapshot, onSelect, compact = false }: OpportunityOverviewProps) {
   const summary = snapshot.summary;
   if (!summary) {
     return (
@@ -58,6 +104,9 @@ export function OpportunityOverview({ snapshot, onSelect }: OpportunityOverviewP
         <p className="mt-2 text-sm text-slate-500">机会结论将随下一份量化快照生成。</p>
       </section>
     );
+  }
+  if (compact) {
+    return <CompactOpportunityOverview snapshot={snapshot} onSelect={onSelect} />;
   }
   const allEmpty = summary.buy_ready.length === 0
     && summary.buy_near.length === 0

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
 import { opportunityStatusLabel } from '../opportunityPresentation';
@@ -10,6 +10,7 @@ interface ConditionLookupProps {
   snapshot: QuantAnalysisSnapshot | null;
   holdings?: Holding[];
   initialSymbol?: string;
+  initialSide?: OpportunitySide;
   loading?: boolean;
   error?: string;
   onRefresh?: () => void;
@@ -289,7 +290,7 @@ function SellWindow({ item }: { item: QuantSellFamily }) {
   );
 }
 
-export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', loading = false, error = '', onRefresh }: ConditionLookupProps) {
+export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', initialSide, loading = false, error = '', onRefresh }: ConditionLookupProps) {
   const monitoredSymbols = useMemo(() => snapshot
     ? Object.keys(snapshot.symbols).filter((item) => !CASH_EQUIVALENT_SYMBOLS.has(item.toUpperCase())).sort()
     : [], [snapshot]);
@@ -301,7 +302,10 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
   const result = useMemo(() => snapshot && selectedSymbol ? lookupQuantSymbol(snapshot, selectedSymbol) : null, [snapshot, selectedSymbol]);
   const snapshotAgeHours = snapshot ? quantAnalysisAgeHours(snapshot.generated_at) : null;
   const sellOptions = useMemo(() => buildAlertHoldingOptions(holdings), [holdings]);
-  const [sellSymbol, setSellSymbol] = useState(sellOptions[0]?.symbol || '');
+  const firstSellSymbol = sellOptions.some((item) => item.symbol === initialSymbol.toUpperCase())
+    ? initialSymbol.toUpperCase()
+    : sellOptions[0]?.symbol || '';
+  const [sellSymbol, setSellSymbol] = useState(firstSellSymbol);
   const selectedSellSymbol = sellOptions.some((item) => item.symbol === sellSymbol)
     ? sellSymbol
     : sellOptions[0]?.symbol || '';
@@ -325,6 +329,14 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
         ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   };
+
+  useEffect(() => {
+    if (!initialSide) return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(initialSide === 'buy' ? 'buy-condition-detail' : 'sell-window-detail')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [initialSide]);
 
   return (
     <section className="space-y-4">

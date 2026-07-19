@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AllocationChart } from './components/AllocationChart';
 import { AlertRulesPanel } from './components/AlertRulesPanel';
 import { ConditionLookup } from './components/ConditionLookup';
+import { OpportunityOverview, type OpportunitySide } from './components/OpportunityOverview';
 import { CashEditor } from './components/CashEditor';
 import { HoldingsTable } from './components/HoldingsTable';
 import { ImageImportPanel } from './components/ImageImportPanel';
@@ -118,6 +119,7 @@ export default function App() {
   const [alertRulesStatus, setAlertRulesStatus] = useState<AlertRulesStatus>({ loading: false, error: '' });
   const [lastImport, setLastImport] = useState<ImportNotice | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
+  const [conditionTarget, setConditionTarget] = useState<{ symbol: string; side: OpportunitySide } | null>(null);
   const [marketNow, setMarketNow] = useState(() => new Date());
   const holdingsRef = useRef(portfolio.holdings);
   const portfolioRef = useRef(portfolio);
@@ -441,6 +443,11 @@ export default function App() {
     }
   }
 
+  function openConditionOpportunity(symbol: string, side: OpportunitySide) {
+    setConditionTarget({ symbol, side });
+    setTab('conditions');
+  }
+
   return (
     <div className="mx-auto min-h-full max-w-5xl px-3 py-4 sm:px-6">
       <header className="mb-4 flex items-center justify-between gap-2">
@@ -467,6 +474,9 @@ export default function App() {
             <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
               <strong>{latestAlert.symbol} 目标提醒已触发</strong> · {latestAlert.last_reminder_at}。只提醒不下单，请在券商 App 手动执行。
             </div>
+          )}
+          {quantAnalysis && (
+            <OpportunityOverview snapshot={quantAnalysis} compact onSelect={openConditionOpportunity} />
           )}
           <Summary
             metrics={metrics}
@@ -513,6 +523,8 @@ export default function App() {
         <ConditionLookup
           snapshot={quantAnalysis}
           holdings={portfolio.holdings}
+          initialSymbol={conditionTarget?.symbol}
+          initialSide={conditionTarget?.side}
           loading={quantAnalysisStatus.loading}
           error={quantAnalysisStatus.error}
           onRefresh={refreshQuantAnalysis}
