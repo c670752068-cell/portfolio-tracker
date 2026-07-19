@@ -3,7 +3,7 @@ import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
 import { opportunityStatusLabel } from '../opportunityPresentation';
 import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
-import type { Holding, QuantAnalysisSnapshot, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
+import type { Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview';
 
 interface ConditionLookupProps {
@@ -101,18 +101,63 @@ function sessionLabel(value: string): string {
   return ({ overnight: '夜盘', premarket: '盘前', afterhours: '盘后', regular: '盘中' } as Record<string, string>)[value] || value;
 }
 
-function StockDepthWindow({ analysis }: { analysis: QuantSymbolAnalysis }) {
+const DEPTH_STYLE = {
+  ready: {
+    panel: 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/25',
+    badge: 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-slate-950',
+    progress: 'accent-emerald-600',
+  },
+  near: {
+    panel: 'border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/25',
+    badge: 'bg-amber-500 text-slate-950 dark:bg-amber-400',
+    progress: 'accent-amber-500',
+  },
+  far: {
+    panel: 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900',
+    badge: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
+    progress: 'accent-slate-400',
+  },
+} as const;
+
+function DepthHighlight({
+  analysis,
+  presentation,
+  title,
+}: {
+  analysis: QuantSymbolAnalysis;
+  presentation: QuantDepthPresentation | undefined;
+  title: string;
+}) {
   const depth = analysis.depth_window;
   if (!depth?.applicable) return null;
+  if (!presentation) {
+    return <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500 dark:border-slate-700">深度位展示状态待下一份快照生成。</div>;
+  }
+  const style = DEPTH_STYLE[presentation.status];
+  const badge = presentation.status === 'ready'
+    ? '深度位 ✓ 已达标'
+    : presentation.status === 'near'
+      ? `深度位 接近 · 还差 ${presentation.gap_pct.toFixed(2)} 点`
+      : '深度位 未达标';
   return (
-    <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm dark:border-emerald-800 dark:bg-emerald-950/20">
-      <div className="font-semibold">深度买入窗口（个股）</div>
-      <div className="mt-2 font-medium">深度位 {depth.open ? '✓' : '✗'} · 当前回撤 {numberText(depth.current_pct, '%')} · 阈值 {numberText(depth.threshold_pct, '%')}</div>
-      <div className="mt-1 text-xs text-slate-500">取价时段：{sessionLabel(depth.price_session)}</div>
-      <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+    <div className={`min-w-0 overflow-hidden rounded-lg border p-3 text-sm ${style.panel}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-semibold">{title}</div>
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${style.badge}`}>{badge}</span>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div><span className="block text-xs text-slate-500">当前回撤</span><strong className="text-2xl">{numberText(depth.current_pct, '%')}</strong></div>
+        <div><span className="block text-xs text-slate-500">阈值</span><strong className="text-2xl">{numberText(depth.threshold_pct, '%')}</strong></div>
+      </div>
+      <div className="mt-3 flex min-w-0 items-center gap-3">
+        <progress aria-label="深度位进度" className={`h-3 min-w-0 flex-1 ${style.progress}`} max={100} value={presentation.progress_pct} />
+        {presentation.status === 'ready' && <span className="text-xs font-semibold">超出 {presentation.excess_pct.toFixed(2)} 点</span>}
+      </div>
+      <div className="mt-2 text-xs text-slate-500">取价时段：{sessionLabel(depth.price_session)}</div>
+      <div className={`mt-3 ${depth.sample_insufficient || depth.win_rate_60d === null ? 'text-slate-400 opacity-70' : 'text-indigo-700 dark:text-indigo-300'}`}>
         {depth.sample_insufficient || depth.win_rate_60d === null
           ? `60 日样本不足（n=${depth.n}）`
-          : `60 日历史成功率 ${(depth.win_rate_60d * 100).toFixed(2)}%（n=${depth.n}）`}
+          : <><strong className="text-xl">60 日胜率 {(depth.win_rate_60d * 100).toFixed(2)}%</strong><span className="ml-2 text-xs">（n={depth.n}）</span></>}
       </div>
     </div>
   );
@@ -142,7 +187,6 @@ function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
   const lowZone = gates.low_zone;
   return (
     <div className="mt-3 space-y-3">
-      <StockDepthWindow analysis={analysis} />
       {marketGates.length > 0 && <div className="flex items-center justify-between gap-3">
         <strong>市场条件满足 {marketPassed}/{marketGates.length}</strong>
         <span className="text-xs text-slate-500">市场判断</span>
@@ -174,19 +218,21 @@ function ObservationBadge({ visible }: { visible: boolean }) {
   return visible ? <span className="ml-1 text-amber-700 dark:text-amber-300">（观察期，未正式生效）</span> : null;
 }
 
-function PanicWindowStatus({ status }: { status: QuantPanicSymbolStatus }) {
+function PanicWindowStatus({ status, analysis, presentation }: { status: QuantPanicSymbolStatus; analysis: QuantSymbolAnalysis; presentation: QuantDepthPresentation | undefined }) {
   return (
-    <div className="mb-4 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm dark:border-rose-800 dark:bg-rose-950/30">
+    <div className="mb-4 min-w-0 overflow-hidden rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm dark:border-rose-800 dark:bg-rose-950/30">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong>{status.display.title}</strong>
         <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-800 dark:bg-rose-900/60 dark:text-rose-100">{status.display.state_label}</span>
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-medium">
-        <span>{status.display.depth_open_text}</span>
-        <span>{status.display.panic_open_text}</span>
+      <div className="mt-3"><DepthHighlight analysis={analysis} presentation={presentation} title="3 倍标的深度位" /></div>
+      <div className={`mt-3 rounded-lg border p-3 ${status.panic.open ? 'border-rose-400 bg-rose-100 dark:border-rose-700 dark:bg-rose-950/40' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900'}`}>
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${status.panic.open ? 'bg-rose-600 text-white dark:bg-rose-500' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100'}`}>
+          恐慌位 {status.panic.open ? '✓ 已触发' : '✗ 未触发'}
+        </span>
+        <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">{status.panic.explanation}</div>
+        {status.panic.triggered_session && <div className="mt-1 text-xs font-medium">触发时段：{sessionLabel(status.panic.triggered_session)}</div>}
       </div>
-      <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">{status.depth.explanation}</div>
-      <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">{status.panic.explanation}</div>
       <div className="mt-3 flex items-center gap-3">
         <progress className="h-2 flex-1 accent-rose-600" max={100} value={status.target.progress_pct} />
         <span className="text-xs font-semibold">{status.display.progress_text}</span>
@@ -263,6 +309,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
     ? Object.values(snapshot.sell.symbols).find((item) => item.family === selectedSellSymbol || item.held_symbols.includes(selectedSellSymbol))
     : undefined;
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
+  const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
   const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
     const family = snapshot?.sell
       ? Object.values(snapshot.sell.symbols).find((item) => item.family === optionSymbol || item.held_symbols.includes(optionSymbol))
@@ -313,7 +360,9 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', l
       {snapshot && result?.found && (
         <>
           <div id="buy-condition-detail" className="scroll-mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-            {panicStatus?.applicable && <PanicWindowStatus status={panicStatus} />}
+            {panicStatus?.applicable
+              ? <PanicWindowStatus status={panicStatus} analysis={result.analysis} presentation={depthPresentation} />
+              : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" />}
             <h3 className="text-lg font-semibold">{result.symbol} 买入条件</h3>
             {!result.analysis.available ? (
               <p className="mt-3 text-amber-700 dark:text-amber-300">当前无可用判定：{result.analysis.error || '数据未生成'}</p>

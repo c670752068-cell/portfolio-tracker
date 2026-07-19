@@ -12,6 +12,11 @@ export const quantAnalysisFixture = {
   symbols: {
     SOXL: {
       available: true,
+      depth_window: {
+        applicable: true, open: true, current_pct: 63.29, threshold_pct: 27.1,
+        price_session: 'regular', win_rate_60d: 0.6, n: 18,
+        sample_insufficient: true, bear_included: true,
+      },
       gates: {
         low_zone: { passed: true, applicable: true, current_drawdown_pct: -63.29, threshold_pct: -28 },
         signal_triggered: {

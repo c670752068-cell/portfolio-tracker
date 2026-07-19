@@ -89,13 +89,67 @@ describe('ConditionLookup', () => {
 
     expect(html).toContain('深度买入窗口（个股）');
     expect(html).toContain('深度位 ✓');
-    expect(html).toContain('当前回撤 22.50%');
-    expect(html).toContain('阈值 21.70%');
-    expect(html).toContain('60 日历史成功率 68.00%（n=25）');
+    expect(html).toContain('当前回撤</span><strong class="text-2xl">22.50%');
+    expect(html).toContain('阈值</span><strong class="text-2xl">21.70%');
+    expect(html).toContain('60 日胜率 68.00%');
+    expect(html).toContain('（n=25）');
     expect(html).toContain('个股 PE 分位 45.00%');
     expect(html).not.toContain('CNN 29.00');
     expect(html).not.toContain('SOXX');
     expect(html).not.toContain('纳指100');
+  });
+
+  it('renders backend-authored ready and near depth highlights without recomputing thresholds', () => {
+    const ready = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+    );
+    const near = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AMZN" />,
+    );
+
+    expect(ready).toContain('✓ 已达标');
+    expect(ready).toContain('当前回撤</span><strong class="text-2xl">22.50%');
+    expect(ready).toContain('阈值</span><strong class="text-2xl">21.70%');
+    expect(ready).toContain('value="100"');
+    expect(ready).toContain('60 日胜率 68.00%');
+    expect(near).toContain('接近 · 还差 2.30 点');
+    expect(near).toContain('value="86.857143"');
+  });
+
+  it('renders far and insufficient states honestly in both themes', () => {
+    const snapshot = {
+      ...quantAnalysisFixture,
+      summary: {
+        ...quantAnalysisFixture.summary,
+        depth_states: {
+          ...quantAnalysisFixture.summary.depth_states,
+          AMZN: { status: 'far' as const, gap_pct: 8, excess_pct: 0, progress_pct: 55.55 },
+        },
+      },
+    };
+    const far = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="AMZN" />,
+    );
+    const insufficient = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+    );
+
+    expect(far).toContain('未达标');
+    expect(far).toContain('value="55.55"');
+    expect(far).toContain('dark:');
+    expect(insufficient).toContain('60 日样本不足（n=18）');
+    expect(insufficient).toContain('text-slate-400');
+    expect(insufficient).toContain('min-w-0');
+    expect(insufficient).toContain('overflow-hidden');
+  });
+
+  it('highlights the panic result and names its trigger session', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+    );
+
+    expect(html).toContain('恐慌位 ✓ 已触发');
+    expect(html).toContain('触发时段：盘中');
   });
 
   it('collapses position and batch into an integer-formatted discipline group', () => {
