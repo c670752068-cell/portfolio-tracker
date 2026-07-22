@@ -504,6 +504,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
       {snapshot && (
         <div id="sell-window-detail" className="scroll-mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
           <h3 className="text-lg font-semibold">卖出窗口</h3>
+          {snapshot.sell?.shadow && <p className="mt-1 text-sm font-medium text-amber-700 dark:text-amber-300">量化卖出模块当前为观察期，全部信号均未正式生效</p>}
           <p className="mt-1 text-sm text-slate-500">从当前持仓选择标的，查看量化系统给出的修复期、知足常乐、补涨收敛与止盈阶梯依据。</p>
           <select aria-label="卖出持仓标的" value={selectedSellSymbol} onChange={(event) => setSellSymbol(event.target.value)} className="mt-3 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-600">
             {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}

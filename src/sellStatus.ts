@@ -27,7 +27,7 @@ export function resolveSellStatus(
   if (!evidence) return { state: 'none' };
 
   return {
-    state: evidence.shadow ? 'observation' : 'window_open',
+    state: snapshot.sell.shadow || evidence.shadow ? 'observation' : 'window_open',
     trigger: evidence.trigger,
     detail: evidence.detail,
   };

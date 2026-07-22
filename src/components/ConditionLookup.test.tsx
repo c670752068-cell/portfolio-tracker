@@ -259,6 +259,10 @@ describe('ConditionLookup', () => {
   it('shows the orange open-window label only for non-shadow evidence', () => {
     const snapshot = {
       ...quantAnalysisFixture,
+      sell: {
+        ...quantAnalysisFixture.sell,
+        shadow: false,
+      },
       summary: {
         ...quantAnalysisFixture.summary,
         sell_ready: quantAnalysisFixture.summary.sell_ready.map((item) => ({ ...item, shadow: false })),
@@ -270,6 +274,23 @@ describe('ConditionLookup', () => {
 
     expect(html).toContain('🟠 MSFT · 市值 $4000.00 · IBKR · 卖出窗口开启</option>');
     expect(html).not.toContain('MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
+  });
+
+  it('explains module-level observation and never labels its signals as open windows', () => {
+    const snapshot = {
+      ...quantAnalysisFixture,
+      summary: {
+        ...quantAnalysisFixture.summary,
+        sell_ready: quantAnalysisFixture.summary.sell_ready.map((item) => ({ ...item, shadow: false })),
+      },
+    };
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={holdings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('量化卖出模块当前为观察期，全部信号均未正式生效');
+    expect(html).not.toContain('卖出窗口开启');
+    expect(html).toContain('MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
   });
 
   it('shows family loss and disables profit-taking ladder emphasis', () => {
