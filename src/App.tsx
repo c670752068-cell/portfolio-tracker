@@ -551,7 +551,12 @@ export default function App() {
 
       {tab === 'settings' && (
         <section className="space-y-4">
-          <SettingsPanel settings={settings} onSave={handleSaveSettings} />
+          <SettingsPanel
+            settings={settings}
+            holdings={portfolio.holdings}
+            holdingCosts={quantAnalysis?.holding_costs || {}}
+            onSave={handleSaveSettings}
+          />
           <DataActions
             onExport={() => exportJson(portfolio)}
             onImport={(next) => setPortfolio(next)}

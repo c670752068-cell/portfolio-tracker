@@ -1,15 +1,68 @@
 import { useState } from 'react';
+import { analyzeCostCoverage, type CostGapReason } from '../costCoverage';
 import { isInvalidEndpointUrl, looksLikeApiKey, sanitizeEndpointUrl } from '../endpointUrl';
 import { KimiError, activeAiEndpoint, activeAiProviderLabel, testAiConnection } from '../kimi';
 import { getServerAiProxyUrl, getServerQuoteProxyUrl, hasServerGateway, serverGatewayLabel } from '../runtimeConfig';
-import type { AiProvider, AppSettings, QuoteProvider } from '../types';
+import type { AiProvider, AppSettings, Holding, QuantHoldingCost, QuoteProvider } from '../types';
 
 interface SettingsPanelProps {
   settings: AppSettings;
+  holdings?: readonly Holding[];
+  holdingCosts?: Readonly<Record<string, QuantHoldingCost>>;
   onSave: (s: AppSettings) => void;
 }
 
-export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
+const COST_GAP_LABELS: Record<CostGapReason, string> = {
+  option_no_source: '期权成本无量化来源',
+  quant_coverage_incomplete: '量化成本覆盖不完整',
+  manual_missing: '手动成本缺失',
+};
+
+const COST_GAP_GUIDANCE: Record<CostGapReason, string> = {
+  option_no_source: '期权成本量化系统未提供，请在「持仓 → 补充期权详情」上传期权详情页截图',
+  quant_coverage_incomplete: '量化系统对该标的的成本覆盖不完整，请在持仓表手动补填买入价，或联系量化侧确认该券商是否提供成本',
+  manual_missing: '请在持仓表补填买入价',
+};
+
+function CostCoverageCard({
+  holdings,
+  holdingCosts,
+}: {
+  holdings: readonly Holding[];
+  holdingCosts: Readonly<Record<string, QuantHoldingCost>>;
+}) {
+  const analysis = analyzeCostCoverage(holdings, holdingCosts);
+  const reasons: CostGapReason[] = ['option_no_source', 'quant_coverage_incomplete', 'manual_missing'];
+  return (
+    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+      <h4 className="text-sm font-semibold">成本数据覆盖</h4>
+      <p className="mt-1 text-sm">已有成本 {analysis.costed} / 共 {analysis.total} 个持仓</p>
+      {analysis.gaps.length === 0 ? (
+        <p className="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">全部持仓成本齐全</p>
+      ) : reasons.map((reason) => {
+        const rows = analysis.gaps.filter((gap) => gap.reason === reason);
+        if (rows.length === 0) return null;
+        return (
+          <div className="mt-3 rounded-md bg-slate-50 p-2 text-xs dark:bg-slate-900" key={reason}>
+            <div className="font-semibold">{COST_GAP_LABELS[reason]}</div>
+            <ul className="mt-1 space-y-1 text-slate-600 dark:text-slate-300">
+              {rows.map((row, index) => {
+                const quantCost = holdingCosts[row.symbol];
+                const coverage = reason === 'quant_coverage_incomplete'
+                  ? ` · coverage=${quantCost?.coverage ?? 'missing'}`
+                  : '';
+                return <li key={`${row.symbol}-${row.assetType}-${row.broker ?? ''}-${index}`}>{row.symbol}{row.broker ? ` · ${row.broker}` : ''}{coverage}</li>;
+              })}
+            </ul>
+            <p className="mt-2 text-amber-700 dark:text-amber-300">{COST_GAP_GUIDANCE[reason]}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSave }: SettingsPanelProps) {
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [saved, setSaved] = useState(false);
   const [testingAi, setTestingAi] = useState(false);
@@ -200,6 +253,7 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
             : '请使用 VPS 入口打开网站，GitHub Pages 无法跨设备读取服务器持仓。'}
         </p>
       </div>
+      <CostCoverageCard holdings={holdings} holdingCosts={holdingCosts} />
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <h4 className="mb-2 text-sm font-semibold">每日行情同步</h4>
         <div className="space-y-3">
