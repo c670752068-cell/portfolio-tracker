@@ -33,8 +33,8 @@ describe('ConditionLookup', () => {
 
     expect(html).toContain('🟢 SOXL · 可买');
     expect(html).toContain('🟡 AMZN · 接近');
-    expect(html).toContain('🔴 MSFT');
-    expect(html).toContain('· 可卖</option>');
+    expect(html).toContain('⚪ MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
+    expect(html).not.toContain('🟠 MSFT');
     expect(html).toContain('⚪ AAPL · 无');
   });
 
@@ -243,8 +243,27 @@ describe('ConditionLookup', () => {
     expect(html).toContain('建议至少减仓 50%');
     expect(html).toContain('市场亢奋·清仓杠杆品种或调仓 SGOV');
     expect(html).toContain('（观察期，未正式生效）');
+    expect(html).toContain('触发依据：知足常乐');
+    expect(html).toContain('自基准日 +18.00% vs QQQ +20.00%');
+    expect(html).toContain('该判定来自量化系统的相对强弱口径（自反弹基准日涨幅 vs QQQ），与你的买入成本无关；是否盈利请看下方「本族当前盈亏」。');
     expect(html).toContain('5日涨幅过热 2026-07-15');
     expect(html).toContain('只提醒不下单；由你在券商 App 手动执行。');
+  });
+
+  it('shows the orange open-window label only for non-shadow evidence', () => {
+    const snapshot = {
+      ...quantAnalysisFixture,
+      summary: {
+        ...quantAnalysisFixture.summary,
+        sell_ready: quantAnalysisFixture.summary.sell_ready.map((item) => ({ ...item, shadow: false })),
+      },
+    };
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={holdings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('🟠 MSFT · 市值 $4000.00 · IBKR · 卖出窗口开启</option>');
+    expect(html).not.toContain('MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
   });
 
 });

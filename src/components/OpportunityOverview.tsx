@@ -65,7 +65,7 @@ function CompactOpportunityOverview({
         <span className="text-xs text-slate-500">{quantAnalysisFreshnessText(summary.generated_at)}</span>
       </div>
       <p className="mt-2 text-sm font-semibold">
-        今日：可买 {summary.buy_ready.length} · 接近 {summary.buy_near.length} · 可卖 {summary.sell_ready.length}
+        今日：可买 {summary.buy_ready.length} · 接近 {summary.buy_near.length} · 卖出窗口 {summary.sell_ready.length}
       </p>
       {allEmpty ? (
         <div className="mt-3 rounded-lg bg-slate-100 p-4 text-center dark:bg-slate-900">
@@ -138,7 +138,7 @@ export function OpportunityOverview({ snapshot, onSelect, compact = false }: Opp
           ? <EmptyLine>今日没有距阈值较近的标的</EmptyLine>
           : summary.buy_near.map((item) => <BuyRow key={item.symbol} item={item} onSelect={onSelect} />)}
       </div>
-      <GroupTitle icon="🔴">可卖出（持仓中有触发依据）</GroupTitle>
+      <GroupTitle icon="🔴">卖出窗口（持仓中有触发依据）</GroupTitle>
       <div className="space-y-2">
         {summary.sell_ready.length === 0
           ? <EmptyLine>当前持仓没有卖出窗口</EmptyLine>

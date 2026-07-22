@@ -35,7 +35,7 @@ describe('OpportunityOverview', () => {
     expect(html).toContain('SOXL');
     expect(html).toContain('接近买入条件');
     expect(html).toContain('AMZN');
-    expect(html).toContain('可卖出（持仓中有触发依据）');
+    expect(html).toContain('卖出窗口（持仓中有触发依据）');
     expect(html).toContain('MSFT');
     expect(html).toContain('（观察期）');
     expect(html).toContain('其余 1 只今日无操作窗口');
@@ -74,10 +74,10 @@ describe('OpportunityOverview', () => {
       <OpportunityOverview snapshot={quantAnalysisFixture} compact />,
     );
 
-    expect(html).toContain('今日：可买 1 · 接近 1 · 可卖 1');
+    expect(html).toContain('今日：可买 1 · 接近 1 · 卖出窗口 1');
     expect(html).toContain('🟢 SOXL');
     expect(html).toContain('🟡 AMZN');
     expect(html).toContain('🔴 MSFT');
-    expect(html).not.toContain('可卖出（持仓中有触发依据）');
+    expect(html).not.toContain('卖出窗口（持仓中有触发依据）');
   });
 });

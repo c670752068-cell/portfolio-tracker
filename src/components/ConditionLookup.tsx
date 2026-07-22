@@ -3,6 +3,7 @@ import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
 import { opportunityStatusLabel } from '../opportunityPresentation';
 import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
+import { resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
 import type { Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview';
 
@@ -243,7 +244,7 @@ function PanicWindowStatus({ status, analysis, presentation }: { status: QuantPa
   );
 }
 
-function SellWindow({ item }: { item: QuantSellFamily }) {
+function SellWindow({ item, status }: { item: QuantSellFamily; status: ResolvedSellStatus }) {
   const repairText = item.repair.window_open
     ? '修复完成，可开始分批减仓：优先减期权与两三倍杠杆，不要一次性减完'
     : item.repair.status === 'repairing'
@@ -251,6 +252,16 @@ function SellWindow({ item }: { item: QuantSellFamily }) {
       : '修复期状态暂不可用，当前不生成卖出动作';
   return (
     <div className="mt-3 space-y-3 text-sm">
+      {status.state !== 'none' && (
+        <div className={`rounded-lg border p-3 ${status.state === 'window_open' ? 'border-orange-300 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900'}`}>
+          <div className="flex flex-wrap items-center gap-2 font-semibold">
+            <span>触发依据：{status.trigger || '量化系统卖出证据'}</span>
+            {status.state === 'observation' && <span className="rounded-full bg-slate-200 px-2 py-1 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-100">观察期，未正式生效</span>}
+          </div>
+          {status.detail && <p className="mt-2 text-slate-600 dark:text-slate-300">{status.detail}</p>}
+          <p className="mt-2 text-xs text-slate-500">该判定来自量化系统的相对强弱口径（自反弹基准日涨幅 vs QQQ），与你的买入成本无关；是否盈利请看下方「本族当前盈亏」。</p>
+        </div>
+      )}
       <div className={`rounded-lg border p-3 ${item.repair.window_open ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/20' : 'border-slate-200 dark:border-slate-700'}`}>
         <div className="font-semibold">{repairText}</div>
       </div>
@@ -312,14 +323,14 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
   const sellFamily = snapshot?.sell
     ? Object.values(snapshot.sell.symbols).find((item) => item.family === selectedSellSymbol || item.held_symbols.includes(selectedSellSymbol))
     : undefined;
+  const selectedSellStatus = resolveSellStatus(snapshot, selectedSellSymbol);
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
   const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
-    const family = snapshot?.sell
-      ? Object.values(snapshot.sell.symbols).find((item) => item.family === optionSymbol || item.held_symbols.includes(optionSymbol))
-      : undefined;
-    const readyFamily = family && snapshot?.summary?.sell_ready.some((item) => item.symbol === family.family);
-    return readyFamily ? `🔴 ${fallbackLabel} · 可卖` : `⚪ ${fallbackLabel} · 无`;
+    const status = resolveSellStatus(snapshot, optionSymbol);
+    if (status.state === 'window_open') return `🟠 ${fallbackLabel} · 卖出窗口开启`;
+    if (status.state === 'observation') return `⚪ ${fallbackLabel} · 观察期`;
+    return `⚪ ${fallbackLabel} · 无`;
   };
   const selectOpportunity = (nextSymbol: string, side: OpportunitySide) => {
     if (side === 'buy') setSymbol(nextSymbol);
@@ -410,7 +421,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
             {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}
             {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{sellStatusLabel(item.symbol, item.label)}</option>)}
           </select>
-          {!snapshot.sell ? <p className="mt-3 text-sm text-slate-500">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily ? <p className="mt-3 text-sm text-slate-500">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} />}
+          {!snapshot.sell ? <p className="mt-3 text-sm text-slate-500">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily ? <p className="mt-3 text-sm text-slate-500">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} status={selectedSellStatus} />}
         </div>
       )}
     </section>
