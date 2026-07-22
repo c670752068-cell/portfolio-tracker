@@ -392,6 +392,52 @@ describe('ConditionLookup', () => {
     expect(html).toContain('盈利 20.00%–30.00%：减总仓 3.00%');
   });
 
+  it('qualifies an active profit tier when family cost coverage is partial', () => {
+    const partialGainHoldings = [
+      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 125 },
+      {
+        id: 'msft-call-partial-gain', symbol: 'MSFT', name: 'MSFT Call',
+        shares: 1, buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
+        sector: '科技', currency: 'USD' as const, assetType: 'option' as const,
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} holdings={partialGainHoldings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('data-active="true"');
+    expect(html).toContain('该档位基于已计成本部分（另有 1 个持仓成本未知），实际盈利可能不同；减仓比例请以券商实际成本为准。');
+  });
+
+  it('does not qualify an active profit tier when family cost coverage is complete', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup
+        snapshot={quantAnalysisFixture}
+        holdings={[{ ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 110 }]}
+        initialSymbol="MSFT"
+      />,
+    );
+
+    expect(html).toContain('data-active="true"');
+    expect(html).not.toContain('该档位基于已计成本部分');
+  });
+
+  it('qualifies the distance to the first tier when partial known-cost pnl is below it', () => {
+    const partialBelowFirstHoldings = [
+      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 102 },
+      {
+        id: 'msft-call-partial-below', symbol: 'MSFT', name: 'MSFT Call',
+        shares: 1, buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
+        sector: '科技', currency: 'USD' as const, assetType: 'option' as const,
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} holdings={partialBelowFirstHoldings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('距第一档 +5.00% 还差 3.00 点（基于已计成本部分）');
+  });
+
   it('shows only market value and unknown cost when family costs are unavailable', () => {
     const missingCostHoldings = [{ ...holdings[0], shares: 10, buyPrice: 0, currentPrice: 80 }];
     const snapshot = { ...quantAnalysisFixture, holding_costs: {} };

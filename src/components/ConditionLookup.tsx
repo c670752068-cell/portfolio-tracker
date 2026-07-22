@@ -282,6 +282,7 @@ function SellWindow({
   const hasKnownLoss = pnl.pnlPct !== null && pnl.pnlPct < 0;
   const isCompleteLoss = pnl.coverage === 'complete' && hasKnownLoss;
   const isPartialLoss = pnl.coverage === 'partial' && hasKnownLoss;
+  const isPartialGain = pnl.coverage === 'partial' && pnl.pnlPct !== null && pnl.pnlPct >= 0;
   const activeStep = !hasKnownLoss && pnl.pnlPct !== null
     ? steps.find((step) => pnl.pnlPct! >= step.gain_min_pct && pnl.pnlPct! < step.gain_max_pct)
     : undefined;
@@ -343,7 +344,8 @@ function SellWindow({
         <div className="font-semibold">止盈阶梯参考</div>
         {isCompleteLoss && firstStep && <p className="mt-2 rounded-lg bg-rose-50 p-3 font-medium text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">当前为浮亏 {signedPct(pnl.pnlPct!)}，止盈阶梯（最低档 +{firstStep.gain_min_pct.toFixed(2)}%）尚未适用。下方阶梯仅作参考，不构成减仓提示。</p>}
         {isPartialLoss && <p className="mt-2 rounded-lg bg-amber-50 p-3 font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-200">已知成本部分为浮亏 {signedPct(pnl.pnlPct!)}（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知）。止盈阶梯参考请以券商实际成本为准。</p>}
-        {belowFirst && firstStep && <p className="mt-2 text-amber-700 dark:text-amber-300">距第一档 +{firstStep.gain_min_pct.toFixed(2)}% 还差 {(firstStep.gain_min_pct - pnl.pnlPct!).toFixed(2)} 点</p>}
+        {isPartialGain && <p className="mt-2 rounded-lg bg-amber-50 p-3 font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-200">该档位基于已计成本部分（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知），实际盈利可能不同；减仓比例请以券商实际成本为准。</p>}
+        {belowFirst && firstStep && <p className="mt-2 text-amber-700 dark:text-amber-300">距第一档 +{firstStep.gain_min_pct.toFixed(2)}% 还差 {(firstStep.gain_min_pct - pnl.pnlPct!).toFixed(2)} 点{pnl.coverage === 'partial' ? '（基于已计成本部分）' : ''}</p>}
         {!item.playbook.available ? <p className="mt-1 text-slate-500">该持仓族尚未配置止盈剧本。</p> : (
           <>
             <ul className={`mt-2 space-y-1 text-slate-600 dark:text-slate-300 ${isCompleteLoss ? 'opacity-40 grayscale' : ''}`}>
