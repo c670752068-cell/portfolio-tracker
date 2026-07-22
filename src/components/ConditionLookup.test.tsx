@@ -266,4 +266,63 @@ describe('ConditionLookup', () => {
     expect(html).not.toContain('MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
   });
 
+  it('shows family loss and disables profit-taking ladder emphasis', () => {
+    const losingHoldings = [
+      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 80 },
+    ];
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} holdings={losingHoldings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('本族当前盈亏');
+    expect(html).toContain('市值 $800.00');
+    expect(html).toContain('成本 $1,000.00');
+    expect(html).toContain('浮盈亏 -$200.00（-20.00%）');
+    expect(html).toContain('当前为浮亏 −20.00%，止盈阶梯（最低档 +5.00%）尚未适用');
+    expect(html).not.toContain('data-active="true"');
+  });
+
+  it('highlights the matching profit ladder band for a profitable family', () => {
+    const snapshot = {
+      ...quantAnalysisFixture,
+      sell: {
+        ...quantAnalysisFixture.sell,
+        symbols: {
+          ...quantAnalysisFixture.sell.symbols,
+          MSFT: {
+            ...quantAnalysisFixture.sell.symbols.MSFT,
+            playbook: {
+              ...quantAnalysisFixture.sell.symbols.MSFT.playbook,
+              sell_steps: [
+                { gain_min_pct: 10, gain_max_pct: 20, sell_position_pct: 2 },
+                { gain_min_pct: 20, gain_max_pct: 30, sell_position_pct: 3 },
+                { gain_min_pct: 30, gain_max_pct: 999, sell_position_pct: 4 },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const profitableHoldings = [{ ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 125 }];
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={profitableHoldings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('浮盈亏 $250.00（+25.00%）');
+    expect(html).toContain('data-active="true"');
+    expect(html).toContain('盈利 20.00%–30.00%：减总仓 3.00%');
+  });
+
+  it('warns about missing family costs without showing a misleading percentage', () => {
+    const missingCostHoldings = [{ ...holdings[0], shares: 10, buyPrice: 0, currentPrice: 80 }];
+    const snapshot = { ...quantAnalysisFixture, holding_costs: {} };
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={missingCostHoldings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('成本数据不完整，盈亏仅供参考');
+    expect(html).toContain('浮盈亏 暂无');
+    expect(html).not.toContain('浮盈亏 暂无（');
+  });
+
 });

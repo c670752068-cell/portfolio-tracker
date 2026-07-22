@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
+import { formatDisplayMoney } from '../displayCurrency';
+import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
 import { opportunityStatusLabel } from '../opportunityPresentation';
 import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import { resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
-import type { Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
+import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview';
 
 interface ConditionLookupProps {
@@ -15,7 +17,14 @@ interface ConditionLookupProps {
   loading?: boolean;
   error?: string;
   onRefresh?: () => void;
+  displayCurrency?: DisplayCurrency;
+  rates?: ExchangeRates;
 }
+
+const USD_RATES: ExchangeRates = {
+  USD: 1, CNY: 1, HKD: 1, JPY: 1, EUR: 1, GBP: 1,
+  updatedAt: null, source: 'fallback',
+};
 
 const RISK_ROLE_LABELS: Record<string, string> = {
   option: '期权',
@@ -244,14 +253,50 @@ function PanicWindowStatus({ status, analysis, presentation }: { status: QuantPa
   );
 }
 
-function SellWindow({ item, status }: { item: QuantSellFamily; status: ResolvedSellStatus }) {
+function signedPct(value: number): string {
+  return `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(2)}%`;
+}
+
+function SellWindow({
+  item,
+  status,
+  pnl,
+  displayCurrency,
+  rates,
+}: {
+  item: QuantSellFamily;
+  status: ResolvedSellStatus;
+  pnl: FamilyPnl;
+  displayCurrency: DisplayCurrency;
+  rates: ExchangeRates;
+}) {
   const repairText = item.repair.window_open
     ? '修复完成，可开始分批减仓：优先减期权与两三倍杠杆，不要一次性减完'
     : item.repair.status === 'repairing'
       ? `卖出窗口未开启：深跌修复期内，耐心持有（基准日 ${item.repair.base_date || '暂无'}）`
       : '修复期状态暂不可用，当前不生成卖出动作';
+  const steps = item.playbook.sell_steps;
+  const firstStep = steps[0];
+  const isLoss = pnl.pnlPct !== null && pnl.pnlPct < 0;
+  const activeStep = !isLoss && pnl.pnlPct !== null
+    ? steps.find((step) => pnl.pnlPct! >= step.gain_min_pct && pnl.pnlPct! < step.gain_max_pct)
+    : undefined;
+  const belowFirst = !isLoss && pnl.pnlPct !== null && firstStep && pnl.pnlPct < firstStep.gain_min_pct;
   return (
     <div className="mt-3 space-y-3 text-sm">
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <div className="font-semibold">本族当前盈亏</div>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          <div>市值 {formatDisplayMoney(pnl.marketValue, displayCurrency, rates)}</div>
+          <div>成本 {pnl.coverage === 'unavailable' ? '暂无' : formatDisplayMoney(pnl.costBasis, displayCurrency, rates)}</div>
+          <div className={pnl.pnlPct === null ? 'text-slate-500' : pnl.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+            浮盈亏 {pnl.pnlPct === null
+              ? '暂无'
+              : `${formatDisplayMoney(pnl.pnl, displayCurrency, rates)}（${pnl.pnlPct >= 0 ? '+' : '-'}${Math.abs(pnl.pnlPct).toFixed(2)}%）`}
+          </div>
+        </div>
+        {pnl.coverage !== 'complete' && <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">成本数据不完整，盈亏仅供参考</p>}
+      </div>
       {status.state !== 'none' && (
         <div className={`rounded-lg border p-3 ${status.state === 'window_open' ? 'border-orange-300 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900'}`}>
           <div className="flex flex-wrap items-center gap-2 font-semibold">
@@ -283,10 +328,15 @@ function SellWindow({ item, status }: { item: QuantSellFamily; status: ResolvedS
       </div>
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <div className="font-semibold">止盈阶梯参考</div>
+        {isLoss && firstStep && <p className="mt-2 rounded-lg bg-rose-50 p-3 font-medium text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">当前为浮亏 {signedPct(pnl.pnlPct!)}，止盈阶梯（最低档 +{firstStep.gain_min_pct.toFixed(2)}%）尚未适用。下方阶梯仅作参考，不构成减仓提示。</p>}
+        {belowFirst && firstStep && <p className="mt-2 text-amber-700 dark:text-amber-300">距第一档 +{firstStep.gain_min_pct.toFixed(2)}% 还差 {(firstStep.gain_min_pct - pnl.pnlPct!).toFixed(2)} 点</p>}
         {!item.playbook.available ? <p className="mt-1 text-slate-500">该持仓族尚未配置止盈剧本。</p> : (
           <>
-            <ul className="mt-2 space-y-1 text-slate-600 dark:text-slate-300">
-              {item.playbook.sell_steps.map((step) => <li key={`${step.gain_min_pct}-${step.gain_max_pct}`}>盈利 {step.gain_min_pct.toFixed(2)}%{step.gain_max_pct >= 999 ? '+' : `–${step.gain_max_pct.toFixed(2)}%`}：减总仓 {step.sell_position_pct.toFixed(2)}%</li>)}
+            <ul className={`mt-2 space-y-1 text-slate-600 dark:text-slate-300 ${isLoss ? 'opacity-40 grayscale' : ''}`}>
+              {steps.map((step) => {
+                const active = activeStep === step;
+                return <li data-active={active ? 'true' : undefined} className={active ? 'rounded bg-emerald-100 px-2 py-1 font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : ''} key={`${step.gain_min_pct}-${step.gain_max_pct}`}>盈利 {step.gain_min_pct.toFixed(2)}%{step.gain_max_pct >= 999 ? '+' : `–${step.gain_max_pct.toFixed(2)}%`}：减总仓 {step.sell_position_pct.toFixed(2)}%</li>;
+              })}
             </ul>
             <p className="mt-2 text-xs text-slate-500">优先顺序：{item.playbook.risk_first_order.map((role) => RISK_ROLE_LABELS[role] || role).join(' → ')}</p>
           </>
@@ -301,7 +351,7 @@ function SellWindow({ item, status }: { item: QuantSellFamily; status: ResolvedS
   );
 }
 
-export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', initialSide, loading = false, error = '', onRefresh }: ConditionLookupProps) {
+export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', initialSide, loading = false, error = '', onRefresh, displayCurrency = 'USD', rates = USD_RATES }: ConditionLookupProps) {
   const monitoredSymbols = useMemo(() => snapshot
     ? Object.keys(snapshot.symbols).filter((item) => !CASH_EQUIVALENT_SYMBOLS.has(item.toUpperCase())).sort()
     : [], [snapshot]);
@@ -324,6 +374,9 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
     ? Object.values(snapshot.sell.symbols).find((item) => item.family === selectedSellSymbol || item.held_symbols.includes(selectedSellSymbol))
     : undefined;
   const selectedSellStatus = resolveSellStatus(snapshot, selectedSellSymbol);
+  const familyPnl = sellFamily
+    ? computeFamilyPnl(holdings, sellFamily.family, sellFamily.held_symbols, snapshot?.holding_costs || {})
+    : null;
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
   const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
@@ -421,7 +474,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
             {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}
             {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{sellStatusLabel(item.symbol, item.label)}</option>)}
           </select>
-          {!snapshot.sell ? <p className="mt-3 text-sm text-slate-500">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily ? <p className="mt-3 text-sm text-slate-500">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} status={selectedSellStatus} />}
+          {!snapshot.sell ? <p className="mt-3 text-sm text-slate-500">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily || !familyPnl ? <p className="mt-3 text-sm text-slate-500">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} status={selectedSellStatus} pnl={familyPnl} displayCurrency={displayCurrency} rates={rates} />}
         </div>
       )}
     </section>

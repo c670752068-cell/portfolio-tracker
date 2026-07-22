@@ -528,6 +528,8 @@ export default function App() {
           loading={quantAnalysisStatus.loading}
           error={quantAnalysisStatus.error}
           onRefresh={refreshQuantAnalysis}
+          displayCurrency={settings.displayCurrency}
+          rates={rates}
         />
       )}
 
