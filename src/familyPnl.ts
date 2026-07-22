@@ -37,7 +37,9 @@ function costBasisFor(
   if (Number.isFinite(holding.buyPrice) && holding.buyPrice > 0) {
     return holding.shares * holding.buyPrice * multiplier;
   }
-  const external = holdingCosts[normalize(holding.symbol)]?.weighted_average_cost;
+  const external = holding.assetType === 'option'
+    ? undefined
+    : holdingCosts[normalize(holding.symbol)]?.weighted_average_cost;
   if (typeof external === 'number' && Number.isFinite(external) && external > 0) {
     return holding.shares * external * multiplier;
   }
