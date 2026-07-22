@@ -451,4 +451,39 @@ describe('ConditionLookup', () => {
     expect(html).not.toMatch(/成本未知[^<]*%/);
   });
 
+  it('tells users to fill the holdings table when only non-option costs are unknown', () => {
+    const snapshot = { ...quantAnalysisFixture, holding_costs: {} };
+    const html = renderToStaticMarkup(
+      <ConditionLookup
+        snapshot={snapshot}
+        holdings={[{ ...holdings[0], buyPrice: 0 }]}
+        initialSymbol="MSFT"
+      />,
+    );
+
+    expect(html).toContain('请在持仓表补填买入价');
+    expect(html).not.toContain('期权成本需用「补充期权详情」导入');
+  });
+
+  it('shows both cost instructions when option and non-option costs are unknown', () => {
+    const snapshot = { ...quantAnalysisFixture, holding_costs: {} };
+    const html = renderToStaticMarkup(
+      <ConditionLookup
+        snapshot={snapshot}
+        holdings={[
+          { ...holdings[0], id: 'msft-stock-unknown', buyPrice: 0 },
+          {
+            ...holdings[0], id: 'msft-option-unknown', name: 'MSFT Call',
+            buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
+            assetType: 'option' as const,
+          },
+        ]}
+        initialSymbol="MSFT"
+      />,
+    );
+
+    expect(html).toContain('期权成本需用「补充期权详情」导入');
+    expect(html).toContain('请在持仓表补填买入价');
+  });
+
 });

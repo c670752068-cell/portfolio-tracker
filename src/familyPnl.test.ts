@@ -169,6 +169,35 @@ describe('computeFamilyPnl', () => {
     expect(result.pnl).toBeCloseTo(123.6, 5);
   });
 
+  it('deduplicates unknown option costs by symbol and type with a count', () => {
+    const missingOption = (id: string): Holding => stock({
+      id,
+      symbol: 'NVDA',
+      name: 'NVDA Call',
+      shares: 1,
+      buyPrice: 0,
+      currentPrice: 20,
+      marketValueOverride: 2_000,
+      assetType: 'option',
+    });
+
+    const result = computeFamilyPnl([
+      missingOption('nvda-option-futu'),
+      missingOption('nvda-option-ibkr'),
+    ], 'NVDA', ['NVDA'], {});
+
+    expect(result.unknownCostHoldings).toEqual(['NVDA（期权 ×2）']);
+  });
+
+  it('deduplicates unknown non-option costs without labeling them as options', () => {
+    const result = computeFamilyPnl([
+      stock({ id: 'msft-futu', buyPrice: 0 }),
+      stock({ id: 'msft-ibkr', buyPrice: 0 }),
+    ], 'MSFT', ['MSFT'], {});
+
+    expect(result.unknownCostHoldings).toEqual(['MSFT（×2）']);
+  });
+
   it('falls back to quant holding costs and omits a percentage when all costs are unavailable', () => {
     const costs: Record<string, QuantHoldingCost> = {
       MSFT: { weighted_average_cost: 90, currency: 'USD', coverage: 'complete', auto_fill_allowed: true },

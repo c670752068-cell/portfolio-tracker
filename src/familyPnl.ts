@@ -67,14 +67,18 @@ export function computeFamilyPnl(
   let costBasis = 0;
   let costedMarketValue = 0;
   let knownCosts = 0;
-  const unknownCostHoldings: string[] = [];
+  const unknownCostCounts = new Map<string, { symbol: string; isOption: boolean; count: number }>();
 
   for (const holding of matched) {
     const marketValueForHolding = marketValueFor(holding);
     marketValue += marketValueForHolding;
     const cost = costBasisFor(holding, holdingCosts);
     if (cost === null) {
-      unknownCostHoldings.push(`${normalize(holding.symbol)}${holding.assetType === 'option' ? '（期权）' : ''}`);
+      const symbol = normalize(holding.symbol);
+      const isOption = holding.assetType === 'option';
+      const key = `${symbol}:${isOption ? 'option' : 'other'}`;
+      const existing = unknownCostCounts.get(key);
+      unknownCostCounts.set(key, { symbol, isOption, count: (existing?.count ?? 0) + 1 });
       continue;
     }
     knownCosts += 1;
@@ -88,6 +92,10 @@ export function computeFamilyPnl(
       ? 'complete'
       : 'partial';
   const pnl = knownCosts === 0 ? 0 : costedMarketValue - costBasis;
+  const unknownCostHoldings = [...unknownCostCounts.values()].map(({ symbol, isOption, count }) => {
+    if (isOption) return count > 1 ? `${symbol}（期权 ×${count}）` : `${symbol}（期权）`;
+    return count > 1 ? `${symbol}（×${count}）` : symbol;
+  });
 
   return {
     marketValue,

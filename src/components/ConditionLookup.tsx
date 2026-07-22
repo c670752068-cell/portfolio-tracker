@@ -283,6 +283,12 @@ function SellWindow({
   const isCompleteLoss = pnl.coverage === 'complete' && hasKnownLoss;
   const isPartialLoss = pnl.coverage === 'partial' && hasKnownLoss;
   const isPartialGain = pnl.coverage === 'partial' && pnl.pnlPct !== null && pnl.pnlPct >= 0;
+  const hasUnknownOptionCost = pnl.unknownCostHoldings.some((label) => label.includes('（期权'));
+  const hasUnknownNonOptionCost = pnl.unknownCostHoldings.some((label) => !label.includes('（期权'));
+  const unknownCostGuidance = [
+    hasUnknownOptionCost ? '期权成本需用「补充期权详情」导入' : '',
+    hasUnknownNonOptionCost ? '请在持仓表补填买入价' : '',
+  ].filter(Boolean).join('；');
   const activeStep = !hasKnownLoss && pnl.pnlPct !== null
     ? steps.find((step) => pnl.pnlPct! >= step.gain_min_pct && pnl.pnlPct! < step.gain_max_pct)
     : undefined;
@@ -308,7 +314,7 @@ function SellWindow({
             </>}
         </div>
         {pnl.coverage !== 'complete' && <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
-          {pnl.unknownCostHoldings.length} 个持仓成本未知（期权成本需用「补充期权详情」导入），未计入本次盈亏：{pnl.unknownCostHoldings.join('、')}
+          {pnl.unknownCostHoldings.length} 个持仓成本未知（{unknownCostGuidance}），未计入本次盈亏：{pnl.unknownCostHoldings.join('、')}
         </p>}
       </div>
       {status.state !== 'none' && (
