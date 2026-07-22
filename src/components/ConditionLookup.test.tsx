@@ -246,6 +246,12 @@ describe('ConditionLookup', () => {
     expect(html).toContain('触发依据：知足常乐');
     expect(html).toContain('自基准日 +18.00% vs QQQ +20.00%');
     expect(html).toContain('该判定来自量化系统的相对强弱口径（自反弹基准日涨幅 vs QQQ），与你的买入成本无关；是否盈利请看下方「本族当前盈亏」。');
+    expect(html).toContain('原始判定数据');
+    expect(html).toContain('&quot;trigger&quot;: &quot;知足常乐&quot;');
+    expect(html).toContain('&quot;detail&quot;: &quot;自基准日 +18.00% vs QQQ +20.00%&quot;');
+    expect(html).toContain('&quot;shadow&quot;: true');
+    expect(html).toContain('&quot;state&quot;: &quot;observation&quot;');
+    expect(html).toContain('用于核对量化系统口径；若这里显示的族数与你的预期不符，请把本块内容反馈给量化系统维护方。');
     expect(html).toContain('5日涨幅过热 2026-07-15');
     expect(html).toContain('只提醒不下单；由你在券商 App 手动执行。');
   });

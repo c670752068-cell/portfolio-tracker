@@ -263,12 +263,14 @@ function SellWindow({
   pnl,
   displayCurrency,
   rates,
+  audit,
 }: {
   item: QuantSellFamily;
   status: ResolvedSellStatus;
   pnl: FamilyPnl;
   displayCurrency: DisplayCurrency;
   rates: ExchangeRates;
+  audit: Record<string, unknown>;
 }) {
   const repairText = item.repair.window_open
     ? '修复完成，可开始分批减仓：优先减期权与两三倍杠杆，不要一次性减完'
@@ -346,6 +348,11 @@ function SellWindow({
         <div className="font-semibold">近期卖出信号</div>
         {item.recent_signals.length === 0 ? <p className="mt-1 text-slate-500">最近没有触发 sell 向信号。</p> : <ul className="mt-1 space-y-1 text-slate-600 dark:text-slate-300">{item.recent_signals.map((signal) => <li key={`${signal.name}-${signal.date}`}>{signal.label} {signal.date}</li>)}</ul>}
       </div>
+      <details className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <summary className="cursor-pointer font-semibold">原始判定数据</summary>
+        <pre className="mt-3 max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded bg-slate-100 p-3 text-xs dark:bg-slate-900">{JSON.stringify(audit, null, 2)}</pre>
+        <p className="mt-2 text-xs text-slate-500">用于核对量化系统口径；若这里显示的族数与你的预期不符，请把本块内容反馈给量化系统维护方。</p>
+      </details>
       <p className="text-xs font-medium text-amber-700 dark:text-amber-300">只提醒不下单；由你在券商 App 手动执行。</p>
     </div>
   );
@@ -377,6 +384,14 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
   const familyPnl = sellFamily
     ? computeFamilyPnl(holdings, sellFamily.family, sellFamily.held_symbols, snapshot?.holding_costs || {})
     : null;
+  const sellAudit = sellFamily ? {
+    sell_ready: snapshot?.summary?.sell_ready.find((item) => item.symbol === sellFamily.family) ?? null,
+    family: sellFamily.family,
+    held_symbols: sellFamily.held_symbols,
+    classified_symbols: sellOptions
+      .map((item) => ({ symbol: item.symbol, state: resolveSellStatus(snapshot, item.symbol).state }))
+      .filter((item) => item.state !== 'none'),
+  } : {};
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
   const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
@@ -474,7 +489,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
             {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}
             {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{sellStatusLabel(item.symbol, item.label)}</option>)}
           </select>
-          {!snapshot.sell ? <p className="mt-3 text-sm text-slate-500">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily || !familyPnl ? <p className="mt-3 text-sm text-slate-500">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} status={selectedSellStatus} pnl={familyPnl} displayCurrency={displayCurrency} rates={rates} />}
+          {!snapshot.sell ? <p className="mt-3 text-sm text-slate-500">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily || !familyPnl ? <p className="mt-3 text-sm text-slate-500">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} status={selectedSellStatus} pnl={familyPnl} displayCurrency={displayCurrency} rates={rates} audit={sellAudit} />}
         </div>
       )}
     </section>
