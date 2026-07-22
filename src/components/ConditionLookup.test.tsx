@@ -285,7 +285,45 @@ describe('ConditionLookup', () => {
     expect(html).toContain('成本 $1,000.00');
     expect(html).toContain('浮盈亏 -$200.00（-20.00%）');
     expect(html).toContain('当前为浮亏 −20.00%，止盈阶梯（最低档 +5.00%）尚未适用');
+    expect(html).not.toContain('仅含已知成本部分');
+    expect(html).not.toContain('止盈阶梯参考请以券商实际成本为准');
     expect(html).not.toContain('data-active="true"');
+  });
+
+  it('qualifies partial family pnl and lists option holdings with unknown costs', () => {
+    const partialHoldings = [
+      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 80 },
+      {
+        id: 'msft-call-unknown', symbol: 'MSFT', name: 'MSFT Call',
+        shares: 1, buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
+        sector: '科技', currency: 'USD' as const, assetType: 'option' as const,
+        broker: 'FUTU',
+        option: {
+          underlying: 'MSFT', optionType: 'call' as const, strike: 500,
+          expiration: '2028-01-21', contractMultiplier: 100,
+          delta: 0.4, theta: null, gamma: null, vega: null,
+          impliedVolatility: null, underlyingPrice: 400,
+        },
+      },
+    ];
+    const snapshot = {
+      ...quantAnalysisFixture,
+      holding_costs: {
+        ...quantAnalysisFixture.holding_costs,
+        MSFT: {
+          weighted_average_cost: 100, currency: 'USD' as const,
+          coverage: 'complete' as const, auto_fill_allowed: true,
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={partialHoldings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('仅含已知成本部分');
+    expect(html).toContain('1 个持仓成本未知（期权成本需用「补充期权详情」导入），未计入本次盈亏：MSFT（期权）');
+    expect(html).toContain('已知成本部分为浮亏 −20.00%（另有 1 个持仓成本未知）。止盈阶梯参考请以券商实际成本为准。');
+    expect(html).not.toContain('当前为浮亏 −20.00%，止盈阶梯（最低档 +5.00%）尚未适用');
   });
 
   it('highlights the matching profit ladder band for a profitable family', () => {
@@ -319,16 +357,17 @@ describe('ConditionLookup', () => {
     expect(html).toContain('盈利 20.00%–30.00%：减总仓 3.00%');
   });
 
-  it('warns about missing family costs without showing a misleading percentage', () => {
+  it('shows only market value and unknown cost when family costs are unavailable', () => {
     const missingCostHoldings = [{ ...holdings[0], shares: 10, buyPrice: 0, currentPrice: 80 }];
     const snapshot = { ...quantAnalysisFixture, holding_costs: {} };
     const html = renderToStaticMarkup(
       <ConditionLookup snapshot={snapshot} holdings={missingCostHoldings} initialSymbol="MSFT" />,
     );
 
-    expect(html).toContain('成本数据不完整，盈亏仅供参考');
-    expect(html).toContain('浮盈亏 暂无');
-    expect(html).not.toContain('浮盈亏 暂无（');
+    expect(html).toContain('市值 $800.00');
+    expect(html).toContain('成本未知');
+    expect(html).not.toContain('浮盈亏');
+    expect(html).not.toMatch(/成本未知[^<]*%/);
   });
 
 });

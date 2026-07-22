@@ -8,6 +8,7 @@ export interface FamilyPnl {
   pnl: number;
   pnlPct: number | null;
   coverage: FamilyPnlCoverage;
+  unknownCostHoldings: string[];
 }
 
 function normalize(value: string): string {
@@ -64,12 +65,16 @@ export function computeFamilyPnl(
   let costBasis = 0;
   let costedMarketValue = 0;
   let knownCosts = 0;
+  const unknownCostHoldings: string[] = [];
 
   for (const holding of matched) {
     const marketValueForHolding = marketValueFor(holding);
     marketValue += marketValueForHolding;
     const cost = costBasisFor(holding, holdingCosts);
-    if (cost === null) continue;
+    if (cost === null) {
+      unknownCostHoldings.push(`${normalize(holding.symbol)}${holding.assetType === 'option' ? '（期权）' : ''}`);
+      continue;
+    }
     knownCosts += 1;
     costBasis += cost;
     costedMarketValue += marketValueForHolding;
@@ -88,5 +93,6 @@ export function computeFamilyPnl(
     pnl,
     pnlPct: knownCosts > 0 && costBasis > 0 ? (pnl / costBasis) * 100 : null,
     coverage,
+    unknownCostHoldings,
   };
 }

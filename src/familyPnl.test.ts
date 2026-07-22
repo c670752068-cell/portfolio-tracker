@@ -40,6 +40,7 @@ describe('computeFamilyPnl', () => {
 
     expect(result.costBasis).toBeCloseTo(2_031.5, 5);
     expect(result.coverage).toBe('partial');
+    expect(result.unknownCostHoldings).toEqual(['NVDA（期权）']);
     expect(result.pnlPct).toBeCloseTo(((2_100.2 - 2_031.5) / 2_031.5) * 100, 5);
   });
 
@@ -50,6 +51,7 @@ describe('computeFamilyPnl', () => {
       pnl: -200,
       pnlPct: -20,
       coverage: 'complete',
+      unknownCostHoldings: [],
     });
   });
 
@@ -77,6 +79,7 @@ describe('computeFamilyPnl', () => {
       pnl: 200,
       pnlPct: 50,
       coverage: 'complete',
+      unknownCostHoldings: [],
     });
   });
 
@@ -104,6 +107,7 @@ describe('computeFamilyPnl', () => {
       pnl: 100,
       pnlPct: 20,
       coverage: 'complete',
+      unknownCostHoldings: [],
     });
   });
 
@@ -119,6 +123,7 @@ describe('computeFamilyPnl', () => {
       pnl: 100,
       pnlPct: 20,
       coverage: 'partial',
+      unknownCostHoldings: ['MSFT'],
     });
   });
 
@@ -134,6 +139,7 @@ describe('computeFamilyPnl', () => {
       pnl: 0,
       pnlPct: null,
       coverage: 'unavailable',
+      unknownCostHoldings: ['MSFT'],
     });
   });
 });

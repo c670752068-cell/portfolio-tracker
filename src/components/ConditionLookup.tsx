@@ -279,25 +279,31 @@ function SellWindow({
       : '修复期状态暂不可用，当前不生成卖出动作';
   const steps = item.playbook.sell_steps;
   const firstStep = steps[0];
-  const isLoss = pnl.pnlPct !== null && pnl.pnlPct < 0;
-  const activeStep = !isLoss && pnl.pnlPct !== null
+  const hasKnownLoss = pnl.pnlPct !== null && pnl.pnlPct < 0;
+  const isCompleteLoss = pnl.coverage === 'complete' && hasKnownLoss;
+  const isPartialLoss = pnl.coverage === 'partial' && hasKnownLoss;
+  const activeStep = !hasKnownLoss && pnl.pnlPct !== null
     ? steps.find((step) => pnl.pnlPct! >= step.gain_min_pct && pnl.pnlPct! < step.gain_max_pct)
     : undefined;
-  const belowFirst = !isLoss && pnl.pnlPct !== null && firstStep && pnl.pnlPct < firstStep.gain_min_pct;
+  const belowFirst = !hasKnownLoss && pnl.pnlPct !== null && firstStep && pnl.pnlPct < firstStep.gain_min_pct;
   return (
     <div className="mt-3 space-y-3 text-sm">
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <div className="font-semibold">本族当前盈亏</div>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           <div>市值 {formatDisplayMoney(pnl.marketValue, displayCurrency, rates)}</div>
-          <div>成本 {pnl.coverage === 'unavailable' ? '暂无' : formatDisplayMoney(pnl.costBasis, displayCurrency, rates)}</div>
-          <div className={pnl.pnlPct === null ? 'text-slate-500' : pnl.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-            浮盈亏 {pnl.pnlPct === null
-              ? '暂无'
-              : `${formatDisplayMoney(pnl.pnl, displayCurrency, rates)}（${pnl.pnlPct >= 0 ? '+' : '-'}${Math.abs(pnl.pnlPct).toFixed(2)}%）`}
-          </div>
+          {pnl.coverage === 'unavailable'
+            ? <div className="text-slate-500">成本未知</div>
+            : <>
+              <div>成本 {formatDisplayMoney(pnl.costBasis, displayCurrency, rates)}</div>
+              <div className={pnl.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                浮盈亏 {formatDisplayMoney(pnl.pnl, displayCurrency, rates)}（{pnl.pnlPct! >= 0 ? '+' : '-'}{Math.abs(pnl.pnlPct!).toFixed(2)}%{pnl.coverage === 'partial' ? ' · 仅含已知成本部分' : ''}）
+              </div>
+            </>}
         </div>
-        {pnl.coverage !== 'complete' && <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">成本数据不完整，盈亏仅供参考</p>}
+        {pnl.coverage !== 'complete' && <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+          {pnl.unknownCostHoldings.length} 个持仓成本未知（期权成本需用「补充期权详情」导入），未计入本次盈亏：{pnl.unknownCostHoldings.join('、')}
+        </p>}
       </div>
       {status.state !== 'none' && (
         <div className={`rounded-lg border p-3 ${status.state === 'window_open' ? 'border-orange-300 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900'}`}>
@@ -330,11 +336,12 @@ function SellWindow({
       </div>
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <div className="font-semibold">止盈阶梯参考</div>
-        {isLoss && firstStep && <p className="mt-2 rounded-lg bg-rose-50 p-3 font-medium text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">当前为浮亏 {signedPct(pnl.pnlPct!)}，止盈阶梯（最低档 +{firstStep.gain_min_pct.toFixed(2)}%）尚未适用。下方阶梯仅作参考，不构成减仓提示。</p>}
+        {isCompleteLoss && firstStep && <p className="mt-2 rounded-lg bg-rose-50 p-3 font-medium text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">当前为浮亏 {signedPct(pnl.pnlPct!)}，止盈阶梯（最低档 +{firstStep.gain_min_pct.toFixed(2)}%）尚未适用。下方阶梯仅作参考，不构成减仓提示。</p>}
+        {isPartialLoss && <p className="mt-2 rounded-lg bg-amber-50 p-3 font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-200">已知成本部分为浮亏 {signedPct(pnl.pnlPct!)}（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知）。止盈阶梯参考请以券商实际成本为准。</p>}
         {belowFirst && firstStep && <p className="mt-2 text-amber-700 dark:text-amber-300">距第一档 +{firstStep.gain_min_pct.toFixed(2)}% 还差 {(firstStep.gain_min_pct - pnl.pnlPct!).toFixed(2)} 点</p>}
         {!item.playbook.available ? <p className="mt-1 text-slate-500">该持仓族尚未配置止盈剧本。</p> : (
           <>
-            <ul className={`mt-2 space-y-1 text-slate-600 dark:text-slate-300 ${isLoss ? 'opacity-40 grayscale' : ''}`}>
+            <ul className={`mt-2 space-y-1 text-slate-600 dark:text-slate-300 ${isCompleteLoss ? 'opacity-40 grayscale' : ''}`}>
               {steps.map((step) => {
                 const active = activeStep === step;
                 return <li data-active={active ? 'true' : undefined} className={active ? 'rounded bg-emerald-100 px-2 py-1 font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : ''} key={`${step.gain_min_pct}-${step.gain_max_pct}`}>盈利 {step.gain_min_pct.toFixed(2)}%{step.gain_max_pct >= 999 ? '+' : `–${step.gain_max_pct.toFixed(2)}%`}：减总仓 {step.sell_position_pct.toFixed(2)}%</li>;
