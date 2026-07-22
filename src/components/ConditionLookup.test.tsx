@@ -320,10 +320,45 @@ describe('ConditionLookup', () => {
       <ConditionLookup snapshot={snapshot} holdings={partialHoldings} initialSymbol="MSFT" />,
     );
 
-    expect(html).toContain('仅含已知成本部分');
+    expect(html).toContain('其中已计成本 $800.00 · 未计成本 $200.00');
+    expect(html).toContain('基于已计成本部分 $800.00');
     expect(html).toContain('1 个持仓成本未知（期权成本需用「补充期权详情」导入），未计入本次盈亏：MSFT（期权）');
     expect(html).toContain('已知成本部分为浮亏 −20.00%（另有 1 个持仓成本未知）。止盈阶梯参考请以券商实际成本为准。');
     expect(html).not.toContain('当前为浮亏 −20.00%，止盈阶梯（最低档 +5.00%）尚未适用');
+  });
+
+  it('renders a reconcilable market-value split for partial family pnl', () => {
+    const partialHoldings = [
+      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 80 },
+      {
+        id: 'msft-call-uncosted', symbol: 'MSFT', name: 'MSFT Call',
+        shares: 1, buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
+        sector: '科技', currency: 'USD' as const, assetType: 'option' as const,
+        option: {
+          underlying: 'MSFT', optionType: 'call' as const, strike: 500,
+          expiration: '2028-01-21', contractMultiplier: 100,
+          delta: 0.4, theta: null, gamma: null, vega: null,
+          impliedVolatility: null, underlyingPrice: 400,
+        },
+      },
+    ];
+    const snapshot = {
+      ...quantAnalysisFixture,
+      holding_costs: {
+        ...quantAnalysisFixture.holding_costs,
+        MSFT: {
+          weighted_average_cost: 100, currency: 'USD' as const,
+          coverage: 'complete' as const, auto_fill_allowed: true,
+        },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={partialHoldings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('市值 $1,000.00');
+    expect(html).toContain('其中已计成本 $800.00 · 未计成本 $200.00');
+    expect(html).toContain('浮盈亏 -$200.00（-20.00% · 基于已计成本部分 $800.00）');
   });
 
   it('highlights the matching profit ladder band for a profitable family', () => {

@@ -4,6 +4,8 @@ export type FamilyPnlCoverage = 'complete' | 'partial' | 'unavailable';
 
 export interface FamilyPnl {
   marketValue: number;
+  costedMarketValue: number;
+  uncostedMarketValue: number;
   costBasis: number;
   pnl: number;
   pnlPct: number | null;
@@ -89,6 +91,8 @@ export function computeFamilyPnl(
 
   return {
     marketValue,
+    costedMarketValue,
+    uncostedMarketValue: marketValue - costedMarketValue,
     costBasis,
     pnl,
     pnlPct: knownCosts > 0 && costBasis > 0 ? (pnl / costBasis) * 100 : null,

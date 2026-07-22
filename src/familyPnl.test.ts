@@ -47,6 +47,8 @@ describe('computeFamilyPnl', () => {
   it('computes a complete losing family from current market value and cost', () => {
     expect(computeFamilyPnl([stock()], 'MSFT', ['MSFT'], {})).toEqual({
       marketValue: 800,
+      costedMarketValue: 800,
+      uncostedMarketValue: 0,
       costBasis: 1000,
       pnl: -200,
       pnlPct: -20,
@@ -75,6 +77,8 @@ describe('computeFamilyPnl', () => {
 
     expect(computeFamilyPnl([option], 'IGV', ['IGV'], costs)).toEqual({
       marketValue: 600,
+      costedMarketValue: 600,
+      uncostedMarketValue: 0,
       costBasis: 400,
       pnl: 200,
       pnlPct: 50,
@@ -103,6 +107,8 @@ describe('computeFamilyPnl', () => {
 
     expect(computeFamilyPnl([option], 'IGV', ['IGV'], costs)).toEqual({
       marketValue: 600,
+      costedMarketValue: 600,
+      uncostedMarketValue: 0,
       costBasis: 500,
       pnl: 100,
       pnlPct: 20,
@@ -119,12 +125,48 @@ describe('computeFamilyPnl', () => {
 
     expect(computeFamilyPnl(holdings, 'MSFT', ['MSFT'], {})).toEqual({
       marketValue: 1200,
+      costedMarketValue: 600,
+      uncostedMarketValue: 600,
       costBasis: 500,
       pnl: 100,
       pnlPct: 20,
       coverage: 'partial',
       unknownCostHoldings: ['MSFT'],
     });
+  });
+
+  it('reconciles partial family market value into costed and uncosted portions', () => {
+    const option = (id: string): Holding => stock({
+      id,
+      symbol: 'NVDA',
+      name: 'NVDA Call',
+      shares: 1,
+      buyPrice: 0,
+      currentPrice: 20,
+      marketValueOverride: 2_000,
+      assetType: 'option',
+      option: {
+        underlying: 'NVDA', optionType: 'call', strike: 260,
+        expiration: '2028-01-21', contractMultiplier: 100,
+        delta: 0.5, theta: null, gamma: null, vega: null,
+        impliedVolatility: null, underlyingPrice: 210,
+      },
+    });
+    const result = computeFamilyPnl([
+      stock({
+        id: 'nvda-stock', symbol: 'NVDA', name: 'NVDA', shares: 56,
+        buyPrice: 203.15, currentPrice: 11_500 / 56,
+      }),
+      option('nvda-call-1'),
+      option('nvda-call-2'),
+    ], 'NVDA', ['NVDA'], {});
+
+    expect(result.costedMarketValue).toBeCloseTo(11_500, 5);
+    expect(result.uncostedMarketValue).toBeCloseTo(4_000, 5);
+    expect(result.costedMarketValue + result.uncostedMarketValue).toBeCloseTo(result.marketValue, 5);
+    expect(result.pnl).toBeCloseTo(result.costedMarketValue - result.costBasis, 5);
+    expect(result.costBasis).toBeCloseTo(11_376.4, 5);
+    expect(result.pnl).toBeCloseTo(123.6, 5);
   });
 
   it('falls back to quant holding costs and omits a percentage when all costs are unavailable', () => {
@@ -135,6 +177,8 @@ describe('computeFamilyPnl', () => {
 
     expect(computeFamilyPnl([stock({ buyPrice: 0 })], 'MSFT', ['MSFT'], {})).toEqual({
       marketValue: 800,
+      costedMarketValue: 0,
+      uncostedMarketValue: 800,
       costBasis: 0,
       pnl: 0,
       pnlPct: null,

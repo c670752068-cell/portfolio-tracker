@@ -291,13 +291,18 @@ function SellWindow({
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <div className="font-semibold">本族当前盈亏</div>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
-          <div>市值 {formatDisplayMoney(pnl.marketValue, displayCurrency, rates)}</div>
+          <div>
+            <div>市值 {formatDisplayMoney(pnl.marketValue, displayCurrency, rates)}</div>
+            {pnl.coverage === 'partial' && <div className="mt-1 text-xs text-slate-500">
+              其中已计成本 {formatDisplayMoney(pnl.costedMarketValue, displayCurrency, rates)} · 未计成本 {formatDisplayMoney(pnl.uncostedMarketValue, displayCurrency, rates)}
+            </div>}
+          </div>
           {pnl.coverage === 'unavailable'
             ? <div className="text-slate-500">成本未知</div>
             : <>
               <div>成本 {formatDisplayMoney(pnl.costBasis, displayCurrency, rates)}</div>
               <div className={pnl.pnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                浮盈亏 {formatDisplayMoney(pnl.pnl, displayCurrency, rates)}（{pnl.pnlPct! >= 0 ? '+' : '-'}{Math.abs(pnl.pnlPct!).toFixed(2)}%{pnl.coverage === 'partial' ? ' · 仅含已知成本部分' : ''}）
+                浮盈亏 {formatDisplayMoney(pnl.pnl, displayCurrency, rates)}（{pnl.pnlPct! >= 0 ? '+' : '-'}{Math.abs(pnl.pnlPct!).toFixed(2)}%{pnl.coverage === 'partial' ? ` · 基于已计成本部分 ${formatDisplayMoney(pnl.costedMarketValue, displayCurrency, rates)}` : ''}）
               </div>
             </>}
         </div>
