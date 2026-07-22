@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { quantAnalysisFixture } from '../testFixtures/quantAnalysis';
+import type { QuantAnalysisSnapshot } from '../types';
 import { ConditionLookup } from './ConditionLookup';
 
 const holdings = [
@@ -242,6 +243,7 @@ describe('ConditionLookup', () => {
     expect(html).toContain('卖出窗口未开启：深跌修复期内，耐心持有（基准日 2026-03-30）');
     expect(html).toContain('建议至少减仓 50%');
     expect(html).toContain('市场亢奋·清仓杠杆品种或调仓 SGOV');
+    expect(html).toContain('止盈阶梯参考 · 剧本：个股');
     expect(html).toContain('（观察期，未正式生效）');
     expect(html).toContain('触发依据：知足常乐');
     expect(html).toContain('自基准日 +18.00% vs QQQ +20.00%');
@@ -251,6 +253,7 @@ describe('ConditionLookup', () => {
     expect(html).toContain('&quot;detail&quot;: &quot;自基准日 +18.00% vs QQQ +20.00%&quot;');
     expect(html).toContain('&quot;shadow&quot;: true');
     expect(html).toContain('&quot;state&quot;: &quot;observation&quot;');
+    expect(html).toContain('&quot;playbook_label&quot;: &quot;个股&quot;');
     expect(html).toContain('用于核对量化系统口径；若这里显示的族数与你的预期不符，请把本块内容反馈给量化系统维护方。');
     expect(html).toContain('5日涨幅过热 2026-07-15');
     expect(html).toContain('只提醒不下单；由你在券商 App 手动执行。');
@@ -291,6 +294,35 @@ describe('ConditionLookup', () => {
     expect(html).toContain('量化卖出模块当前为观察期，全部信号均未正式生效');
     expect(html).not.toContain('卖出窗口开启');
     expect(html).toContain('MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
+  });
+
+  it('shows an explicit fallback when the quant playbook has no label', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.sell!.symbols.MSFT.playbook.label = undefined;
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={holdings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('止盈阶梯参考 · 剧本：未标注');
+  });
+
+  it('discloses when a held symbol belongs to multiple families and shows the largest one', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    const base = structuredClone(snapshot.sell!.symbols.MSFT);
+    snapshot.sell!.symbols = {
+      SMALL: { ...structuredClone(base), family: 'SMALL', market_value: 1_000, held_symbols: ['SHARED'] },
+      LARGE: { ...structuredClone(base), family: 'LARGE', market_value: 5_000, held_symbols: ['SHARED'] },
+    };
+    snapshot.summary!.sell_ready = [{
+      symbol: 'LARGE', trigger: '知足常乐', detail: '量化系统原始依据', shadow: true,
+    }];
+    const sharedHoldings = [{ ...holdings[0], id: 'shared', symbol: 'SHARED' }];
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={sharedHoldings} initialSymbol="SHARED" />,
+    );
+
+    expect(html).toContain('该标的同时属于多个族，已按市值最大者展示');
+    expect(html).toContain('&quot;family&quot;: &quot;LARGE&quot;');
   });
 
   it('shows family loss and disables profit-taking ladder emphasis', () => {

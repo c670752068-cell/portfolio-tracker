@@ -5,7 +5,7 @@ import { formatDisplayMoney } from '../displayCurrency';
 import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
 import { opportunityStatusLabel } from '../opportunityPresentation';
 import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
-import { resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
+import { findSellFamily, resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
 import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview';
 
@@ -347,7 +347,7 @@ function SellWindow({
         </div>
       </div>
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-        <div className="font-semibold">止盈阶梯参考</div>
+        <div className="font-semibold">止盈阶梯参考 · 剧本：{item.playbook.label || '未标注'}</div>
         {isCompleteLoss && firstStep && <p className="mt-2 rounded-lg bg-rose-50 p-3 font-medium text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">当前为浮亏 {signedPct(pnl.pnlPct!)}，止盈阶梯（最低档 +{firstStep.gain_min_pct.toFixed(2)}%）尚未适用。下方阶梯仅作参考，不构成减仓提示。</p>}
         {isPartialLoss && <p className="mt-2 rounded-lg bg-amber-50 p-3 font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-200">已知成本部分为浮亏 {signedPct(pnl.pnlPct!)}（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知）。止盈阶梯参考请以券商实际成本为准。</p>}
         {isPartialGain && <p className="mt-2 rounded-lg bg-amber-50 p-3 font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-200">该档位基于已计成本部分（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知），实际盈利可能不同；减仓比例请以券商实际成本为准。</p>}
@@ -397,9 +397,8 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
   const selectedSellSymbol = sellOptions.some((item) => item.symbol === sellSymbol)
     ? sellSymbol
     : sellOptions[0]?.symbol || '';
-  const sellFamily = snapshot?.sell
-    ? Object.values(snapshot.sell.symbols).find((item) => item.family === selectedSellSymbol || item.held_symbols.includes(selectedSellSymbol))
-    : undefined;
+  const sellFamilyMatch = findSellFamily(snapshot, selectedSellSymbol);
+  const sellFamily = sellFamilyMatch?.family;
   const selectedSellStatus = resolveSellStatus(snapshot, selectedSellSymbol);
   const familyPnl = sellFamily
     ? computeFamilyPnl(holdings, sellFamily.family, sellFamily.held_symbols, snapshot?.holding_costs || {})
@@ -408,6 +407,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
     sell_ready: snapshot?.summary?.sell_ready.find((item) => item.symbol === sellFamily.family) ?? null,
     family: sellFamily.family,
     held_symbols: sellFamily.held_symbols,
+    playbook_label: sellFamily.playbook.label ?? null,
     classified_symbols: sellOptions
       .map((item) => ({ symbol: item.symbol, state: resolveSellStatus(snapshot, item.symbol).state }))
       .filter((item) => item.state !== 'none'),
@@ -510,6 +510,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
             {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}
             {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{sellStatusLabel(item.symbol, item.label)}</option>)}
           </select>
+          {sellFamilyMatch?.multipleHeldMatches && <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">该标的同时属于多个族，已按市值最大者展示</p>}
           {!snapshot.sell ? <p className="mt-3 text-sm text-slate-500">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily || !familyPnl ? <p className="mt-3 text-sm text-slate-500">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} status={selectedSellStatus} pnl={familyPnl} displayCurrency={displayCurrency} rates={rates} audit={sellAudit} />}
         </div>
       )}
