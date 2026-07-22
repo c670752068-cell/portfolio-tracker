@@ -129,8 +129,8 @@ describe('AlertRulesPanel forms', () => {
     expect(html).toContain('<select');
     expect(html).not.toContain('datalist');
     expect(html.match(/value="MSFU"/g)).toHaveLength(1);
-    expect(html).toContain('MSFU · $650.00 · FUTU / IBKR');
-    expect(html).toContain('MSFT · $500.00 · LONGPORT');
+    expect(html).toContain('MSFU · 市值 $650.00 · FUTU / IBKR');
+    expect(html).toContain('MSFT · 市值 $500.00 · LONGPORT');
     expect(html).not.toContain('SGOV');
   });
 

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ALERT_RULES_REFRESH_MS,
+  buildAlertHoldingOptions,
   deleteAlertRule,
   dispatchAlertRuleMutation,
   fetchAlertRules,
@@ -11,6 +12,7 @@ import {
   type AlertRule,
   type AlertRuleDraft,
 } from './alertRules';
+import type { Holding } from './types';
 
 const endpoint = 'http://example.test/api/portfolio/alert-rules';
 
@@ -29,6 +31,57 @@ const targetRule: AlertRule = {
 };
 
 afterEach(() => vi.unstubAllGlobals());
+
+function holding(symbol: string, overrides: Partial<Holding> = {}): Holding {
+  return {
+    id: `${symbol}-${overrides.id || 'row'}`,
+    symbol,
+    name: symbol,
+    shares: 2,
+    buyPrice: 10,
+    currentPrice: 20,
+    sector: '科技',
+    currency: 'USD',
+    assetType: 'stock',
+    broker: 'IBKR',
+    ...overrides,
+  };
+}
+
+describe('alert holding market-value labels', () => {
+  it('returns the broker-aggregated value as structured data and labels it as market value', () => {
+    const options = buildAlertHoldingOptions([
+      holding('NKE', { marketValueOverride: 200, broker: 'IBKR' }),
+      holding('NKE', { id: 'longport', marketValueOverride: 132, broker: 'LONGPORT' }),
+    ]);
+
+    expect(options).toEqual([{
+      symbol: 'NKE',
+      marketValue: 332,
+      brokers: ['IBKR', 'LONGPORT'],
+      label: 'NKE · 市值 $332.00 · IBKR / LONGPORT',
+    }]);
+  });
+
+  it('includes option premium value with its contract multiplier', () => {
+    const [option] = buildAlertHoldingOptions([
+      holding('IGV 270115C80', {
+        assetType: 'option',
+        shares: 2,
+        currentPrice: 18.3,
+        broker: 'FUTU',
+        option: {
+          underlying: 'IGV', optionType: 'call', strike: 80, expiration: '2027-01-15',
+          contractMultiplier: 100, delta: 0.79, theta: null, gamma: null, vega: null,
+          impliedVolatility: null, underlyingPrice: 94,
+        },
+      }),
+    ]);
+
+    expect(option.marketValue).toBe(3660);
+    expect(option.label).toBe('IGV · 市值 $3660.00 · FUTU');
+  });
+});
 
 describe('alert-rules server CRUD', () => {
   it('refreshes the shared banner state on the same 35-minute cadence', () => {

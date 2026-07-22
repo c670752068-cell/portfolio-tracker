@@ -9,6 +9,8 @@ export type AlertDirection = 'above' | 'below';
 
 export interface AlertHoldingOption {
   symbol: string;
+  marketValue: number;
+  brokers: string[];
   label: string;
 }
 
@@ -30,10 +32,15 @@ export function buildAlertHoldingOptions(holdings: Holding[]): AlertHoldingOptio
   }
   return [...grouped.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([symbol, item]) => ({
-      symbol,
-      label: `${symbol} · $${item.marketValue.toFixed(2)} · ${[...item.brokers].sort().join(' / ')}`,
-    }));
+    .map(([symbol, item]) => {
+      const brokers = [...item.brokers].sort();
+      return {
+        symbol,
+        marketValue: item.marketValue,
+        brokers,
+        label: `${symbol} · 市值 $${item.marketValue.toFixed(2)} · ${brokers.join(' / ')}`,
+      };
+    });
 }
 
 export interface AlertRuleDraft {
