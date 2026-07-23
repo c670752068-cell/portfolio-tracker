@@ -15,6 +15,10 @@ const quantProps = {
   quantGatewayAvailable: false,
   quantTokenConfigured: false,
   onRefreshQuant: () => undefined,
+  oneTapRefreshState: { phase: 'idle' as const, message: '' },
+  canOneTapRefresh: false,
+  oneTapCooldownSeconds: 0,
+  onOneTapRefresh: () => undefined,
 };
 
 describe('Summary cards', () => {
@@ -108,8 +112,33 @@ describe('Summary cards', () => {
     );
 
     expect(pagesHtml).toContain('量化同步仅在 VPS 入口可用');
+    expect(pagesHtml).toContain('一键刷新仅在 VPS 入口可用');
+    expect(pagesHtml).toContain('disabled');
     expect(staleHtml).toContain('数据截至 2026-07-15（IBKR 快照日）');
     expect(staleHtml).toContain('数据陈旧');
+  });
+
+  it('shows the unified refresh progress, cooldown, and push explanation', () => {
+    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD"
+        onDisplayCurrencyChange={() => undefined} valueHistory={[]} rateError=""
+        quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        {...quantProps}
+        quantGatewayAvailable
+        quantSyncEnabled
+        quantTokenConfigured
+        oneTapRefreshState={{ phase: 'waiting', message: '正在计算（约 1 分钟）…' }}
+        oneTapCooldownSeconds={42}
+      />,
+    );
+
+    expect(html).toContain('一键刷新全部');
+    expect(html).toContain('正在计算（约 1 分钟）…');
+    expect(html).toContain('42 秒后可再次刷新');
+    expect(html).toContain('刷新会让量化系统重新检查一次，若有符合条件的标的会照常推送到手机');
   });
 
   it('describes the 35-minute regular-session quote schedule', () => {

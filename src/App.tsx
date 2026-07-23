@@ -20,7 +20,15 @@ import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDeta
 import { dedupeImportIssues } from './importIssues';
 import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
 import { applyQuantHoldingCosts, applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions, type QuantMappedPortfolio } from './quantSync';
-import { getServerAlertRulesUrl, getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, getServerQuoteProxyUrl, hasServerGateway } from './runtimeConfig';
+import {
+  ONE_TAP_REFRESH_COOLDOWN_MS,
+  oneTapRefreshCooldownSeconds,
+  readOneTapRefresh,
+  requestOneTapRefresh,
+  runOneTapRefresh,
+  type OneTapRefreshState,
+} from './oneTapRefresh';
+import { getServerAlertRulesUrl, getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, getServerQuoteProxyUrl, getServerRefreshRequestUrl, hasServerGateway } from './runtimeConfig';
 import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState, QuantAnalysisSnapshot } from './types';
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
@@ -119,6 +127,8 @@ export default function App() {
   const [quantAnalysisStatus, setQuantAnalysisStatus] = useState<QuantAnalysisStatus>({ loading: false, error: '', stale: false });
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertRulesStatus, setAlertRulesStatus] = useState<AlertRulesStatus>({ loading: false, error: '' });
+  const [oneTapRefreshState, setOneTapRefreshState] = useState<OneTapRefreshState>({ phase: 'idle', message: '' });
+  const [oneTapCooldownSeconds, setOneTapCooldownSeconds] = useState(0);
   const [lastImport, setLastImport] = useState<ImportNotice | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [conditionTarget, setConditionTarget] = useState<{ symbol: string; side: OpportunitySide } | null>(null);
@@ -130,6 +140,8 @@ export default function App() {
   const quantAutoSyncKeyRef = useRef('');
   const quantAnalysisAutoLoadKeyRef = useRef('');
   const alertRulesAutoLoadKeyRef = useRef('');
+  const oneTapRequestedAtRef = useRef(0);
+  const oneTapRefreshInFlightRef = useRef(false);
 
   useEffect(() => {
     savePortfolio(portfolio);
@@ -286,6 +298,43 @@ export default function App() {
       setAlertRulesStatus({ loading: false, error: error instanceof Error ? error.message : String(error) });
     }
   }, []);
+
+  const refreshAllExisting = useCallback(async () => {
+    await Promise.allSettled([
+      refreshQuotes('manual'),
+      refreshQuantPositions(),
+      refreshQuantAnalysis(),
+    ]);
+  }, [refreshQuantAnalysis, refreshQuantPositions, refreshQuotes]);
+
+  const refreshEverything = useCallback(async () => {
+    const url = getServerRefreshRequestUrl();
+    const token = settings.quantSyncToken.trim();
+    if (!url || !token || oneTapRefreshInFlightRef.current || oneTapCooldownSeconds > 0) return;
+
+    oneTapRefreshInFlightRef.current = true;
+    oneTapRequestedAtRef.current = Date.now();
+    setOneTapCooldownSeconds(Math.ceil(ONE_TAP_REFRESH_COOLDOWN_MS / 1000));
+    try {
+      await runOneTapRefresh({
+        request: () => requestOneTapRefresh(url, token),
+        refreshExisting: refreshAllExisting,
+        read: () => readOneTapRefresh(url, token),
+        onState: setOneTapRefreshState,
+      });
+    } finally {
+      oneTapRefreshInFlightRef.current = false;
+    }
+  }, [oneTapCooldownSeconds, refreshAllExisting, settings.quantSyncToken]);
+
+  useEffect(() => {
+    if (oneTapCooldownSeconds <= 0) return undefined;
+    const tick = () => {
+      setOneTapCooldownSeconds(oneTapRefreshCooldownSeconds(Date.now(), oneTapRequestedAtRef.current));
+    };
+    const timer = window.setInterval(tick, 1_000);
+    return () => window.clearInterval(timer);
+  }, [oneTapCooldownSeconds]);
 
   useEffect(() => {
     const url = getServerPortfolioPositionsUrl();
@@ -520,8 +569,12 @@ export default function App() {
             quantStatus={quantStatus}
             quantSyncEnabled={hasServerGateway()}
             quantGatewayAvailable={hasServerGateway()}
-            quantTokenConfigured={true}
+            quantTokenConfigured={Boolean(settings.quantSyncToken.trim())}
             onRefreshQuant={refreshQuantPositions}
+            oneTapRefreshState={oneTapRefreshState}
+            canOneTapRefresh={hasServerGateway() && Boolean(settings.quantSyncToken.trim())}
+            oneTapCooldownSeconds={oneTapCooldownSeconds}
+            onOneTapRefresh={refreshEverything}
           />
           {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} onUndo={undoLastImport} />}
           <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">

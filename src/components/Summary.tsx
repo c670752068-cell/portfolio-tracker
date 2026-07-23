@@ -4,6 +4,7 @@ import { formatDisplayMoney } from '../displayCurrency';
 import { convertFromUsd } from '../displayCurrency';
 import { Line, LineChart, ResponsiveContainer } from 'recharts';
 import type { ValuePoint } from '../valueHistory';
+import type { OneTapRefreshState } from '../oneTapRefresh';
 
 interface SummaryProps {
   metrics: PortfolioMetrics;
@@ -34,9 +35,13 @@ interface SummaryProps {
   quantGatewayAvailable: boolean;
   quantTokenConfigured: boolean;
   onRefreshQuant: () => void;
+  oneTapRefreshState: OneTapRefreshState;
+  canOneTapRefresh: boolean;
+  oneTapCooldownSeconds: number;
+  onOneTapRefresh: () => void;
 }
 
-export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, dayChangeStatusText, canRefreshQuotes, onRefreshQuotes, exposureTargetPct, quantStatus, quantSyncEnabled, quantGatewayAvailable, quantTokenConfigured, onRefreshQuant }: SummaryProps) {
+export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, dayChangeStatusText, canRefreshQuotes, onRefreshQuotes, exposureTargetPct, quantStatus, quantSyncEnabled, quantGatewayAvailable, quantTokenConfigured, onRefreshQuant, oneTapRefreshState, canOneTapRefresh, oneTapCooldownSeconds, onOneTapRefresh }: SummaryProps) {
   const dayClass =
     metrics.dayChange > 0 ? 'text-emerald-600' : metrics.dayChange < 0 ? 'text-rose-600' : 'text-slate-500';
   const trendPoints = valueHistory.slice(-30).map((point) => ({
@@ -50,8 +55,52 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
     : 0;
   const trendClass = trendPct > 0 ? 'text-emerald-600' : trendPct < 0 ? 'text-rose-600' : 'text-slate-500';
   const trendColor = trendPct < 0 ? '#e11d48' : '#059669';
+  const oneTapBusy = oneTapRefreshState.phase === 'requested'
+    || oneTapRefreshState.phase === 'throttled'
+    || oneTapRefreshState.phase === 'waiting';
+  const oneTapUnavailableReason = !quantGatewayAvailable
+    ? '一键刷新仅在 VPS 入口可用'
+    : !quantSyncEnabled
+      ? '量化同步未启用'
+      : !quantTokenConfigured
+        ? '请先在设置填写同步 Token'
+        : '';
+  const completedTime = oneTapRefreshState.completedAt
+    ? new Date(oneTapRefreshState.completedAt).toLocaleTimeString('zh-CN', { hour12: false })
+    : '';
+  const oneTapButtonLabel = oneTapBusy
+    ? oneTapRefreshState.message
+    : oneTapRefreshState.phase === 'done' && completedTime
+      ? `已更新（${completedTime}）`
+      : '一键刷新全部';
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="col-span-2 rounded-xl border border-indigo-300 bg-indigo-50 p-3 shadow-sm dark:border-indigo-700 dark:bg-indigo-950/30 sm:col-span-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">一键刷新全部</div>
+            <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+              {oneTapUnavailableReason || oneTapRefreshState.message || '重新读取行情、持仓和分析，并请求量化系统立即重算。'}
+            </div>
+            {oneTapCooldownSeconds > 0 && (
+              <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                {oneTapCooldownSeconds} 秒后可再次刷新
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onOneTapRefresh}
+            disabled={!canOneTapRefresh || oneTapBusy || oneTapCooldownSeconds > 0}
+            className="min-w-40 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+          >
+            {oneTapButtonLabel}
+          </button>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+          刷新会让量化系统重新检查一次，若有符合条件的标的会照常推送到手机
+        </div>
+      </div>
       <Card label={`总资产（${displayCurrency}）`} value={formatDisplayMoney(metrics.totalValue, displayCurrency, rates)}>
         {trendPoints.length >= 2 && (
           <div className="mt-1">
@@ -138,7 +187,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
           type="button"
           onClick={onRefreshQuotes}
           disabled={quoteStatus.loading || !canRefreshQuotes}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="rounded-md bg-slate-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-500 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {quoteStatus.loading ? '刷新中' : '手动刷新'}
         </button>
@@ -167,7 +216,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
           type="button"
           onClick={onRefreshQuant}
           disabled={quantStatus.loading || !quantGatewayAvailable || !quantSyncEnabled || !quantTokenConfigured}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="rounded-md bg-slate-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-500 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {quantStatus.loading ? '同步中' : '从量化系统同步'}
         </button>

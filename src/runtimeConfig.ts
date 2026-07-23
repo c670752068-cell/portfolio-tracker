@@ -47,6 +47,10 @@ export function getServerAlertRulesUrl(): string {
   return apiUrl('/api/portfolio/alert-rules');
 }
 
+export function getServerRefreshRequestUrl(): string {
+  return apiUrl('/api/refresh-request');
+}
+
 export function hasServerGateway(): boolean {
   return Boolean(runtimeApiBaseUrl());
 }
