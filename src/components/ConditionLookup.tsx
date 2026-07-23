@@ -506,7 +506,13 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
   } : {};
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
+  const selectedHoldingQuotePrice = depthQuotePrice(holdings, new Map(), selectedSymbol);
   const selectedDepthQuotePrice = depthQuotePrice(holdings, monitoredQuotes, selectedSymbol);
+  const selectedDepthPriceSource = selectedHoldingQuotePrice !== null
+    ? 'holding'
+    : selectedDepthQuotePrice !== null
+      ? 'monitored'
+      : 'unavailable';
   const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
     const status = resolveSellStatus(snapshot, optionSymbol);
     if (status.state === 'window_open') return `🟠 ${fallbackLabel} · 卖出窗口开启`;
@@ -571,6 +577,10 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
               symbol={result.symbol}
               history={snapshot.pe_history ?? null}
               settings={valuationSettings}
+              currentPrice={selectedDepthQuotePrice}
+              priceSource={selectedDepthPriceSource}
+              displayCurrency={displayCurrency}
+              rates={rates}
             />
             <h3 className="text-lg font-semibold">{result.symbol} 买入条件</h3>
             {!result.analysis.available ? (

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { computeIndexAnchor, computeStock5yMean } from '../peBasis';
 import { PeRateLimitError, resolvePeSnapshot, type PeHistoryPayload, type PeSnapshot } from '../peData';
-import type { AppSettings } from '../types';
+import { formatDisplayMoney } from '../displayCurrency';
+import type { AppSettings, DisplayCurrency, ExchangeRates } from '../types';
 import { resolveValuationBasis } from '../valuationBasis';
 
 export type ValuationSettings = Pick<
@@ -19,7 +20,22 @@ interface ValuationCardProps {
   history: PeHistoryPayload | null;
   settings: ValuationSettings;
   alphaSnapshot?: PeSnapshot | null;
+  currentPrice?: number | null;
+  priceSource?: 'holding' | 'monitored' | 'unavailable';
+  displayCurrency?: DisplayCurrency;
+  rates?: ExchangeRates;
 }
+
+const USD_RATES: ExchangeRates = {
+  USD: 1,
+  CNY: 1,
+  HKD: 1,
+  JPY: 1,
+  EUR: 1,
+  GBP: 1,
+  updatedAt: null,
+  source: 'fallback',
+};
 
 const ZONE_VIEW = {
   at_anchor: {
@@ -84,6 +100,8 @@ function StockValuation({
   series,
   seriesStart,
   source,
+  priceText,
+  priceSource,
 }: {
   symbol: string;
   metric: PeHistoryPayload['metric'] | null;
@@ -91,6 +109,8 @@ function StockValuation({
   series: PeHistoryPayload['symbols'][string]['series'];
   seriesStart: string;
   source: string;
+  priceText: string;
+  priceSource: ValuationCardProps['priceSource'];
 }) {
   const result = computeStock5yMean(series, current);
   const markerPosition = result.deviationPct === null
@@ -98,7 +118,9 @@ function StockValuation({
     : Math.max(0, Math.min(100, 50 + result.deviationPct));
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900">
-      <div className="font-semibold">{symbol} · {metricLabel(metric)} {peText(result.current)}</div>
+      <div className="font-semibold" data-price-source={priceSource}>
+        {symbol} · {priceText} · {metricLabel(metric)} {peText(result.current)}
+      </div>
       <div className="mt-2 text-sm">
         5 年均值 {peText(result.mean5y)} · {relativeMeanText(result.deviationPct)}
       </div>
@@ -136,6 +158,8 @@ function IndexValuation({
   series,
   source,
   settings,
+  priceText,
+  priceSource,
 }: {
   symbol: string;
   indexKey: string;
@@ -145,6 +169,8 @@ function IndexValuation({
   series: PeHistoryPayload['symbols'][string]['series'];
   source: string;
   settings: ValuationSettings;
+  priceText: string;
+  priceSource: ValuationCardProps['priceSource'];
 }) {
   const manualAnchor = (settings.valuationManualAnchors as Record<string, number | undefined>)[indexKey];
   const result = computeIndexAnchor(
@@ -165,8 +191,8 @@ function IndexValuation({
   return (
     <div data-zone={result.zone} className={`rounded-lg border p-3 ${view.panel}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-semibold">
-          {symbol} · 基准指数 {indexKey} · {metricLabel(metric)} {peText(result.current)}
+        <div className="font-semibold" data-price-source={priceSource}>
+          {symbol} · {priceText} · 基准指数 {indexKey} · {metricLabel(metric)} {peText(result.current)}
         </div>
         <div className="flex items-center gap-2">
           {approximate && <span className="rounded-full bg-indigo-100 px-2 py-1 text-xs text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">近似基准</span>}
@@ -191,6 +217,10 @@ export function ValuationCard({
   history,
   settings,
   alphaSnapshot = null,
+  currentPrice = null,
+  priceSource = 'unavailable',
+  displayCurrency = 'USD',
+  rates = USD_RATES,
 }: ValuationCardProps) {
   const basis = useMemo(() => resolveValuationBasis(symbol), [symbol]);
   const quantEntry = basis ? history?.symbols[basis.peSymbol] : undefined;
@@ -242,6 +272,9 @@ export function ValuationCard({
       : null;
   const series = quantEntry?.series ?? [];
   const source = sourceText(history && quantEntry ? history : null, quantEntry?.source, fallback);
+  const priceText = currentPrice !== null && Number.isFinite(currentPrice) && currentPrice > 0
+    ? formatDisplayMoney(currentPrice, displayCurrency, rates)
+    : '股价暂无';
 
   return (
     <div className="mb-4">
@@ -254,6 +287,8 @@ export function ValuationCard({
           series={series}
           seriesStart={quantEntry?.series_start ?? ''}
           source={source}
+          priceText={priceText}
+          priceSource={priceSource}
         />
       ) : (
         <IndexValuation
@@ -265,6 +300,8 @@ export function ValuationCard({
           series={series}
           source={source}
           settings={settings}
+          priceText={priceText}
+          priceSource={priceSource}
         />
       )}
       {fallbackError && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{fallbackError}</p>}

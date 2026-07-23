@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { PeHistoryPayload, PeSnapshot } from '../peData';
-import type { AppSettings, QuantAnalysisSnapshot } from '../types';
+import type { AppSettings, Holding, QuantAnalysisSnapshot } from '../types';
 import { quantAnalysisFixture } from '../testFixtures/quantAnalysis';
 import { ConditionLookup } from './ConditionLookup';
 import { ValuationCard } from './ValuationCard';
@@ -30,6 +30,17 @@ const settings: AppSettings = {
   valuationNearAnchorPct: 15,
 };
 
+const rates = {
+  USD: 1,
+  CNY: 6.7776,
+  HKD: 7.8386,
+  JPY: 155,
+  EUR: 0.92,
+  GBP: 0.79,
+  updatedAt: '2026-07-23T12:00:00Z',
+  source: 'live' as const,
+};
+
 function history(
   symbol: string,
   current: number,
@@ -56,6 +67,71 @@ function history(
 }
 
 describe('ValuationCard', () => {
+  it('shows the current holding quote beside the PE value', () => {
+    const html = renderToStaticMarkup(
+      <ValuationCard
+        symbol="GOOG"
+        history={history('GOOG', 20, [{ date: '2026-07-22', value: 20 }])}
+        settings={settings}
+        currentPrice={402.15}
+        priceSource="holding"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+
+    expect(html).toContain('GOOG');
+    expect(html).toContain('$402.15');
+    expect(html).toContain('TTM PE 20.00');
+    expect(html).toContain('data-price-source="holding"');
+  });
+
+  it('shows a monitored quote and converts it through the display-currency layer', () => {
+    const usdHtml = renderToStaticMarkup(
+      <ValuationCard
+        symbol="GOOG"
+        history={history('GOOG', 20, [{ date: '2026-07-22', value: 20 }])}
+        settings={settings}
+        currentPrice={100}
+        priceSource="monitored"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+    const cnyHtml = renderToStaticMarkup(
+      <ValuationCard
+        symbol="GOOG"
+        history={history('GOOG', 20, [{ date: '2026-07-22', value: 20 }])}
+        settings={settings}
+        currentPrice={100}
+        priceSource="monitored"
+        displayCurrency="CNY"
+        rates={rates}
+      />,
+    );
+
+    expect(usdHtml).toContain('$100.00');
+    expect(usdHtml).toContain('data-price-source="monitored"');
+    expect(cnyHtml).toContain('¥677.76');
+  });
+
+  it('shows 股价暂无 rather than zero when neither quote source has data', () => {
+    const html = renderToStaticMarkup(
+      <ValuationCard
+        symbol="GOOG"
+        history={history('GOOG', 20, [{ date: '2026-07-22', value: 20 }])}
+        settings={settings}
+        currentPrice={null}
+        priceSource="unavailable"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+
+    expect(html).toContain('股价暂无');
+    expect(html).not.toContain('$0.00');
+  });
+
   it('renders a stock five-year mean, deviation, metric, and source without mixing PE definitions', () => {
     const html = renderToStaticMarkup(
       <ValuationCard
@@ -70,7 +146,7 @@ describe('ValuationCard', () => {
       />,
     );
 
-    expect(html).toContain('GOOG · TTM PE 20.00');
+    expect(html).toContain('GOOG · 股价暂无 · TTM PE 20.00');
     expect(html).toContain('5 年均值 25.00');
     expect(html).toContain('当前低于均值 20.00%');
     expect(html).toContain('数据：量化系统（TTM PE）');
@@ -91,7 +167,7 @@ describe('ValuationCard', () => {
       />,
     );
 
-    expect(html).toContain('TQQQ · 基准指数 NDX · TTM PE 22.50');
+    expect(html).toContain('TQQQ · 股价暂无 · 基准指数 NDX · TTM PE 22.50');
     expect(html).toContain('锚点 21.60（2025-04-08）');
     expect(html).toContain('距锚点 +4.17%');
     expect(html).toContain('已进入锚点区');
@@ -164,6 +240,56 @@ describe('ConditionLookup valuation integration', () => {
     );
 
     expect(html).toContain('估值基准');
-    expect(html).toContain('AAPL · TTM PE 20.00');
+    expect(html).toContain('AAPL · 股价暂无 · TTM PE 20.00');
+  });
+
+  it('prefers a holding quote and otherwise passes the monitored quote to the valuation card', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.pe_history = history('AAPL', 20, [{ date: '2026-07-22', value: 20 }]);
+    const holdings: Holding[] = [{
+      id: 'aapl',
+      symbol: 'AAPL',
+      name: 'Apple',
+      shares: 1,
+      buyPrice: 190,
+      currentPrice: 201,
+      sector: '科技',
+      currency: 'USD' as const,
+      assetType: 'stock' as const,
+      quote: {
+        symbol: 'AAPL',
+        price: 202,
+        previousClose: 200,
+        change: 2,
+        changePercent: 1,
+        currency: 'USD',
+        timestamp: '2026-07-23T12:00:00Z',
+        source: 'proxy',
+      },
+    }];
+    const monitored = new Map([['AAPL', 199]]);
+
+    const holdingHtml = renderToStaticMarkup(
+      <ConditionLookup
+        snapshot={snapshot}
+        initialSymbol="AAPL"
+        holdings={holdings}
+        monitoredQuotes={monitored}
+        valuationSettings={settings}
+      />,
+    );
+    const monitoredHtml = renderToStaticMarkup(
+      <ConditionLookup
+        snapshot={snapshot}
+        initialSymbol="AAPL"
+        monitoredQuotes={monitored}
+        valuationSettings={settings}
+      />,
+    );
+
+    expect(holdingHtml).toContain('$202.00');
+    expect(holdingHtml).toContain('data-price-source="holding"');
+    expect(monitoredHtml).toContain('$199.00');
+    expect(monitoredHtml).toContain('data-price-source="monitored"');
   });
 });
