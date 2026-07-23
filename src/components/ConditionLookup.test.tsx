@@ -280,6 +280,58 @@ describe('ConditionLookup', () => {
     expect(html).not.toContain('当前行情为');
   });
 
+  it('shows a closed-market previous-close sentence without a session badge', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.depth_window = {
+      ...snapshot.symbols.AAPL.depth_window!,
+      current_price: null,
+      high_price: null,
+      threshold_price: null,
+      price_session: 'closed',
+    };
+    const closedHoldings = [{
+      ...holdings[0],
+      id: 'aapl-closed',
+      symbol: 'AAPL',
+      quote: {
+        symbol: 'AAPL',
+        price: 390.34,
+        previousClose: 397.75,
+        change: -7.41,
+        changePercent: -0.0186,
+        currency: 'USD' as const,
+        timestamp: '2026-07-25T14:00:00Z',
+        source: 'proxy' as const,
+        session: 'closed' as const,
+        priceTime: '2026-07-25T14:00:00Z',
+        regularMarketPrice: 390.34,
+      },
+    }];
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={closedHoldings} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('休市 · 上一交易日收盘价 $390.34');
+    expect(html).not.toContain('（休市');
+    expect(html).not.toContain('取价时段：休市');
+  });
+
+  it('states the overnight coverage limit instead of presenting a regular close as overnight', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.depth_window = {
+      ...snapshot.symbols.AAPL.depth_window!,
+      price_session: 'regular',
+      price_note: '夜盘价格暂无，使用上一正常时段收盘价',
+    };
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('夜盘价格暂无（数据源不覆盖）');
+  });
+
   it('prefers a holding quote over a monitored quote and returns null when both are missing', () => {
     const quotedHoldings = [{
       ...holdings[0],

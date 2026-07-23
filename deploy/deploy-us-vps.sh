@@ -34,6 +34,8 @@ scp deploy/runtime-config.us-vps.js "${SERVER}:${REMOTE_WEB}/runtime-config.js"
 scp deploy/aliyun-gateway.mjs "${SERVER}:${REMOTE_APP}/portfolio-gateway.mjs"
 scp deploy/refresh-request-route.mjs "${SERVER}:${REMOTE_APP}/refresh-request-route.mjs"
 scp deploy/alert-tracker.mjs "${SERVER}:${REMOTE_APP}/alert-tracker.mjs"
+scp deploy/market-session.mjs "${SERVER}:${REMOTE_APP}/market-session.mjs"
+scp deploy/yahoo-quote.mjs "${SERVER}:${REMOTE_APP}/yahoo-quote.mjs"
 ssh "${SERVER}" "
   ufw allow 8788/tcp && \
   (pm2 describe portfolio-tracker >/dev/null 2>&1 \

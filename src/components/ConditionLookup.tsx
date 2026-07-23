@@ -8,7 +8,12 @@ import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
 import { opportunityStatusLabel } from '../opportunityPresentation';
 import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import { findSellFamily, resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
-import { formatPriceSession, priceSessionLabel, quoteSessionMismatchText } from '../quoteSession';
+import {
+  closedQuoteText,
+  formatPriceSession,
+  priceSessionLabel,
+  quoteSessionMismatchText,
+} from '../quoteSession';
 import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview';
 import { ValuationCard, type ValuationSettings } from './ValuationCard';
@@ -178,6 +183,13 @@ function DepthHighlight({
     ? formatPriceSession(quote?.session, quote?.priceTime || quote?.timestamp)
     : priceSessionLabel(depth.price_session);
   const mismatch = quoteSessionMismatchText(depth.price_session, quote);
+  const closedText = closedQuoteText(
+    quote?.session ?? depth.price_session,
+    quote?.regularMarketPrice ?? quote?.price ?? prices.currentPrice,
+  );
+  const priceNote = depth.price_note?.startsWith('夜盘价格暂无')
+    ? '夜盘价格暂无（数据源不覆盖）'
+    : depth.price_note;
   return (
     <div className={`min-w-0 overflow-hidden rounded-lg border p-3 text-sm ${style.panel}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -188,7 +200,12 @@ function DepthHighlight({
         <div><span className="block text-xs text-slate-500">当前回撤</span><strong className="text-2xl">{numberText(depth.current_pct, '%')}</strong></div>
         <div><span className="block text-xs text-slate-500">阈值</span><strong className="text-2xl">{numberText(depth.threshold_pct, '%')}</strong></div>
       </div>
-      {prices.source !== 'unavailable' && prices.currentPrice !== null && prices.highPrice !== null && prices.thresholdPrice !== null && (
+      {closedText && (
+        <div className="mt-3 rounded-lg bg-white/70 p-2 text-xs text-slate-700 dark:bg-slate-950/30 dark:text-slate-200">
+          {closedText}
+        </div>
+      )}
+      {!closedText && prices.source !== 'unavailable' && prices.currentPrice !== null && prices.highPrice !== null && prices.thresholdPrice !== null && (
         <div className="mt-3 rounded-lg bg-white/70 p-2 text-xs text-slate-700 dark:bg-slate-950/30 dark:text-slate-200">
           现价 {usdPrice(prices.currentPrice)}{priceSession && `（${priceSession}）`} · 高点 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.highPrice)} · 阈值价 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.thresholdPrice)}
           {prices.source === 'derived' && (
@@ -199,12 +216,13 @@ function DepthHighlight({
           )}
         </div>
       )}
+      {priceNote && <div className="mt-2 text-xs text-slate-500">{priceNote}</div>}
       {mismatch && <div className="mt-2 text-xs text-amber-700 dark:text-amber-300">{mismatch}</div>}
       <div className="mt-3 flex min-w-0 items-center gap-3">
         <progress aria-label="深度位进度" className={`h-3 min-w-0 flex-1 ${style.progress}`} max={100} value={presentation.progress_pct} />
         {presentation.status === 'ready' && <span className="text-xs font-semibold">超出 {presentation.excess_pct.toFixed(2)} 点</span>}
       </div>
-      {priceSessionLabel(depth.price_session) && <div className="mt-2 text-xs text-slate-500">取价时段：{priceSessionLabel(depth.price_session)}</div>}
+      {!closedText && priceSessionLabel(depth.price_session) && <div className="mt-2 text-xs text-slate-500">取价时段：{priceSessionLabel(depth.price_session)}</div>}
       <div className={`mt-3 ${depth.sample_insufficient || depth.win_rate_60d === null ? 'text-slate-400 opacity-70' : 'text-indigo-700 dark:text-indigo-300'}`}>
         {depth.sample_insufficient || depth.win_rate_60d === null
           ? `60 日样本不足（n=${depth.n}）`

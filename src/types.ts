@@ -173,6 +173,7 @@ export interface QuantSymbolAnalysis {
     threshold_price?: number | null;
     next_level_price?: number | null;
     price_session: string;
+    price_note?: string | null;
     win_rate_60d: number | null;
     n: number;
     sample_insufficient: boolean;

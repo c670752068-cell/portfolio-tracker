@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  closedQuoteText,
   formatPriceSession,
   quoteSessionMismatchText,
   quoteSyncSessionText,
@@ -19,6 +20,12 @@ describe('quote session presentation', () => {
 
   it('does not render a badge for a legacy quote without session metadata', () => {
     expect(formatPriceSession(undefined, '2026-07-23T13:20:00Z')).toBe('');
+  });
+
+  it('renders an honest previous-close sentence for a closed quote without a session badge', () => {
+    expect(closedQuoteText('closed', 390.34)).toBe('休市 · 上一交易日收盘价 $390.34');
+    expect(formatPriceSession('closed', '2026-07-25T14:00:00Z')).toBe('');
+    expect(closedQuoteText('closed', Number.NaN)).toBe('');
   });
 
   it('explains when the quant session and current website quote disagree', () => {

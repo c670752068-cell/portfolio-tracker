@@ -41,6 +41,12 @@ export function formatPriceSession(
   return time ? `${label} ${time} ET` : label;
 }
 
+export function closedQuoteText(session: unknown, price: unknown): string {
+  if (normalizedSession(session) !== 'closed') return '';
+  if (typeof price !== 'number' || !Number.isFinite(price)) return '';
+  return `休市 · 上一交易日收盘价 $${price.toFixed(2)}`;
+}
+
 export function quoteSessionMismatchText(
   quantSession: unknown,
   quote: Pick<QuoteSnapshot, 'session' | 'priceTime'> | null,

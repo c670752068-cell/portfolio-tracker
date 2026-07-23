@@ -8,5 +8,11 @@ describe('US VPS deployment bundle', () => {
     expect(script).toContain(
       'scp deploy/refresh-request-route.mjs "${SERVER}:${REMOTE_APP}/refresh-request-route.mjs"',
     );
+    expect(script).toContain(
+      'scp deploy/market-session.mjs "${SERVER}:${REMOTE_APP}/market-session.mjs"',
+    );
+    expect(script).toContain(
+      'scp deploy/yahoo-quote.mjs "${SERVER}:${REMOTE_APP}/yahoo-quote.mjs"',
+    );
   });
 });
