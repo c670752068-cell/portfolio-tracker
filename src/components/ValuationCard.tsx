@@ -105,12 +105,24 @@ function sourceText(
   snapshot: PeSnapshot | null,
 ): string {
   if (history && entrySource) {
-    return `数据：量化系统（${metricLabel(history.metric)}）· 原始源 ${entrySource}`;
+    return `量化系统（${metricLabel(history.metric)}）· 原始源 ${entrySource}`;
   }
   if (snapshot?.source === 'alphavantage') {
-    return '数据：Alpha Vantage（远期 PE）';
+    return 'Alpha Vantage（远期 PE）';
   }
-  return '数据：暂无';
+  return '暂无';
+}
+
+function priceSourceText(
+  priceSource: ValuationCardProps['priceSource'],
+  displayCurrency: DisplayCurrency,
+): string {
+  const label = priceSource === 'holding'
+    ? '持仓报价'
+    : priceSource === 'monitored'
+      ? '监控池报价'
+      : '暂无';
+  return `价格：${label}（${displayCurrency}）`;
 }
 
 function StockValuation({
@@ -148,11 +160,19 @@ function StockValuation({
     ? null
     : Math.max(0, Math.min(100, 50 + result.deviationPct));
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900">
-      <div className="font-semibold" data-price-source={priceSource}>
-        {symbol} · {priceText} · {metricLabel(metric)} {peText(result.current)}
+    <div
+      data-mobile-layout="stacked-below-520"
+      className="max-w-full min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 p-3 break-words dark:border-slate-700 dark:bg-slate-900"
+    >
+      <div
+        className="flex min-w-0 flex-col gap-1 font-semibold min-[520px]:flex-row min-[520px]:flex-wrap min-[520px]:items-baseline min-[520px]:gap-x-2"
+        data-price-source={priceSource}
+      >
+        <span>{symbol}</span>
+        <span data-valuation-field="price">股价 {priceText}</span>
+        <span data-valuation-field="current-pe">当前 {metricLabel(metric)} {peText(result.current)}</span>
       </div>
-      <div className="mt-2 text-sm">
+      <div className="mt-2 text-sm" data-valuation-field="basis-and-distance">
         5 年均值 {peText(result.mean5y)} · {relativeMeanText(result.deviationPct)}
       </div>
       {suppressTarget ? (
@@ -161,7 +181,7 @@ function StockValuation({
         </div>
       ) : target.targetPrice !== null && target.gapPct !== null ? (
         <>
-          <div className="mt-2 text-sm">
+          <div className="mt-2 text-sm" data-valuation-field="target-price">
             PE 回到 5 年均值 {peText(result.mean5y)} 对应股价 ~{formatDisplayMoney(target.targetPrice, displayCurrency, rates)}
             （{targetGapText(target.gapPct)}）
           </div>
@@ -169,7 +189,9 @@ function StockValuation({
             按当前每股收益不变推算；实际 EPS 会随财报变化，仅供参考。
           </div>
         </>
-      ) : null}
+      ) : (
+        <div className="mt-2 text-sm" data-valuation-field="target-price">目标股价 暂无</div>
+      )}
       <div
         aria-label="当前相对 5 年均值位置"
         className="relative mt-3 h-2 rounded-full bg-gradient-to-r from-emerald-200 via-slate-300 to-rose-200 dark:from-emerald-900 dark:via-slate-600 dark:to-rose-900"
@@ -183,8 +205,9 @@ function StockValuation({
           />
         )}
       </div>
-      <div className="mt-2 text-xs text-slate-500">
-        {source}{seriesStart ? ` · 序列起始 ${seriesStart}` : ' · 历史序列暂无'}
+      <div className="mt-2 text-xs text-slate-500" data-valuation-field="sources">
+        {priceSourceText(priceSource, displayCurrency)} · PE 与均值：{source}
+        {seriesStart ? ` · 序列起始 ${seriesStart}` : ' · 历史序列暂无'}
       </div>
       {result.sampleMonths > 0 && result.sampleMonths < 24 && (
         <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
@@ -247,17 +270,27 @@ function IndexValuation({
     ? { targetPrice: null, gapPct: null }
     : computePeTargetPrice(currentPrice, result.current, result.anchorPe);
   return (
-    <div data-zone={result.zone} className={`rounded-lg border p-3 ${view.panel}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-semibold" data-price-source={priceSource}>
-          {symbol} · {priceText} · 基准指数 {indexKey} · {metricLabel(metric)} {peText(result.current)}
+    <div
+      data-zone={result.zone}
+      data-mobile-layout="stacked-below-520"
+      className={`max-w-full min-w-0 overflow-hidden rounded-lg border p-3 break-words ${view.panel}`}
+    >
+      <div className="flex min-w-0 flex-col gap-2 min-[520px]:flex-row min-[520px]:flex-wrap min-[520px]:items-center min-[520px]:justify-between">
+        <div
+          className="flex min-w-0 flex-col gap-1 font-semibold min-[520px]:flex-row min-[520px]:flex-wrap min-[520px]:items-baseline min-[520px]:gap-x-2"
+          data-price-source={priceSource}
+        >
+          <span>{symbol}</span>
+          <span data-valuation-field="price">股价 {priceText}</span>
+          <span>基准指数 {indexKey}</span>
+          <span data-valuation-field="current-pe">当前 {metricLabel(metric)} {peText(result.current)}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {approximate && <span className="rounded-full bg-indigo-100 px-2 py-1 text-xs text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">近似基准</span>}
           <span className={`rounded-full px-2 py-1 text-xs font-semibold ${view.badge}`}>{view.label}</span>
         </div>
       </div>
-      <div className="mt-2 text-sm">
+      <div className="mt-2 text-sm" data-valuation-field="basis-and-distance">
         锚点 {peText(result.anchorPe)}{anchorDate} · 距锚点 {signedPercent(result.gapPct)}
       </div>
       {result.anchorPe === null && !manualAnchor && (
@@ -271,7 +304,7 @@ function IndexValuation({
         </div>
       ) : proxySymbol && target.targetPrice !== null && target.gapPct !== null ? (
         <>
-          <div className="mt-2 text-sm">
+          <div className="mt-2 text-sm" data-valuation-field="target-price">
             {indexKey} 回到 2025-04 锚点 {peText(result.anchorPe)} 对应 {proxySymbol} ~{formatDisplayMoney(target.targetPrice, displayCurrency, rates)}
             （{targetGapText(target.gapPct)}）
           </div>
@@ -281,12 +314,15 @@ function IndexValuation({
         </>
       ) : !proxySymbol ? (
         <div className="mt-2 text-xs text-slate-500">{indexKey} 无可用代理 ETF，目标价不可推算</div>
-      ) : null}
+      ) : (
+        <div className="mt-2 text-sm" data-valuation-field="target-price">目标股价 暂无</div>
+      )}
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
         {progress !== null && <div aria-hidden="true" className="h-full bg-current text-indigo-500" style={{ width: `${progress}%` }} />}
       </div>
-      <div className="mt-2 text-xs text-slate-500">
-        {source} · 锚点：{manualAnchor ? '手动录入' : result.anchorPe !== null ? '序列自动计算' : '暂无'}
+      <div className="mt-2 text-xs text-slate-500" data-valuation-field="sources">
+        {priceSourceText(priceSource, displayCurrency)} · 当前 PE 与锚点：{source}
+        {' · '}锚点：{manualAnchor ? '手动录入' : result.anchorPe !== null ? '序列自动计算' : '暂无'}
       </div>
       <div className="mt-1 text-xs text-slate-500">{VALUATION_ANCHOR_POLICY_TEXT}</div>
     </div>
@@ -356,7 +392,7 @@ export function ValuationCard({
   const suppressTarget = isLeveragedSymbol(symbol);
   const priceText = currentPrice !== null && Number.isFinite(currentPrice) && currentPrice > 0
     ? formatDisplayMoney(currentPrice, displayCurrency, rates)
-    : '股价暂无';
+    : '暂无';
 
   return (
     <div className="mb-4">

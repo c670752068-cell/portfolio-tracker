@@ -115,7 +115,7 @@ describe('ValuationCard', () => {
     expect(cnyHtml).toContain('¥677.76');
   });
 
-  it('shows 股价暂无 rather than zero when neither quote source has data', () => {
+  it('shows 股价 暂无 rather than zero when neither quote source has data', () => {
     const html = renderToStaticMarkup(
       <ValuationCard
         symbol="GOOG"
@@ -128,7 +128,7 @@ describe('ValuationCard', () => {
       />,
     );
 
-    expect(html).toContain('股价暂无');
+    expect(html).toContain('股价 暂无');
     expect(html).not.toContain('$0.00');
   });
 
@@ -178,7 +178,9 @@ describe('ValuationCard', () => {
       />,
     );
 
-    expect(html).toContain('QQQ · $400.00 · 基准指数 NDX · TTM PE 30.00');
+    expect(html).toContain('股价 $400.00');
+    expect(html).toContain('基准指数 NDX');
+    expect(html).toContain('当前 TTM PE 30.00');
     expect(html).toContain('NDX 回到 2025-04 锚点 21.60 对应 QQQ ~$288.00（需下跌 28.00%）');
   });
 
@@ -195,7 +197,8 @@ describe('ValuationCard', () => {
       />,
     );
 
-    expect(html).toContain('TQQQ · $50.00');
+    expect(html).toContain('TQQQ');
+    expect(html).toContain('股价 $50.00');
     expect(html).toContain('杠杆 ETF 因每日重置存在路径依赖，不推算目标价；请参考上方基准指数的目标价');
     expect(html).not.toContain('对应 TQQQ');
     expect(html).not.toMatch(/NaN|Infinity/);
@@ -223,6 +226,53 @@ describe('ValuationCard', () => {
     expect(html).not.toContain('对应 QQQ');
   });
 
+  it('renders price, current PE, basis, distance, target, then sources in a fixed readable order', () => {
+    const html = renderToStaticMarkup(
+      <ValuationCard
+        symbol="GOOG"
+        history={history('GOOG', 20, [{ date: '2026-07-22', value: 24.8 }])}
+        settings={settings}
+        currentPrice={400}
+        priceSource="holding"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+    const orderedText = [
+      '股价 $400.00',
+      '当前 TTM PE 20.00',
+      '5 年均值 24.80',
+      '当前低于均值 19.35%',
+      '对应股价 ~$496.00',
+      '价格：持仓报价（USD）',
+      'PE 与均值：量化系统（TTM PE）',
+    ];
+    const positions = orderedText.map((text) => html.indexOf(text));
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+  });
+
+  it('marks the valuation layout as stacked below 520px and constrains long content', () => {
+    const html = renderToStaticMarkup(
+      <ValuationCard
+        symbol="QQQ"
+        history={history('NDX', 30, [{ date: '2025-04-08', value: 21.6 }])}
+        settings={settings}
+        currentPrice={400}
+        priceSource="monitored"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+
+    expect(html).toContain('data-mobile-layout="stacked-below-520"');
+    expect(html).toContain('min-w-0');
+    expect(html).toContain('max-w-full');
+    expect(html).toContain('overflow-hidden');
+    expect(html).toContain('价格：监控池报价（USD）');
+  });
+
   it('renders a stock five-year mean, deviation, metric, and source without mixing PE definitions', () => {
     const html = renderToStaticMarkup(
       <ValuationCard
@@ -237,10 +287,12 @@ describe('ValuationCard', () => {
       />,
     );
 
-    expect(html).toContain('GOOG · 股价暂无 · TTM PE 20.00');
+    expect(html).toContain('GOOG');
+    expect(html).toContain('股价 暂无');
+    expect(html).toContain('当前 TTM PE 20.00');
     expect(html).toContain('5 年均值 25.00');
     expect(html).toContain('当前低于均值 20.00%');
-    expect(html).toContain('数据：量化系统（TTM PE）');
+    expect(html).toContain('PE 与均值：量化系统（TTM PE）');
     expect(html).toContain('序列起始 2021-07-22');
     expect(html).not.toContain('远期 PE');
   });
@@ -258,7 +310,10 @@ describe('ValuationCard', () => {
       />,
     );
 
-    expect(html).toContain('TQQQ · 股价暂无 · 基准指数 NDX · TTM PE 22.50');
+    expect(html).toContain('TQQQ');
+    expect(html).toContain('股价 暂无');
+    expect(html).toContain('基准指数 NDX');
+    expect(html).toContain('当前 TTM PE 22.50');
     expect(html).toContain('锚点 21.60（2025-04-08）');
     expect(html).toContain('距锚点 +4.17%');
     expect(html).toContain('已进入锚点区');
@@ -285,7 +340,7 @@ describe('ValuationCard', () => {
 
     expect(html).toContain('近似基准');
     expect(html).toContain('远期 PE 22.50');
-    expect(html).toContain('数据：Alpha Vantage（远期 PE）');
+    expect(html).toContain('当前 PE 与锚点：Alpha Vantage（远期 PE）');
     expect(html).toContain('锚点：手动录入');
   });
 
@@ -331,7 +386,9 @@ describe('ConditionLookup valuation integration', () => {
     );
 
     expect(html).toContain('估值基准');
-    expect(html).toContain('AAPL · 股价暂无 · TTM PE 20.00');
+    expect(html).toContain('AAPL');
+    expect(html).toContain('股价 暂无');
+    expect(html).toContain('当前 TTM PE 20.00');
   });
 
   it('prefers a holding quote and otherwise passes the monitored quote to the valuation card', () => {
