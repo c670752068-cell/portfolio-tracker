@@ -32,6 +32,7 @@ ssh "${SERVER}" "
 rsync -az --delete dist/ "${SERVER}:${REMOTE_WEB}/"
 scp deploy/runtime-config.us-vps.js "${SERVER}:${REMOTE_WEB}/runtime-config.js"
 scp deploy/aliyun-gateway.mjs "${SERVER}:${REMOTE_APP}/portfolio-gateway.mjs"
+scp deploy/refresh-request-route.mjs "${SERVER}:${REMOTE_APP}/refresh-request-route.mjs"
 scp deploy/alert-tracker.mjs "${SERVER}:${REMOTE_APP}/alert-tracker.mjs"
 ssh "${SERVER}" "
   ufw allow 8788/tcp && \
