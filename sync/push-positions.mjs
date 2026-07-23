@@ -25,7 +25,7 @@ function runPositionsStatus(cliPath) {
 
 function runSiteExport(cliPath) {
   return new Promise((resolve, reject) => {
-    execFile(cliPath, ['site-export'], { timeout: 180_000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(cliPath, ['site-export'], { timeout: 180_000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(`site-export 失败：${error.message}${stderr ? `；${String(stderr).trim().slice(0, 200)}` : ''}`));
         return;

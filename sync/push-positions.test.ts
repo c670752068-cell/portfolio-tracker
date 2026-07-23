@@ -14,7 +14,7 @@ afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function fakeCli(root: string): Promise<{ cli: string; analysis: string }> {
+async function fakeCli(root: string, analysisStdoutBytes = 0): Promise<{ cli: string; analysis: string }> {
   const cli = join(root, 'futu-assistant');
   const analysis = join(root, 'site_export.json');
   await writeFile(cli, `#!/bin/sh
@@ -22,6 +22,9 @@ if [ "$1" = "positions-status" ]; then
   printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":1000,"positions":[{"symbol":"MSFT","asset_type":"stock","qty":2,"market_value":800}]}'
 elif [ "$1" = "site-export" ]; then
   printf '%s' '{"source":"futu-assistant","generated_at":"2026-07-15T16:00:00-04:00","rule_version":"2.2","symbols":{"MSFT":{"gates":{},"gates_passed":0,"gates_total":6}}}' > "$FUTU_ASSISTANT_SITE_EXPORT"
+  if [ "${analysisStdoutBytes}" -gt 0 ]; then
+    head -c "${analysisStdoutBytes}" /dev/zero | tr '\\0' 'x'
+  fi
   printf '%s' '{"ok":true}'
 else
   exit 2
@@ -56,10 +59,10 @@ async function testServer(analysisStatus: number): Promise<{
   };
 }
 
-async function setup(analysisStatus: number) {
+async function setup(analysisStatus: number, analysisStdoutBytes = 0) {
   const root = await mkdtemp(join(tmpdir(), 'portfolio-push-'));
   temporaryRoots.push(root);
-  const { cli, analysis } = await fakeCli(root);
+  const { cli, analysis } = await fakeCli(root, analysisStdoutBytes);
   const server = await testServer(analysisStatus);
   const log = join(root, 'sync.log');
   vi.stubEnv('FUTU_ASSISTANT_CLI', cli);
@@ -94,6 +97,22 @@ describe('portfolio Mac push chain', () => {
       await expect(pushPositions()).resolves.toEqual(expect.objectContaining({ count: 1, analysisPushed: false }));
       expect(fixture.requests[0].url).toBe('/api/portfolio/positions');
       expect(await readFile(fixture.log, 'utf8')).toContain('status=analysis_failure');
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('accepts a site-export CLI stdout larger than 1MB when the snapshot file is valid', async () => {
+    const fixture = await setup(200, 2 * 1024 * 1024);
+    try {
+      await expect(pushPositions()).resolves.toEqual(expect.objectContaining({
+        count: 1,
+        analysisPushed: true,
+      }));
+      expect(fixture.requests.map((item) => item.url)).toEqual([
+        '/api/portfolio/positions',
+        '/api/portfolio/quant-analysis',
+      ]);
     } finally {
       await fixture.close();
     }
