@@ -4,6 +4,7 @@ import { isInvalidEndpointUrl, looksLikeApiKey, sanitizeEndpointUrl } from '../e
 import { KimiError, activeAiEndpoint, activeAiProviderLabel, testAiConnection } from '../kimi';
 import { getServerAiProxyUrl, getServerQuoteProxyUrl, hasServerGateway, serverGatewayLabel } from '../runtimeConfig';
 import type { AiProvider, AppSettings, Holding, QuantHoldingCost, QuoteProvider, ValuationIndexKey } from '../types';
+import { VALUATION_ANCHOR_POLICY_TEXT } from '../valuationAnchorPolicy';
 
 interface SettingsPanelProps {
   settings: AppSettings;
@@ -282,7 +283,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <h4 className="mb-2 text-sm font-semibold">估值基准</h4>
         <p className="mb-3 text-xs text-slate-500">
-          指数锚点默认取指定窗口内的最低 PE；手动锚点仅在对应指数填写后覆盖自动值。阈值表示当前 PE 高于锚点的距离分区，不改变量化系统的任何开窗结论。
+          {VALUATION_ANCHOR_POLICY_TEXT} 手动锚点仅在对应指数填写后覆盖自动值。阈值表示当前 PE 高于锚点的距离分区，不改变量化系统的任何开窗结论。
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="锚点窗口开始">

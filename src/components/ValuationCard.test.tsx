@@ -201,6 +201,28 @@ describe('ValuationCard', () => {
     expect(html).not.toMatch(/NaN|Infinity/);
   });
 
+  it('does not fall back to a deeper historical low when the April 2025 window has no data', () => {
+    const html = renderToStaticMarkup(
+      <ValuationCard
+        symbol="QQQ"
+        history={history('NDX', 30, [
+          { date: '2022-10-15', value: 10 },
+          { date: '2026-07-22', value: 30 },
+        ])}
+        settings={settings}
+        currentPrice={400}
+        priceSource="holding"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+
+    expect(html).toContain('锚点窗口内无数据，可在设置手动录入');
+    expect(html).toContain('锚点 = 2025 年 4 月关税冲击期间的最低 PE。当前不使用更深的历史/熊市极值作为基准。');
+    expect(html).not.toContain('锚点 10.00');
+    expect(html).not.toContain('对应 QQQ');
+  });
+
   it('renders a stock five-year mean, deviation, metric, and source without mixing PE definitions', () => {
     const html = renderToStaticMarkup(
       <ValuationCard

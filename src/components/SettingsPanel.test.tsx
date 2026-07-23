@@ -47,6 +47,7 @@ describe('SettingsPanel cost coverage', () => {
     expect(html).toContain('FANGPLUS 手动锚点');
     expect(html).toContain('已进入锚点区阈值');
     expect(html).toContain('接近锚点阈值');
+    expect(html).toContain('锚点 = 2025 年 4 月关税冲击期间的最低 PE。当前不使用更深的历史/熊市极值作为基准。');
   });
 
   it('groups all three cost-gap reasons and shows an actionable instruction for each', () => {

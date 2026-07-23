@@ -5,6 +5,7 @@ import { computePeTargetPrice } from '../peTargetPrice';
 import { formatDisplayMoney } from '../displayCurrency';
 import { leverageInfoForSymbol } from '../leverageMap';
 import type { AppSettings, DisplayCurrency, ExchangeRates } from '../types';
+import { VALUATION_ANCHOR_POLICY_TEXT } from '../valuationAnchorPolicy';
 import { resolveValuationBasis } from '../valuationBasis';
 
 export type ValuationSettings = Pick<
@@ -259,6 +260,11 @@ function IndexValuation({
       <div className="mt-2 text-sm">
         锚点 {peText(result.anchorPe)}{anchorDate} · 距锚点 {signedPercent(result.gapPct)}
       </div>
+      {result.anchorPe === null && !manualAnchor && (
+        <div className="mt-2 text-sm text-amber-700 dark:text-amber-300">
+          锚点窗口内无数据，可在设置手动录入
+        </div>
+      )}
       {suppressTarget ? (
         <div className="mt-2 text-xs text-slate-500">
           杠杆 ETF 因每日重置存在路径依赖，不推算目标价；请参考上方基准指数的目标价
@@ -282,6 +288,7 @@ function IndexValuation({
       <div className="mt-2 text-xs text-slate-500">
         {source} · 锚点：{manualAnchor ? '手动录入' : result.anchorPe !== null ? '序列自动计算' : '暂无'}
       </div>
+      <div className="mt-1 text-xs text-slate-500">{VALUATION_ANCHOR_POLICY_TEXT}</div>
     </div>
   );
 }
