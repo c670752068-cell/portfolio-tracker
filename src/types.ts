@@ -1,3 +1,5 @@
+import type { PeHistoryPayload } from './peData';
+
 export type Currency = 'USD' | 'CNY' | 'HKD' | 'OTHER';
 
 export type DisplayCurrency = 'USD' | 'CNY' | 'HKD' | 'JPY' | 'EUR' | 'GBP';
@@ -86,6 +88,7 @@ export interface AppSettings {
   zhipuProxyUrl: string;
   quoteProvider: QuoteProvider;
   quoteApiKey: string;
+  peApiKey?: string;
   quoteProxyUrl: string;
   autoRefreshQuotes: boolean;
   displayCurrency: DisplayCurrency;
@@ -316,6 +319,7 @@ export interface QuantAnalysisSnapshot {
   panic_window?: QuantPanicWindowSnapshot;
   sell?: QuantSellSnapshot;
   summary?: QuantOpportunitySummary;
+  pe_history?: PeHistoryPayload;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */

@@ -22,6 +22,16 @@ function holding(overrides: Partial<Holding>): Holding {
 }
 
 describe('SettingsPanel cost coverage', () => {
+  it('offers an independent locally stored Alpha Vantage PE key', () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel settings={{ ...settings, peApiKey: 'demo-pe' }} onSave={() => undefined} />,
+    );
+
+    expect(html).toContain('Alpha Vantage PE API Key');
+    expect(html).toContain('type="password"');
+    expect(html).toContain('value="demo-pe"');
+  });
+
   it('groups all three cost-gap reasons and shows an actionable instruction for each', () => {
     const holdings = [
       holding({ id: 'option', symbol: 'NVDA', assetType: 'option', broker: 'FUTU' }),

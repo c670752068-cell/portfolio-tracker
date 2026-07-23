@@ -255,6 +255,21 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
       </div>
       <CostCoverageCard holdings={holdings} holdingCosts={holdingCosts} />
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <h4 className="mb-2 text-sm font-semibold">估值数据补充</h4>
+        <Field label="Alpha Vantage PE API Key">
+          <input
+            type="password"
+            value={draft.peApiKey ?? ''}
+            onChange={(event) => setDraft({ ...draft, peApiKey: event.target.value })}
+            placeholder="仅在量化 PE 序列缺失时使用"
+            className={inputCls}
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            仅保存在本机浏览器；每个标的每天最多请求一次。量化系统已有 PE 序列时不会调用。
+          </p>
+        </Field>
+      </div>
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <h4 className="mb-2 text-sm font-semibold">每日行情同步</h4>
         <div className="space-y-3">
           <Field label="行情源">

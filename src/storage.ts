@@ -24,6 +24,7 @@ function buildDefaultSettings(): AppSettings {
   zhipuProxyUrl: '',
   quoteProvider: quoteProxyUrl ? 'proxy' : 'none',
   quoteApiKey: '',
+  peApiKey: '',
   quoteProxyUrl,
   autoRefreshQuotes: true,
   displayCurrency: 'USD',
@@ -93,6 +94,7 @@ export function loadSettings(): AppSettings {
       // A server deployment provides its own same-origin quotes endpoint. Existing
       // browser data is never overwritten when the user already chose a provider.
       quoteProvider: parsed.quoteProvider ?? defaultSettings.quoteProvider,
+      peApiKey: parsed.peApiKey ?? defaultSettings.peApiKey,
       quoteProxyUrl: sanitizeEndpointUrl(parsed.quoteProxyUrl ?? defaultSettings.quoteProxyUrl),
       displayCurrency: isDisplayCurrency(parsed.displayCurrency) ? parsed.displayCurrency : defaultSettings.displayCurrency,
       exposureTargetPct: isValidExposureTarget(parsed.exposureTargetPct) ? parsed.exposureTargetPct : 100,
