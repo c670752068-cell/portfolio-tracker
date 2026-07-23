@@ -177,7 +177,12 @@ function DepthHighlight({
       {prices.source !== 'unavailable' && prices.currentPrice !== null && prices.highPrice !== null && prices.thresholdPrice !== null && (
         <div className="mt-3 rounded-lg bg-white/70 p-2 text-xs text-slate-700 dark:bg-slate-950/30 dark:text-slate-200">
           现价 {usdPrice(prices.currentPrice)} · 高点 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.highPrice)} · 阈值价 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.thresholdPrice)}
-          {prices.source === 'derived' && <div className="mt-1 text-slate-500">价格由行情代理现价与量化回撤反推，与量化取价时段（{sessionLabel(depth.price_session)}）可能有偏差</div>}
+          {prices.source === 'derived' && (
+            <div className="mt-1 text-slate-500">
+              <div>价格由行情代理现价与量化回撤反推，与量化取价时段（{sessionLabel(depth.price_session)}）可能有偏差</div>
+              <div>高点为反推值，会随现价与量化回撤的更新时差而小幅变动；量化系统提供真实高点后此处将改为固定值。</div>
+            </div>
+          )}
         </div>
       )}
       <div className="mt-3 flex min-w-0 items-center gap-3">

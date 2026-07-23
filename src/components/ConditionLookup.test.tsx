@@ -208,6 +208,7 @@ describe('ConditionLookup', () => {
     expect(html).toContain('高点 ~$492.30');
     expect(html).toContain('阈值价 ~$412.35');
     expect(html).toContain('价格由行情代理现价与量化回撤反推，与量化取价时段（夜盘）可能有偏差');
+    expect(html).toContain('高点为反推值，会随现价与量化回撤的更新时差而小幅变动；量化系统提供真实高点后此处将改为固定值。');
   });
 
   it('prefers a holding quote over a monitored quote and returns null when both are missing', () => {
@@ -275,6 +276,7 @@ describe('ConditionLookup', () => {
     expect(html).toContain('阈值价 $410.00');
     expect(html).not.toContain('高点 ~$490.00');
     expect(html).not.toContain('价格由行情代理现价与量化回撤反推');
+    expect(html).not.toContain('高点为反推值，会随现价与量化回撤的更新时差而小幅变动');
   });
 
   it('keeps the percentage-only card when neither quant nor quote prices exist', () => {
