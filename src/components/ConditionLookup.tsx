@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
+import { buildDepthPriceView } from '../depthPrice';
 import { formatDisplayMoney } from '../displayCurrency';
 import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
 import { opportunityStatusLabel } from '../opportunityPresentation';
@@ -112,6 +113,36 @@ function sessionLabel(value: string): string {
   return ({ overnight: '夜盘', premarket: '盘前', afterhours: '盘后', regular: '盘中' } as Record<string, string>)[value] || value;
 }
 
+function usdPrice(value: number): string {
+  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function depthQuotePrice(holdings: readonly Holding[], rawSymbol: string): number | null {
+  const symbol = rawSymbol.trim().toUpperCase();
+  for (const holding of holdings) {
+    if (!holding.quote) continue;
+    if (holding.assetType === 'option') {
+      if (
+        holding.option?.underlying.trim().toUpperCase() === symbol
+        && typeof holding.option.underlyingPrice === 'number'
+        && Number.isFinite(holding.option.underlyingPrice)
+        && holding.option.underlyingPrice > 0
+      ) {
+        return holding.option.underlyingPrice;
+      }
+      continue;
+    }
+    if (
+      holding.symbol.trim().toUpperCase() === symbol
+      && Number.isFinite(holding.quote.price)
+      && holding.quote.price > 0
+    ) {
+      return holding.quote.price;
+    }
+  }
+  return null;
+}
+
 const DEPTH_STYLE = {
   ready: {
     panel: 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/25',
@@ -134,10 +165,12 @@ function DepthHighlight({
   analysis,
   presentation,
   title,
+  quotePrice,
 }: {
   analysis: QuantSymbolAnalysis;
   presentation: QuantDepthPresentation | undefined;
   title: string;
+  quotePrice: number | null;
 }) {
   const depth = analysis.depth_window;
   if (!depth?.applicable) return null;
@@ -150,6 +183,11 @@ function DepthHighlight({
     : presentation.status === 'near'
       ? `深度位 接近 · 还差 ${presentation.gap_pct.toFixed(2)} 点`
       : '深度位 未达标';
+  const prices = buildDepthPriceView(depth, quotePrice, {
+    currentPrice: depth.current_price ?? null,
+    highPrice: depth.high_price ?? null,
+    thresholdPrice: depth.threshold_price ?? null,
+  });
   return (
     <div className={`min-w-0 overflow-hidden rounded-lg border p-3 text-sm ${style.panel}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -160,6 +198,12 @@ function DepthHighlight({
         <div><span className="block text-xs text-slate-500">当前回撤</span><strong className="text-2xl">{numberText(depth.current_pct, '%')}</strong></div>
         <div><span className="block text-xs text-slate-500">阈值</span><strong className="text-2xl">{numberText(depth.threshold_pct, '%')}</strong></div>
       </div>
+      {prices.source !== 'unavailable' && prices.currentPrice !== null && prices.highPrice !== null && prices.thresholdPrice !== null && (
+        <div className="mt-3 rounded-lg bg-white/70 p-2 text-xs text-slate-700 dark:bg-slate-950/30 dark:text-slate-200">
+          现价 {usdPrice(prices.currentPrice)} · 高点 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.highPrice)} · 阈值价 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.thresholdPrice)}
+          {prices.source === 'derived' && <div className="mt-1 text-slate-500">价格由行情代理现价与量化回撤反推，与量化取价时段（{sessionLabel(depth.price_session)}）可能有偏差</div>}
+        </div>
+      )}
       <div className="mt-3 flex min-w-0 items-center gap-3">
         <progress aria-label="深度位进度" className={`h-3 min-w-0 flex-1 ${style.progress}`} max={100} value={presentation.progress_pct} />
         {presentation.status === 'ready' && <span className="text-xs font-semibold">超出 {presentation.excess_pct.toFixed(2)} 点</span>}
@@ -229,14 +273,14 @@ function ObservationBadge({ visible }: { visible: boolean }) {
   return visible ? <span className="ml-1 text-amber-700 dark:text-amber-300">（观察期，未正式生效）</span> : null;
 }
 
-function PanicWindowStatus({ status, analysis, presentation }: { status: QuantPanicSymbolStatus; analysis: QuantSymbolAnalysis; presentation: QuantDepthPresentation | undefined }) {
+function PanicWindowStatus({ status, analysis, presentation, quotePrice }: { status: QuantPanicSymbolStatus; analysis: QuantSymbolAnalysis; presentation: QuantDepthPresentation | undefined; quotePrice: number | null }) {
   return (
     <div className="mb-4 min-w-0 overflow-hidden rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm dark:border-rose-800 dark:bg-rose-950/30">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong>{status.display.title}</strong>
         <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-800 dark:bg-rose-900/60 dark:text-rose-100">{status.display.state_label}</span>
       </div>
-      <div className="mt-3"><DepthHighlight analysis={analysis} presentation={presentation} title="3 倍标的深度位" /></div>
+      <div className="mt-3"><DepthHighlight analysis={analysis} presentation={presentation} title="3 倍标的深度位" quotePrice={quotePrice} /></div>
       <div className={`mt-3 rounded-lg border p-3 ${status.panic.open ? 'border-rose-400 bg-rose-100 dark:border-rose-700 dark:bg-rose-950/40' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900'}`}>
         <span className={`rounded-full px-3 py-1 text-xs font-bold ${status.panic.open ? 'bg-rose-600 text-white dark:bg-rose-500' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100'}`}>
           恐慌位 {status.panic.open ? '✓ 已触发' : '✗ 未触发'}
@@ -414,6 +458,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
   } : {};
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
+  const selectedDepthQuotePrice = depthQuotePrice(holdings, selectedSymbol);
   const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
     const status = resolveSellStatus(snapshot, optionSymbol);
     if (status.state === 'window_open') return `🟠 ${fallbackLabel} · 卖出窗口开启`;
@@ -472,8 +517,8 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
         <>
           <div id="buy-condition-detail" className="scroll-mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
             {panicStatus?.applicable
-              ? <PanicWindowStatus status={panicStatus} analysis={result.analysis} presentation={depthPresentation} />
-              : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" />}
+              ? <PanicWindowStatus status={panicStatus} analysis={result.analysis} presentation={depthPresentation} quotePrice={selectedDepthQuotePrice} />
+              : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} />}
             <h3 className="text-lg font-semibold">{result.symbol} 买入条件</h3>
             {!result.analysis.available ? (
               <p className="mt-3 text-amber-700 dark:text-amber-300">当前无可用判定：{result.analysis.error || '数据未生成'}</p>

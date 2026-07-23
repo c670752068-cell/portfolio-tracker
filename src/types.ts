@@ -153,6 +153,10 @@ export interface QuantSymbolAnalysis {
     open: boolean;
     current_pct: number;
     threshold_pct: number;
+    current_price?: number | null;
+    high_price?: number | null;
+    threshold_price?: number | null;
+    next_level_price?: number | null;
     price_session: string;
     win_rate_60d: number | null;
     n: number;

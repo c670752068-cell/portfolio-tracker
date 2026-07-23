@@ -125,6 +125,72 @@ describe('ConditionLookup', () => {
     expect(near).toContain('value="86.857143"');
   });
 
+  it('shows derived depth prices with approximation marks and the exact source warning', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.depth_window = {
+      ...snapshot.symbols.AAPL.depth_window!,
+      current_pct: -21.8,
+      threshold_pct: -16.24,
+      price_session: 'overnight',
+    };
+    const quotedHoldings = [{
+      ...holdings[0],
+      id: 'aapl',
+      symbol: 'AAPL',
+      quote: {
+        symbol: 'AAPL',
+        price: 384.98,
+        previousClose: 380,
+        change: 4.98,
+        changePercent: 0.0131,
+        currency: 'USD' as const,
+        timestamp: '2026-07-22T08:00:00.000Z',
+        source: 'proxy' as const,
+      },
+    }];
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={quotedHoldings} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('现价 $384.98');
+    expect(html).toContain('高点 ~$492.30');
+    expect(html).toContain('阈值价 ~$412.35');
+    expect(html).toContain('价格由行情代理现价与量化回撤反推，与量化取价时段（夜盘）可能有偏差');
+  });
+
+  it('uses quant-exported depth prices without approximation marks or a warning', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.depth_window = {
+      ...snapshot.symbols.AAPL.depth_window!,
+      current_price: 380,
+      high_price: 490,
+      threshold_price: 410,
+      next_level_price: 400,
+    };
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('现价 $380.00');
+    expect(html).toContain('高点 $490.00');
+    expect(html).toContain('阈值价 $410.00');
+    expect(html).not.toContain('高点 ~$490.00');
+    expect(html).not.toContain('价格由行情代理现价与量化回撤反推');
+  });
+
+  it('keeps the percentage-only card when neither quant nor quote prices exist', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('当前回撤');
+    expect(html).toContain('阈值');
+    expect(html).not.toContain('现价 $');
+    expect(html).not.toContain('NaN');
+  });
+
   it('renders far and insufficient states honestly in both themes', () => {
     const snapshot = {
       ...quantAnalysisFixture,
