@@ -218,18 +218,74 @@ function DepthHighlight({
   );
 }
 
+type ValuationPositionKind = 'pe' | 'indicator' | 'cnn';
+
+function ValuationPosition({
+  label,
+  value,
+  kind,
+}: {
+  label: string;
+  value: unknown;
+  kind: ValuationPositionKind;
+}) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500 dark:bg-slate-900">{label} 暂无</div>;
+  }
+  const position = Math.max(0, Math.min(100, value));
+  const zone = position < 30 ? 'low' : position > 70 ? 'high' : 'neutral';
+  const marker = zone === 'low'
+    ? 'bg-emerald-600'
+    : zone === 'high'
+      ? 'bg-rose-600'
+      : 'bg-slate-500';
+  const suffix = kind === 'cnn' ? '' : '%';
+  const lowerTime = Math.max(0, 100 - position);
+  const interpretation = kind === 'pe'
+    ? `分位 ${position.toFixed(2)}% = 当前 PE 低于过去约 ${lowerTime.toFixed(0)}% 的时间`
+    : kind === 'indicator'
+      ? `分位 ${position.toFixed(2)}% = 当前指标低于过去约 ${lowerTime.toFixed(0)}% 的时间`
+      : `CNN ${position.toFixed(2)} / 100，数值越低代表市场情绪越恐慌`;
+  return (
+    <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
+      <div className="text-sm font-medium">{label} {position.toFixed(2)}{suffix}</div>
+      <div
+        role="meter"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={position}
+        data-zone={zone}
+        className="relative mt-3 h-2 rounded-full bg-gradient-to-r from-emerald-200 via-slate-200 to-rose-200 dark:from-emerald-900 dark:via-slate-700 dark:to-rose-900"
+      >
+        <span
+          aria-hidden="true"
+          className={`absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded ${marker}`}
+          style={{ left: `${position}%` }}
+        />
+      </div>
+      <div className="mt-2 text-xs text-slate-500">{interpretation}</div>
+    </div>
+  );
+}
+
 function ReferenceInfo({ gate }: { gate: QuantGateResult | undefined }) {
   if (!gate) return null;
   const stockOnly = gate.reference_only === true;
+  const rows = stockOnly
+    ? [{ label: '个股 PE 分位', value: gate.stock_percentile, kind: 'pe' as const }]
+    : [
+        { label: 'CNN', value: gate.cnn, kind: 'cnn' as const },
+        { label: '纳指100 PE 分位', value: gate.ndx_percentile, kind: 'pe' as const },
+        { label: 'SOXX 分位', value: gate.soxx_percentile, kind: 'indicator' as const },
+      ];
   return (
-    <details className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-      <summary className="cursor-pointer font-semibold">参考信息（不参与开窗）</summary>
-      <div className="mt-2 text-xs text-slate-500">
-        {stockOnly
-          ? `个股 PE 分位 ${numberText(gate.stock_percentile, '%')}`
-          : `CNN ${numberText(gate.cnn)}；纳指100 PE 分位 ${numberText(gate.ndx_percentile, '%')}；SOXX 分位 ${numberText(gate.soxx_percentile, '%')}`}
+    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+      <div className="font-semibold">估值位置（参考，不参与开窗）</div>
+      <div className="mt-3 grid gap-2">
+        {rows.map((row) => <ValuationPosition key={row.label} {...row} />)}
       </div>
-    </details>
+    </div>
   );
 }
 

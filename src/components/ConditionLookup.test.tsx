@@ -108,6 +108,56 @@ describe('ConditionLookup', () => {
     expect(html).not.toContain('纳指100');
   });
 
+  it('expands the valuation position card by default', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('估值位置（参考，不参与开窗）');
+    expect(html).not.toContain('<summary class="cursor-pointer font-semibold">参考信息（不参与开窗）</summary>');
+  });
+
+  it('renders a low 20.40-percent PE percentile as green with an honest interpretation', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.gates!.valuation.stock_percentile = 20.4;
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('aria-label="个股 PE 分位"');
+    expect(html).toContain('aria-valuenow="20.4"');
+    expect(html).toContain('data-zone="low"');
+    expect(html).toContain('bg-emerald-600');
+    expect(html).toContain('分位 20.40% = 当前 PE 低于过去约 80% 的时间');
+  });
+
+  it('renders an 85-percent PE percentile as a red historical-high position', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.gates!.valuation.stock_percentile = 85;
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('data-zone="high"');
+    expect(html).toContain('bg-rose-600');
+    expect(html).toContain('分位 85.00% = 当前 PE 低于过去约 15% 的时间');
+  });
+
+  it('shows unavailable valuation data without drawing a fake percentile bar', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.gates!.valuation.stock_percentile = null;
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('个股 PE 分位');
+    expect(html).toContain('暂无');
+    expect(html).not.toContain('role="meter"');
+  });
+
   it('renders backend-authored ready and near depth highlights without recomputing thresholds', () => {
     const ready = renderToStaticMarkup(
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
