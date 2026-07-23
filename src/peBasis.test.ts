@@ -58,6 +58,16 @@ describe('computeIndexAnchor', () => {
     });
   });
 
+  it('uses configurable 3/10 distance thresholds', () => {
+    const result = computeIndexAnchor(series, 22.5, window, 20, {
+      atAnchorPct: 3,
+      nearAnchorPct: 10,
+    });
+
+    expect(result.gapPct).toBe(12.5);
+    expect(result.zone).toBe('far');
+  });
+
   it('returns unknown for an empty series or a zero anchor without NaN', () => {
     const empty = computeIndexAnchor([], 22.5, window);
     const zero = computeIndexAnchor([{ date: '2025-04-08', value: 0 }], 22.5, window);

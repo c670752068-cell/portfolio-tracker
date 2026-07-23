@@ -3,7 +3,7 @@ import { analyzeCostCoverage, type CostGapReason } from '../costCoverage';
 import { isInvalidEndpointUrl, looksLikeApiKey, sanitizeEndpointUrl } from '../endpointUrl';
 import { KimiError, activeAiEndpoint, activeAiProviderLabel, testAiConnection } from '../kimi';
 import { getServerAiProxyUrl, getServerQuoteProxyUrl, hasServerGateway, serverGatewayLabel } from '../runtimeConfig';
-import type { AiProvider, AppSettings, Holding, QuantHoldingCost, QuoteProvider } from '../types';
+import type { AiProvider, AppSettings, Holding, QuantHoldingCost, QuoteProvider, ValuationIndexKey } from '../types';
 
 interface SettingsPanelProps {
   settings: AppSettings;
@@ -23,6 +23,8 @@ const COST_GAP_GUIDANCE: Record<CostGapReason, string> = {
   quant_coverage_incomplete: '量化系统对该标的的成本覆盖不完整，请在持仓表手动补填买入价，或联系量化侧确认该券商是否提供成本',
   manual_missing: '请在持仓表补填买入价',
 };
+
+const VALUATION_INDEX_KEYS: readonly ValuationIndexKey[] = ['NDX', 'SOX', 'SPX', 'DJI', 'FANGPLUS'];
 
 function CostCoverageCard({
   holdings,
@@ -70,6 +72,14 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
   const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string; hint?: string } | null>(null);
   const aiLabel = activeAiProviderLabel(draft);
   const serverGatewayEnabled = hasServerGateway();
+
+  function updateManualAnchor(index: ValuationIndexKey, rawValue: string) {
+    const next = { ...draft.valuationManualAnchors };
+    const value = Number(rawValue);
+    if (rawValue.trim() === '' || !Number.isFinite(value) || value <= 0) delete next[index];
+    else next[index] = value;
+    setDraft({ ...draft, valuationManualAnchors: next });
+  }
 
   function save() {
     const endpointValues = [draft.proxyUrl, draft.zhipuProxyUrl];
@@ -268,6 +278,67 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
             仅保存在本机浏览器；每个标的每天最多请求一次。量化系统已有 PE 序列时不会调用。
           </p>
         </Field>
+      </div>
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <h4 className="mb-2 text-sm font-semibold">估值基准</h4>
+        <p className="mb-3 text-xs text-slate-500">
+          指数锚点默认取指定窗口内的最低 PE；手动锚点仅在对应指数填写后覆盖自动值。阈值表示当前 PE 高于锚点的距离分区，不改变量化系统的任何开窗结论。
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="锚点窗口开始">
+            <input
+              type="date"
+              value={draft.valuationAnchorStart}
+              onChange={(event) => setDraft({ ...draft, valuationAnchorStart: event.target.value })}
+              className={inputCls}
+            />
+          </Field>
+          <Field label="锚点窗口结束">
+            <input
+              type="date"
+              value={draft.valuationAnchorEnd}
+              onChange={(event) => setDraft({ ...draft, valuationAnchorEnd: event.target.value })}
+              className={inputCls}
+            />
+          </Field>
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {VALUATION_INDEX_KEYS.map((index) => (
+            <Field label={`${index} 手动锚点`} key={index}>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={draft.valuationManualAnchors[index] ?? ''}
+                onChange={(event) => updateManualAnchor(index, event.target.value)}
+                placeholder="留空则自动取窗口最低值"
+                className={inputCls}
+              />
+            </Field>
+          ))}
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Field label="已进入锚点区阈值">
+            <input
+              type="number"
+              min={0}
+              step="0.1"
+              value={draft.valuationAtAnchorPct}
+              onChange={(event) => setDraft({ ...draft, valuationAtAnchorPct: Number(event.target.value) })}
+              className={inputCls}
+            />
+          </Field>
+          <Field label="接近锚点阈值">
+            <input
+              type="number"
+              min={0}
+              step="0.1"
+              value={draft.valuationNearAnchorPct}
+              onChange={(event) => setDraft({ ...draft, valuationNearAnchorPct: Number(event.target.value) })}
+              className={inputCls}
+            />
+          </Field>
+        </div>
       </div>
       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
         <h4 className="mb-2 text-sm font-semibold">每日行情同步</h4>

@@ -59,6 +59,35 @@ describe('display currency settings persistence', () => {
     saveSettings({ ...loadSettings(), exposureTargetPct: 135 });
     expect(loadSettings().exposureTargetPct).toBe(135);
   });
+
+  it('defaults the valuation anchor window, manual anchors, and distance thresholds', async () => {
+    const { loadSettings } = await import('./storage');
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ aiProvider: 'zhipu' }));
+
+    expect(loadSettings()).toMatchObject({
+      valuationAnchorStart: '2025-04-01',
+      valuationAnchorEnd: '2025-04-30',
+      valuationManualAnchors: {},
+      valuationAtAnchorPct: 5,
+      valuationNearAnchorPct: 15,
+    });
+  });
+
+  it('persists a manual NDX anchor and custom 3/10 thresholds', async () => {
+    const { loadSettings, saveSettings } = await import('./storage');
+    saveSettings({
+      ...loadSettings(),
+      valuationManualAnchors: { NDX: 21.6 },
+      valuationAtAnchorPct: 3,
+      valuationNearAnchorPct: 10,
+    });
+
+    expect(loadSettings()).toMatchObject({
+      valuationManualAnchors: { NDX: 21.6 },
+      valuationAtAnchorPct: 3,
+      valuationNearAnchorPct: 10,
+    });
+  });
 });
 
 describe('portfolio import backup', () => {

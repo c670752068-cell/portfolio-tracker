@@ -1,10 +1,15 @@
-import type { AppSettings, DisplayCurrency, PortfolioState } from './types';
+import type { AppSettings, DisplayCurrency, PortfolioState, ValuationIndexKey } from './types';
 import { sanitizeEndpointUrl } from './endpointUrl';
 import { getServerQuoteProxyUrl } from './runtimeConfig';
 
 const PORTFOLIO_KEY = 'portfolio-tracker:portfolio-v1';
 const SETTINGS_KEY = 'portfolio-tracker:settings-v1';
 const BACKUP_KEY = 'portfolio-tracker:portfolio-backup-v1';
+const DEFAULT_VALUATION_ANCHOR_START = '2025-04-01';
+const DEFAULT_VALUATION_ANCHOR_END = '2025-04-30';
+const DEFAULT_VALUATION_AT_ANCHOR_PCT = 5;
+const DEFAULT_VALUATION_NEAR_ANCHOR_PCT = 15;
+const VALUATION_INDEX_KEYS: readonly ValuationIndexKey[] = ['NDX', 'SOX', 'SPX', 'DJI', 'FANGPLUS'];
 
 const emptyPortfolio: PortfolioState = {
   holdings: [],
@@ -31,6 +36,11 @@ function buildDefaultSettings(): AppSettings {
   exposureTargetPct: 100,
   quantSyncEnabled: true,
   quantSyncToken: '',
+  valuationAnchorStart: DEFAULT_VALUATION_ANCHOR_START,
+  valuationAnchorEnd: DEFAULT_VALUATION_ANCHOR_END,
+  valuationManualAnchors: {},
+  valuationAtAnchorPct: DEFAULT_VALUATION_AT_ANCHOR_PCT,
+  valuationNearAnchorPct: DEFAULT_VALUATION_NEAR_ANCHOR_PCT,
   };
 }
 
@@ -98,6 +108,14 @@ export function loadSettings(): AppSettings {
       quoteProxyUrl: sanitizeEndpointUrl(parsed.quoteProxyUrl ?? defaultSettings.quoteProxyUrl),
       displayCurrency: isDisplayCurrency(parsed.displayCurrency) ? parsed.displayCurrency : defaultSettings.displayCurrency,
       exposureTargetPct: isValidExposureTarget(parsed.exposureTargetPct) ? parsed.exposureTargetPct : 100,
+      valuationAnchorStart: isDateInput(parsed.valuationAnchorStart)
+        ? parsed.valuationAnchorStart
+        : defaultSettings.valuationAnchorStart,
+      valuationAnchorEnd: isDateInput(parsed.valuationAnchorEnd)
+        ? parsed.valuationAnchorEnd
+        : defaultSettings.valuationAnchorEnd,
+      valuationManualAnchors: sanitizeManualAnchors(parsed.valuationManualAnchors),
+      ...sanitizeValuationThresholds(parsed.valuationAtAnchorPct, parsed.valuationNearAnchorPct),
     };
   } catch {
     return defaultSettings;
@@ -114,4 +132,43 @@ function isDisplayCurrency(value: unknown): value is DisplayCurrency {
 
 function isValidExposureTarget(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 50 && value <= 300;
+}
+
+function isDateInput(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(`${value}T00:00:00Z`));
+}
+
+function sanitizeManualAnchors(value: unknown): Partial<Record<ValuationIndexKey, number>> {
+  if (!value || typeof value !== 'object') return {};
+  const input = value as Record<string, unknown>;
+  return Object.fromEntries(
+    VALUATION_INDEX_KEYS.flatMap((key) => {
+      const anchor = input[key];
+      return typeof anchor === 'number' && Number.isFinite(anchor) && anchor > 0
+        ? [[key, anchor] as const]
+        : [];
+    }),
+  );
+}
+
+function sanitizeValuationThresholds(
+  atAnchor: unknown,
+  nearAnchor: unknown,
+): Pick<AppSettings, 'valuationAtAnchorPct' | 'valuationNearAnchorPct'> {
+  if (
+    typeof atAnchor === 'number'
+    && Number.isFinite(atAnchor)
+    && atAnchor >= 0
+    && typeof nearAnchor === 'number'
+    && Number.isFinite(nearAnchor)
+    && nearAnchor >= atAnchor
+  ) {
+    return { valuationAtAnchorPct: atAnchor, valuationNearAnchorPct: nearAnchor };
+  }
+  return {
+    valuationAtAnchorPct: DEFAULT_VALUATION_AT_ANCHOR_PCT,
+    valuationNearAnchorPct: DEFAULT_VALUATION_NEAR_ANCHOR_PCT,
+  };
 }

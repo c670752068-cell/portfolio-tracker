@@ -4,6 +4,8 @@ export type Currency = 'USD' | 'CNY' | 'HKD' | 'OTHER';
 
 export type DisplayCurrency = 'USD' | 'CNY' | 'HKD' | 'JPY' | 'EUR' | 'GBP';
 
+export type ValuationIndexKey = 'NDX' | 'SOX' | 'SPX' | 'DJI' | 'FANGPLUS';
+
 export type AssetType = 'stock' | 'etf' | 'leveraged_etf' | 'option' | 'fund' | 'other';
 
 export type QuoteProvider = 'none' | 'finnhub' | 'fmp' | 'alphavantage' | 'proxy';
@@ -88,13 +90,18 @@ export interface AppSettings {
   zhipuProxyUrl: string;
   quoteProvider: QuoteProvider;
   quoteApiKey: string;
-  peApiKey?: string;
+  peApiKey: string;
   quoteProxyUrl: string;
   autoRefreshQuotes: boolean;
   displayCurrency: DisplayCurrency;
   exposureTargetPct: number;
   quantSyncEnabled: boolean;
   quantSyncToken: string;
+  valuationAnchorStart: string;
+  valuationAnchorEnd: string;
+  valuationManualAnchors: Partial<Record<ValuationIndexKey, number>>;
+  valuationAtAnchorPct: number;
+  valuationNearAnchorPct: number;
 }
 
 export interface QuantPosition {

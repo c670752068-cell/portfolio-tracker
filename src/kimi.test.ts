@@ -19,6 +19,12 @@ function settings(overrides: Partial<AppSettings> = {}): AppSettings {
     exposureTargetPct: 100,
     quantSyncEnabled: false,
     quantSyncToken: '',
+    peApiKey: '',
+    valuationAnchorStart: '2025-04-01',
+    valuationAnchorEnd: '2025-04-30',
+    valuationManualAnchors: {},
+    valuationAtAnchorPct: 5,
+    valuationNearAnchorPct: 15,
     ...overrides,
   };
 }

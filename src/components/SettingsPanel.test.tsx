@@ -11,6 +11,9 @@ const settings: AppSettings = {
   zhipuApiKey: '', zhipuModel: 'glm-4.6v-flash', zhipuProxyUrl: '',
   quoteProvider: 'none', quoteApiKey: '', quoteProxyUrl: '', autoRefreshQuotes: false,
   displayCurrency: 'USD', exposureTargetPct: 100, quantSyncEnabled: true, quantSyncToken: '',
+  peApiKey: '',
+  valuationAnchorStart: '2025-04-01', valuationAnchorEnd: '2025-04-30',
+  valuationManualAnchors: {}, valuationAtAnchorPct: 5, valuationNearAnchorPct: 15,
 };
 
 function holding(overrides: Partial<Holding>): Holding {
@@ -30,6 +33,20 @@ describe('SettingsPanel cost coverage', () => {
     expect(html).toContain('Alpha Vantage PE API Key');
     expect(html).toContain('type="password"');
     expect(html).toContain('value="demo-pe"');
+  });
+
+  it('renders configurable valuation anchor dates, manual indices, and thresholds', () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel settings={settings} onSave={() => undefined} />,
+    );
+
+    expect(html).toContain('估值基准');
+    expect(html).toContain('value="2025-04-01"');
+    expect(html).toContain('value="2025-04-30"');
+    expect(html).toContain('NDX 手动锚点');
+    expect(html).toContain('FANGPLUS 手动锚点');
+    expect(html).toContain('已进入锚点区阈值');
+    expect(html).toContain('接近锚点阈值');
   });
 
   it('groups all three cost-gap reasons and shows an actionable instruction for each', () => {
