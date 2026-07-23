@@ -16,14 +16,19 @@ interface IndexBasisDefinition {
 }
 
 const INDEX_BASIS: Readonly<Record<string, IndexBasisDefinition>> = {
+  QQQ: { indexKey: 'NDX' },
   TQQQ: { indexKey: 'NDX' },
   QLD: { indexKey: 'NDX' },
+  SPY: { indexKey: 'SPX' },
   SPXL: { indexKey: 'SPX' },
   UPRO: { indexKey: 'SPX' },
   SSO: { indexKey: 'SPX' },
+  DIA: { indexKey: 'DJI' },
   UDOW: { indexKey: 'DJI' },
+  SMH: { indexKey: 'SOX' },
   SOXL: { indexKey: 'SOX' },
   TECL: { indexKey: 'NDX', approximate: true },
+  IWM: { indexKey: 'RUT' },
   TNA: { indexKey: 'RUT' },
   FNGU: { indexKey: 'FANGPLUS' },
 };

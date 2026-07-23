@@ -132,6 +132,75 @@ describe('ValuationCard', () => {
     expect(html).not.toContain('$0.00');
   });
 
+  it('shows the stock price implied by a lower five-year mean PE', () => {
+    const html = renderToStaticMarkup(
+      <ValuationCard
+        symbol="GOOG"
+        history={history('GOOG', 30, [{ date: '2026-07-22', value: 21.6 }])}
+        settings={settings}
+        currentPrice={400}
+        priceSource="holding"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+
+    expect(html).toContain('PE 回到 5 年均值 21.60 对应股价 ~$288.00（需下跌 28.00%）');
+    expect(html).toContain('按当前每股收益不变推算；实际 EPS 会随财报变化，仅供参考。');
+  });
+
+  it('shows the stock price implied by a higher five-year mean PE', () => {
+    const html = renderToStaticMarkup(
+      <ValuationCard
+        symbol="GOOG"
+        history={history('GOOG', 20, [{ date: '2026-07-22', value: 24.8 }])}
+        settings={settings}
+        currentPrice={400}
+        priceSource="holding"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+
+    expect(html).toContain('PE 回到 5 年均值 24.80 对应股价 ~$496.00（需上涨 24.00%）');
+  });
+
+  it('uses the regular index proxy ETF price for an index anchor target', () => {
+    const html = renderToStaticMarkup(
+      <ValuationCard
+        symbol="QQQ"
+        history={history('NDX', 30, [{ date: '2025-04-08', value: 21.6 }])}
+        settings={settings}
+        currentPrice={400}
+        priceSource="monitored"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+
+    expect(html).toContain('QQQ · $400.00 · 基准指数 NDX · TTM PE 30.00');
+    expect(html).toContain('NDX 回到 2025-04 锚点 21.60 对应 QQQ ~$288.00（需下跌 28.00%）');
+  });
+
+  it('does not derive a target price for leveraged ETFs because of path dependency', () => {
+    const html = renderToStaticMarkup(
+      <ValuationCard
+        symbol="TQQQ"
+        history={history('NDX', 30, [{ date: '2025-04-08', value: 21.6 }])}
+        settings={settings}
+        currentPrice={50}
+        priceSource="holding"
+        displayCurrency="USD"
+        rates={rates}
+      />,
+    );
+
+    expect(html).toContain('TQQQ · $50.00');
+    expect(html).toContain('杠杆 ETF 因每日重置存在路径依赖，不推算目标价；请参考上方基准指数的目标价');
+    expect(html).not.toContain('对应 TQQQ');
+    expect(html).not.toMatch(/NaN|Infinity/);
+  });
+
   it('renders a stock five-year mean, deviation, metric, and source without mixing PE definitions', () => {
     const html = renderToStaticMarkup(
       <ValuationCard

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { computeIndexAnchor, computeStock5yMean } from '../peBasis';
 import { PeRateLimitError, resolvePeSnapshot, type PeHistoryPayload, type PeSnapshot } from '../peData';
+import { computePeTargetPrice } from '../peTargetPrice';
 import { formatDisplayMoney } from '../displayCurrency';
+import { leverageInfoForSymbol } from '../leverageMap';
 import type { AppSettings, DisplayCurrency, ExchangeRates } from '../types';
 import { resolveValuationBasis } from '../valuationBasis';
 
@@ -79,6 +81,23 @@ function relativeMeanText(value: number | null): string {
   return `当前${value < 0 ? '低于' : '高于'}均值 ${Math.abs(value).toFixed(2)}%`;
 }
 
+function targetGapText(gapPct: number): string {
+  if (gapPct === 0) return '当前价格已对应';
+  return `需${gapPct < 0 ? '下跌' : '上涨'} ${Math.abs(gapPct).toFixed(2)}%`;
+}
+
+function isLeveragedSymbol(symbol: string): boolean {
+  return (leverageInfoForSymbol(symbol)?.factor ?? 1) > 1;
+}
+
+const INDEX_PRICE_PROXY: Readonly<Record<string, string>> = {
+  NDX: 'QQQ',
+  SPX: 'SPY',
+  SOX: 'SMH',
+  DJI: 'DIA',
+  RUT: 'IWM',
+};
+
 function sourceText(
   history: PeHistoryPayload | null,
   entrySource: string | undefined,
@@ -102,6 +121,10 @@ function StockValuation({
   source,
   priceText,
   priceSource,
+  currentPrice,
+  displayCurrency,
+  rates,
+  suppressTarget,
 }: {
   symbol: string;
   metric: PeHistoryPayload['metric'] | null;
@@ -111,8 +134,15 @@ function StockValuation({
   source: string;
   priceText: string;
   priceSource: ValuationCardProps['priceSource'];
+  currentPrice: number | null;
+  displayCurrency: DisplayCurrency;
+  rates: ExchangeRates;
+  suppressTarget: boolean;
 }) {
   const result = computeStock5yMean(series, current);
+  const target = suppressTarget
+    ? { targetPrice: null, gapPct: null }
+    : computePeTargetPrice(currentPrice, result.current, result.mean5y);
   const markerPosition = result.deviationPct === null
     ? null
     : Math.max(0, Math.min(100, 50 + result.deviationPct));
@@ -124,6 +154,21 @@ function StockValuation({
       <div className="mt-2 text-sm">
         5 年均值 {peText(result.mean5y)} · {relativeMeanText(result.deviationPct)}
       </div>
+      {suppressTarget ? (
+        <div className="mt-2 text-xs text-slate-500">
+          杠杆 ETF 因每日重置存在路径依赖，不推算目标价；请参考上方基准指数的目标价
+        </div>
+      ) : target.targetPrice !== null && target.gapPct !== null ? (
+        <>
+          <div className="mt-2 text-sm">
+            PE 回到 5 年均值 {peText(result.mean5y)} 对应股价 ~{formatDisplayMoney(target.targetPrice, displayCurrency, rates)}
+            （{targetGapText(target.gapPct)}）
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            按当前每股收益不变推算；实际 EPS 会随财报变化，仅供参考。
+          </div>
+        </>
+      ) : null}
       <div
         aria-label="当前相对 5 年均值位置"
         className="relative mt-3 h-2 rounded-full bg-gradient-to-r from-emerald-200 via-slate-300 to-rose-200 dark:from-emerald-900 dark:via-slate-600 dark:to-rose-900"
@@ -160,6 +205,10 @@ function IndexValuation({
   settings,
   priceText,
   priceSource,
+  currentPrice,
+  displayCurrency,
+  rates,
+  suppressTarget,
 }: {
   symbol: string;
   indexKey: string;
@@ -171,6 +220,10 @@ function IndexValuation({
   settings: ValuationSettings;
   priceText: string;
   priceSource: ValuationCardProps['priceSource'];
+  currentPrice: number | null;
+  displayCurrency: DisplayCurrency;
+  rates: ExchangeRates;
+  suppressTarget: boolean;
 }) {
   const manualAnchor = (settings.valuationManualAnchors as Record<string, number | undefined>)[indexKey];
   const result = computeIndexAnchor(
@@ -188,6 +241,10 @@ function IndexValuation({
     ? null
     : Math.max(0, Math.min(100, result.gapPct / Math.max(settings.valuationNearAnchorPct, 1) * 100));
   const anchorDate = result.anchorDate ? `（${result.anchorDate}）` : manualAnchor ? '（手动录入）' : '';
+  const proxySymbol = INDEX_PRICE_PROXY[indexKey] ?? null;
+  const target = suppressTarget || !proxySymbol
+    ? { targetPrice: null, gapPct: null }
+    : computePeTargetPrice(currentPrice, result.current, result.anchorPe);
   return (
     <div data-zone={result.zone} className={`rounded-lg border p-3 ${view.panel}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -202,6 +259,23 @@ function IndexValuation({
       <div className="mt-2 text-sm">
         锚点 {peText(result.anchorPe)}{anchorDate} · 距锚点 {signedPercent(result.gapPct)}
       </div>
+      {suppressTarget ? (
+        <div className="mt-2 text-xs text-slate-500">
+          杠杆 ETF 因每日重置存在路径依赖，不推算目标价；请参考上方基准指数的目标价
+        </div>
+      ) : proxySymbol && target.targetPrice !== null && target.gapPct !== null ? (
+        <>
+          <div className="mt-2 text-sm">
+            {indexKey} 回到 2025-04 锚点 {peText(result.anchorPe)} 对应 {proxySymbol} ~{formatDisplayMoney(target.targetPrice, displayCurrency, rates)}
+            （{targetGapText(target.gapPct)}）
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            按当前每股收益不变推算；实际 EPS 会随财报变化，仅供参考。
+          </div>
+        </>
+      ) : !proxySymbol ? (
+        <div className="mt-2 text-xs text-slate-500">{indexKey} 无可用代理 ETF，目标价不可推算</div>
+      ) : null}
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
         {progress !== null && <div aria-hidden="true" className="h-full bg-current text-indigo-500" style={{ width: `${progress}%` }} />}
       </div>
@@ -272,6 +346,7 @@ export function ValuationCard({
       : null;
   const series = quantEntry?.series ?? [];
   const source = sourceText(history && quantEntry ? history : null, quantEntry?.source, fallback);
+  const suppressTarget = isLeveragedSymbol(symbol);
   const priceText = currentPrice !== null && Number.isFinite(currentPrice) && currentPrice > 0
     ? formatDisplayMoney(currentPrice, displayCurrency, rates)
     : '股价暂无';
@@ -289,6 +364,10 @@ export function ValuationCard({
           source={source}
           priceText={priceText}
           priceSource={priceSource}
+          currentPrice={currentPrice}
+          displayCurrency={displayCurrency}
+          rates={rates}
+          suppressTarget={suppressTarget}
         />
       ) : (
         <IndexValuation
@@ -302,6 +381,10 @@ export function ValuationCard({
           settings={settings}
           priceText={priceText}
           priceSource={priceSource}
+          currentPrice={currentPrice}
+          displayCurrency={displayCurrency}
+          rates={rates}
+          suppressTarget={suppressTarget}
         />
       )}
       {fallbackError && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{fallbackError}</p>}
