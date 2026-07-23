@@ -14,12 +14,13 @@ import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { MARKET_SESSION_REFRESH_MS, dayChangeSessionText, isRegularSession, marketSessionDateKey } from './marketSession';
 import { computeMetrics } from './metrics';
+import { fetchMonitoredQuotes } from './monitoredQuotes';
 import { fetchQuantAnalysis, isQuantAnalysisStale, startQuantAnalysisAutoRefresh } from './quantAnalysis';
 import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDetailsApplyResult } from './importMerge';
 import { dedupeImportIssues } from './importIssues';
 import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
 import { applyQuantHoldingCosts, applyQuantSync, fetchQuantPositions, isQuantSnapshotStale, mapQuantPositions, type QuantMappedPortfolio } from './quantSync';
-import { getServerAlertRulesUrl, getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, hasServerGateway } from './runtimeConfig';
+import { getServerAlertRulesUrl, getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, getServerQuoteProxyUrl, hasServerGateway } from './runtimeConfig';
 import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState, QuantAnalysisSnapshot } from './types';
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
@@ -114,6 +115,7 @@ export default function App() {
     summary: '',
   });
   const [quantAnalysis, setQuantAnalysis] = useState<QuantAnalysisSnapshot | null>(null);
+  const [, setMonitoredQuotes] = useState<Map<string, number>>(() => new Map());
   const [quantAnalysisStatus, setQuantAnalysisStatus] = useState<QuantAnalysisStatus>({ loading: false, error: '', stale: false });
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertRulesStatus, setAlertRulesStatus] = useState<AlertRulesStatus>({ loading: false, error: '' });
@@ -307,6 +309,24 @@ export default function App() {
       void refreshQuantAnalysis();
     }, document);
   }, [refreshQuantAnalysis]);
+
+  useEffect(() => {
+    if (!quantAnalysis) return undefined;
+    let active = true;
+    const serverProxyUrl = getServerQuoteProxyUrl();
+    const quoteProxyUrl = serverProxyUrl
+      || (settings.quoteProvider === 'proxy' ? settings.quoteProxyUrl : '');
+    void fetchMonitoredQuotes({
+      snapshot: quantAnalysis,
+      holdings: portfolio.holdings,
+      quoteProxyUrl,
+    }).then((prices) => {
+      if (active) setMonitoredQuotes(prices);
+    });
+    return () => {
+      active = false;
+    };
+  }, [portfolio.holdings, quantAnalysis, settings.quoteProvider, settings.quoteProxyUrl]);
 
   useEffect(() => {
     const url = getServerAlertRulesUrl();
