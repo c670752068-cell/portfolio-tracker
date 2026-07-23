@@ -3,12 +3,13 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const AUTHORIZATION = 'Bearer unit-secret';
 let child: ChildProcess;
 let origin: string;
 let storageRoot: string;
+let refreshRequestPath: string;
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -39,6 +40,7 @@ beforeAll(async () => {
   const port = await freePort();
   origin = `http://127.0.0.1:${port}`;
   storageRoot = await mkdtemp(join(tmpdir(), 'portfolio-positions-'));
+  refreshRequestPath = join(storageRoot, 'refresh-request.json');
   child = spawn(process.execPath, ['deploy/aliyun-gateway.mjs'], {
     cwd: process.cwd(),
     env: {
@@ -48,6 +50,7 @@ beforeAll(async () => {
       PORTFOLIO_SYNC_TOKEN: 'unit-secret',
       PORTFOLIO_POSITIONS_ROOT: storageRoot,
       PORTFOLIO_ANALYSIS_ROOT: join(storageRoot, 'analysis'),
+      PORTFOLIO_REFRESH_REQUEST_PATH: refreshRequestPath,
     },
     stdio: 'ignore',
   });
@@ -59,7 +62,92 @@ afterAll(async () => {
   await rm(storageRoot, { recursive: true, force: true });
 });
 
+beforeEach(async () => {
+  await rm(refreshRequestPath, { force: true });
+});
+
 describe('portfolio positions gateway', () => {
+  it('returns idle before any refresh request exists', async () => {
+    const response = await fetch(`${origin}/api/refresh-request`, {
+      headers: { Authorization: AUTHORIZATION },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: 'idle' });
+  });
+
+  it('stores a pending refresh request and returns it to the Mac poller', async () => {
+    const post = await fetch(`${origin}/api/refresh-request`, {
+      method: 'POST',
+      headers: { Authorization: AUTHORIZATION },
+    });
+    expect(post.status).toBe(200);
+    const created = await post.json();
+    expect(created).toEqual({
+      ok: true,
+      requested_at: expect.any(String),
+    });
+
+    const get = await fetch(`${origin}/api/refresh-request`, {
+      headers: { Authorization: AUTHORIZATION },
+    });
+    expect(get.status).toBe(200);
+    expect(await get.json()).toEqual({
+      status: 'pending',
+      requested_at: created.requested_at,
+    });
+  });
+
+  it('throttles a second pending request within sixty seconds', async () => {
+    const first = await fetch(`${origin}/api/refresh-request`, {
+      method: 'POST',
+      headers: { Authorization: AUTHORIZATION },
+    });
+    const created = await first.json();
+
+    const second = await fetch(`${origin}/api/refresh-request`, {
+      method: 'POST',
+      headers: { Authorization: AUTHORIZATION },
+    });
+    expect(second.status).toBe(202);
+    expect(await second.json()).toEqual({
+      throttled: true,
+      requested_at: created.requested_at,
+    });
+  });
+
+  it('records completion result and exposes it to the website poller', async () => {
+    await fetch(`${origin}/api/refresh-request`, {
+      method: 'POST',
+      headers: { Authorization: AUTHORIZATION },
+    });
+    const result = { ok: true, checked_at: '2026-07-23T10:32:11-04:00' };
+    const complete = await fetch(`${origin}/api/refresh-request/complete`, {
+      method: 'POST',
+      headers: {
+        Authorization: AUTHORIZATION,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ result }),
+    });
+    expect(complete.status).toBe(200);
+
+    const get = await fetch(`${origin}/api/refresh-request`, {
+      headers: { Authorization: AUTHORIZATION },
+    });
+    expect(await get.json()).toEqual({
+      status: 'done',
+      completed_at: expect.any(String),
+      result,
+    });
+  });
+
+  it('protects refresh requests with the bearer token', async () => {
+    const response = await fetch(`${origin}/api/refresh-request`, {
+      headers: { Authorization: 'Bearer wrong-value' },
+    });
+    expect(response.status).toBe(401);
+  });
+
   it('atomically stores a valid pushed snapshot and returns the same JSON', async () => {
     const snapshot = {
       payload: {
@@ -208,6 +296,9 @@ describe('portfolio positions gateway', () => {
       const response = await fetch(`${disabledOrigin}/api/portfolio/positions`);
       expect(response.status).toBe(404);
       expect(await response.json()).toEqual({ error: { code: 'not_found', message: '未知接口' } });
+      const refresh = await fetch(`${disabledOrigin}/api/refresh-request`);
+      expect(refresh.status).toBe(404);
+      expect(await refresh.json()).toEqual({ error: { code: 'not_found', message: '未知接口' } });
     } finally {
       disabled.kill('SIGTERM');
     }

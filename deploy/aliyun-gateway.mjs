@@ -22,6 +22,7 @@ import {
   sendBarkNotification,
   startAlertTracker,
 } from './alert-tracker.mjs';
+import { createRefreshRequestRoute } from './refresh-request-route.mjs';
 
 const PORT = Number(process.env.PORT || 8789);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -37,6 +38,7 @@ const PORTFOLIO_SYNC_TOKEN = process.env.PORTFOLIO_SYNC_TOKEN || '';
 const PORTFOLIO_POSITIONS_ROOT = resolve(process.env.PORTFOLIO_POSITIONS_ROOT || '/opt/portfolio-tracker-data/positions');
 const PORTFOLIO_POSITIONS_MAX_BYTES = 2 * 1024 * 1024;
 const PORTFOLIO_ANALYSIS_ROOT = resolve(process.env.PORTFOLIO_ANALYSIS_ROOT || '/opt/portfolio-tracker-data/analysis');
+const PORTFOLIO_REFRESH_REQUEST_PATH = resolve(process.env.PORTFOLIO_REFRESH_REQUEST_PATH || '/opt/portfolio-tracker-data/refresh-request.json');
 const PORTFOLIO_ALERTS_ROOT = resolve(process.env.PORTFOLIO_ALERTS_ROOT || '/opt/portfolio-tracker-data/alerts');
 const BARK_DEVICE_KEY = process.env.BARK_DEVICE_KEY || '';
 const BARK_BASE_URL = process.env.BARK_BASE_URL || 'https://api.day.app';
@@ -583,6 +585,11 @@ async function fetchAlertQuotes(symbols) {
 }
 
 const handleAlertRulesRoute = createAlertRulesRoute({ alertsRoot: PORTFOLIO_ALERTS_ROOT, sendJson });
+const handleRefreshRequestRoute = createRefreshRequestRoute({
+  token: PORTFOLIO_SYNC_TOKEN,
+  filePath: PORTFOLIO_REFRESH_REQUEST_PATH,
+  sendJson,
+});
 
 async function runConfiguredAlertCycle() {
   const rules = await readAlertRules(PORTFOLIO_ALERTS_ROOT);
@@ -666,6 +673,7 @@ async function serveStatic(url, req, res) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
   if (await handleImportArchiveRoute(url, req, res)) return;
+  if (await handleRefreshRequestRoute(url, req, res)) return;
   if (await handlePortfolioPositionsRoute(url, req, res)) return;
   try {
     if (await handlePortfolioAnalysisRoute(url, req, res)) return;
