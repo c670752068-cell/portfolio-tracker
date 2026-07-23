@@ -153,6 +153,15 @@ launchctl load ~/Library/LaunchAgents/com.portfolio.sync.plist
 launchctl start com.portfolio.sync
 ```
 
+另装一个常驻轮询任务，让网页发出的「一键刷新」请求在 60 秒内触发量化重算；上面的 45 分钟任务继续保留作兜底：
+
+```bash
+cp sync/com.portfolio.refresh-watch.plist ~/Library/LaunchAgents/com.portfolio.refresh-watch.plist
+launchctl unload ~/Library/LaunchAgents/com.portfolio.refresh-watch.plist 2>/dev/null || true
+launchctl load ~/Library/LaunchAgents/com.portfolio.refresh-watch.plist
+launchctl start com.portfolio.refresh-watch
+```
+
 模板不包含认证值；脚本默认从权限为 `600` 的 `~/.portfolio-sync-token` 读取。可用 `FUTU_ASSISTANT_CLI`、`PORTFOLIO_GATEWAY_ORIGIN` 覆盖默认 CLI 和网关地址。
 
 ---
