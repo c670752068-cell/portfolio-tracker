@@ -12,6 +12,8 @@ export type QuoteProvider = 'none' | 'finnhub' | 'fmp' | 'alphavantage' | 'proxy
 
 export type QuoteSource = QuoteProvider | 'delta_estimate';
 
+export type PriceSession = 'pre' | 'regular' | 'post' | 'overnight' | 'closed';
+
 export type AiProvider = 'zhipu' | 'kimi';
 
 export interface QuoteSnapshot {
@@ -22,6 +24,9 @@ export interface QuoteSnapshot {
   changePercent: number | null;
   currency: Currency;
   timestamp: string | null;
+  session?: PriceSession;
+  priceTime?: string | null;
+  regularMarketPrice?: number | null;
   source: QuoteSource;
   isRealtime?: boolean;
   note?: string;

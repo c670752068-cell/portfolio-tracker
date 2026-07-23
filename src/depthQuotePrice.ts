@@ -1,10 +1,12 @@
-import type { Holding } from './types';
+import type { Holding, QuoteSnapshot } from './types';
 
-export function depthQuotePrice(
+export type DepthQuote = number | QuoteSnapshot;
+
+export function depthQuoteSnapshot(
   holdings: readonly Holding[],
-  monitoredQuotes: ReadonlyMap<string, number>,
+  monitoredQuotes: ReadonlyMap<string, DepthQuote>,
   rawSymbol: string,
-): number | null {
+): QuoteSnapshot | null {
   const symbol = rawSymbol.trim().toUpperCase();
   for (const holding of holdings) {
     if (!holding.quote) continue;
@@ -15,7 +17,11 @@ export function depthQuotePrice(
         && Number.isFinite(holding.option.underlyingPrice)
         && holding.option.underlyingPrice > 0
       ) {
-        return holding.option.underlyingPrice;
+        return {
+          ...holding.quote,
+          symbol,
+          price: holding.option.underlyingPrice,
+        };
       }
       continue;
     }
@@ -24,16 +30,32 @@ export function depthQuotePrice(
       && Number.isFinite(holding.quote.price)
       && holding.quote.price > 0
     ) {
-      return holding.quote.price;
+      return holding.quote;
     }
   }
-  const monitoredPrice = monitoredQuotes.get(symbol);
-  if (
-    typeof monitoredPrice === 'number'
-    && Number.isFinite(monitoredPrice)
-    && monitoredPrice > 0
-  ) {
-    return monitoredPrice;
+  const monitored = monitoredQuotes.get(symbol);
+  if (typeof monitored === 'number') {
+    if (!Number.isFinite(monitored) || monitored <= 0) return null;
+    return {
+      symbol,
+      price: monitored,
+      previousClose: null,
+      change: null,
+      changePercent: null,
+      currency: 'USD',
+      timestamp: null,
+      source: 'proxy',
+    };
   }
-  return null;
+  return monitored && Number.isFinite(monitored.price) && monitored.price > 0
+    ? monitored
+    : null;
+}
+
+export function depthQuotePrice(
+  holdings: readonly Holding[],
+  monitoredQuotes: ReadonlyMap<string, DepthQuote>,
+  rawSymbol: string,
+): number | null {
+  return depthQuoteSnapshot(holdings, monitoredQuotes, rawSymbol)?.price ?? null;
 }

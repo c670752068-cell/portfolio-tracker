@@ -108,6 +108,29 @@ describe('option quote refresh integration', () => {
 });
 
 describe('quant-sync source-of-truth integration', () => {
+  it('preserves proxy session and price time metadata on the holding quote', async () => {
+    vi.stubGlobal('window', { location: { protocol: 'https:' } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      quotes: [{
+        symbol: 'MSFT',
+        price: 388,
+        previousClose: 390.34,
+        currency: 'USD',
+        session: 'pre',
+        priceTime: '2026-07-23T13:20:00Z',
+        regularMarketPrice: 390.34,
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+
+    const result = await syncHoldingsWithQuotes([holding({ symbol: 'MSFT' })], settings);
+
+    expect(result.holdings[0]?.quote).toEqual(expect.objectContaining({
+      session: 'pre',
+      priceTime: '2026-07-23T13:20:00Z',
+      regularMarketPrice: 390.34,
+    }));
+  });
+
   it('keeps a quant stock market value override while attaching a fresh quote', async () => {
     vi.stubGlobal('window', { location: { protocol: 'https:' } });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({

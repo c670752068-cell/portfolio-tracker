@@ -84,6 +84,32 @@ describe('monitoredQuoteSymbols', () => {
 });
 
 describe('fetchMonitoredQuotes', () => {
+  it('passes through session and price time for monitored symbols', async () => {
+    const storage = memoryStorage();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      quotes: [{
+        symbol: 'AVGO',
+        price: 384.98,
+        session: 'pre',
+        priceTime: '2026-07-23T13:20:00Z',
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+
+    const result = await fetchMonitoredQuotes({
+      snapshot: snapshot(['AVGO']),
+      holdings: [],
+      quoteProxyUrl: 'https://quotes.example.test/api/quotes',
+      now: new Date('2026-07-23T13:20:00Z'),
+      storage,
+    });
+
+    expect(result.get('AVGO')).toEqual(expect.objectContaining({
+      price: 384.98,
+      session: 'pre',
+      priceTime: '2026-07-23T13:20:00Z',
+    }));
+  });
+
   it('requests 60 symbols in batches of 50 and 10', async () => {
     const storage = memoryStorage();
     const symbols = Array.from({ length: 60 }, (_, index) => `S${index + 1}`);
@@ -138,7 +164,7 @@ describe('fetchMonitoredQuotes', () => {
       storage,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(refreshed.get('AVGO')).toBe(400);
+    expect(refreshed.get('AVGO')).toEqual(expect.objectContaining({ price: 400 }));
   });
 
   it('keeps the old cache when refresh fails and does not throw', async () => {

@@ -211,6 +211,75 @@ describe('ConditionLookup', () => {
     expect(html).toContain('高点为反推值，会随现价与量化回撤的更新时差而小幅变动；量化系统提供真实高点后此处将改为固定值。');
   });
 
+  it('shows a premarket ET badge beside a proxy-derived depth price', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.depth_window = {
+      ...snapshot.symbols.AAPL.depth_window!,
+      current_price: null,
+      high_price: null,
+      threshold_price: null,
+      price_session: 'regular',
+    };
+    const quotedHoldings = [{
+      ...holdings[0],
+      id: 'aapl-session',
+      symbol: 'AAPL',
+      quote: {
+        symbol: 'AAPL',
+        price: 388,
+        previousClose: 390.34,
+        change: -2.34,
+        changePercent: -0.006,
+        currency: 'USD' as const,
+        timestamp: '2026-07-23T13:20:00Z',
+        source: 'proxy' as const,
+        session: 'pre' as const,
+        priceTime: '2026-07-23T13:20:00Z',
+      },
+    }];
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={quotedHoldings} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('现价 $388.00（盘前 09:20 ET）');
+    expect(html).toContain('量化快照取价为盘中，当前行情为盘前；回撤百分比基于量化取价计算。');
+  });
+
+  it('keeps legacy quote data without session metadata compatible and badge-free', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.depth_window = {
+      ...snapshot.symbols.AAPL.depth_window!,
+      current_price: null,
+      high_price: null,
+      threshold_price: null,
+      price_session: '',
+    };
+    const legacyHoldings = [{
+      ...holdings[0],
+      id: 'aapl-legacy',
+      symbol: 'AAPL',
+      quote: {
+        symbol: 'AAPL',
+        price: 388,
+        previousClose: 390.34,
+        change: -2.34,
+        changePercent: -0.006,
+        currency: 'USD' as const,
+        timestamp: '2026-07-23T13:20:00Z',
+        source: 'proxy' as const,
+      },
+    }];
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={legacyHoldings} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('现价 $388.00');
+    expect(html).not.toContain('盘前');
+    expect(html).not.toContain('当前行情为');
+  });
+
   it('prefers a holding quote over a monitored quote and returns null when both are missing', () => {
     const quotedHoldings = [{
       ...holdings[0],

@@ -1,6 +1,7 @@
 import { CASH_EQUIVALENT_SYMBOLS } from './assetClass';
 import { sanitizeEndpointUrl } from './endpointUrl';
-import type { Holding, QuantAnalysisSnapshot } from './types';
+import type { Holding, QuantAnalysisSnapshot, QuoteSnapshot } from './types';
+import type { DepthQuote } from './depthQuotePrice';
 
 export const MONITORED_QUOTES_CACHE_KEY = 'portfolio-tracker:monitored-quotes-v1';
 export const MONITORED_QUOTES_TTL_MS = 25 * 60 * 1000;
@@ -8,7 +9,7 @@ export const MONITORED_QUOTES_BATCH_SIZE = 50;
 
 interface MonitoredQuoteCache {
   fetchedAt: string;
-  prices: Record<string, number>;
+  prices: Record<string, unknown>;
 }
 
 interface FetchMonitoredQuotesOptions {
@@ -41,16 +42,16 @@ export function monitoredQuoteSymbols(
 
 export async function fetchMonitoredQuotes(
   options: FetchMonitoredQuotesOptions,
-): Promise<Map<string, number>> {
+): Promise<Map<string, DepthQuote>> {
   const storage = options.storage ?? localStorage;
   const now = options.now ?? new Date();
   const cached = readCache(storage);
   if (cached && now.getTime() - Date.parse(cached.fetchedAt) < MONITORED_QUOTES_TTL_MS) {
-    return pricesMap(cached.prices);
+    return quotesMap(parseCachedQuotes(cached.prices));
   }
 
   const endpoint = sanitizeEndpointUrl(options.quoteProxyUrl);
-  if (!endpoint) return cached ? pricesMap(cached.prices) : new Map();
+  if (!endpoint) return cached ? quotesMap(parseCachedQuotes(cached.prices)) : new Map();
 
   const symbols = monitoredQuoteSymbols(options.snapshot, options.holdings);
   if (symbols.length === 0) return new Map();
@@ -64,7 +65,7 @@ export async function fetchMonitoredQuotes(
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return parseQuoteResponse(await response.json());
     }));
-    const prices = Object.assign({}, ...responses);
+    const prices = Object.assign({}, ...responses) as Record<string, QuoteSnapshot>;
     const nextCache: MonitoredQuoteCache = {
       fetchedAt: now.toISOString(),
       prices,
@@ -74,9 +75,9 @@ export async function fetchMonitoredQuotes(
     } catch {
       // A storage quota/private-mode failure must not hide otherwise valid quotes.
     }
-    return pricesMap(prices);
+    return quotesMap(prices);
   } catch {
-    return cached ? pricesMap(cached.prices) : new Map();
+    return cached ? quotesMap(parseCachedQuotes(cached.prices)) : new Map();
   }
 }
 
@@ -85,18 +86,32 @@ function hasQuantPrice(snapshot: QuantAnalysisSnapshot, symbol: string): boolean
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
-function parseQuoteResponse(value: unknown): Record<string, number> {
+function parseQuoteResponse(value: unknown): Record<string, QuoteSnapshot> {
   const rows = Array.isArray(value)
     ? value
     : isRecord(value) && Array.isArray(value.quotes)
       ? value.quotes
       : [];
-  const prices: Record<string, number> = {};
+  const prices: Record<string, QuoteSnapshot> = {};
   for (const row of rows) {
     if (!isRecord(row)) continue;
     const symbol = normalizeSymbol(row.symbol);
     const price = typeof row.price === 'number' ? row.price : Number(row.price);
-    if (symbol && Number.isFinite(price) && price > 0) prices[symbol] = price;
+    if (!symbol || !Number.isFinite(price) || price <= 0) continue;
+    prices[symbol] = {
+      symbol,
+      price,
+      previousClose: nullableNumber(row.previousClose),
+      change: nullableNumber(row.change),
+      changePercent: nullableNumber(row.changePercent),
+      currency: 'USD',
+      timestamp: text(row.timestamp) || text(row.priceTime) || null,
+      session: priceSession(row.session),
+      priceTime: text(row.priceTime) || null,
+      regularMarketPrice: nullableNumber(row.regularMarketPrice),
+      source: 'proxy',
+      isRealtime: Boolean(row.isRealtime),
+    };
   }
   return prices;
 }
@@ -109,7 +124,7 @@ function readCache(storage: Pick<Storage, 'getItem'>): MonitoredQuoteCache | nul
     if (!isRecord(value) || typeof value.fetchedAt !== 'string' || !isRecord(value.prices)) {
       return null;
     }
-    const prices = parsePrices(value.prices);
+    const prices = value.prices;
     return Number.isFinite(Date.parse(value.fetchedAt))
       ? { fetchedAt: value.fetchedAt, prices }
       : null;
@@ -118,18 +133,43 @@ function readCache(storage: Pick<Storage, 'getItem'>): MonitoredQuoteCache | nul
   }
 }
 
-function parsePrices(value: Record<string, unknown>): Record<string, number> {
-  const prices: Record<string, number> = {};
+function parseCachedQuotes(value: Record<string, unknown>): Record<string, DepthQuote> {
+  const prices: Record<string, DepthQuote> = {};
   for (const [rawSymbol, rawPrice] of Object.entries(value)) {
     const symbol = normalizeSymbol(rawSymbol);
-    const price = typeof rawPrice === 'number' ? rawPrice : Number(rawPrice);
-    if (symbol && Number.isFinite(price) && price > 0) prices[symbol] = price;
+    if (!symbol) continue;
+    if (typeof rawPrice === 'number' && Number.isFinite(rawPrice) && rawPrice > 0) {
+      prices[symbol] = rawPrice;
+      continue;
+    }
+    if (!isRecord(rawPrice)) continue;
+    const parsed = parseQuoteResponse({ quotes: [{ ...rawPrice, symbol }] })[symbol];
+    if (parsed) prices[symbol] = parsed;
   }
   return prices;
 }
 
-function pricesMap(prices: Record<string, number>): Map<string, number> {
+function quotesMap(prices: Record<string, DepthQuote>): Map<string, DepthQuote> {
   return new Map(Object.entries(prices));
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function nullableNumber(value: unknown): number | null {
+  const number = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function priceSession(value: unknown): QuoteSnapshot['session'] {
+  return value === 'pre'
+    || value === 'regular'
+    || value === 'post'
+    || value === 'overnight'
+    || value === 'closed'
+    ? value
+    : undefined;
 }
 
 function chunk<T>(items: readonly T[], size: number): T[][] {

@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
 import { buildDepthPriceView } from '../depthPrice';
-import { depthQuotePrice } from '../depthQuotePrice';
+import { depthQuotePrice, depthQuoteSnapshot, type DepthQuote } from '../depthQuotePrice';
 import { formatDisplayMoney } from '../displayCurrency';
 import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
 import { opportunityStatusLabel } from '../opportunityPresentation';
 import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import { findSellFamily, resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
+import { formatPriceSession, priceSessionLabel, quoteSessionMismatchText } from '../quoteSession';
 import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview';
 import { ValuationCard, type ValuationSettings } from './ValuationCard';
@@ -15,7 +16,7 @@ import { ValuationCard, type ValuationSettings } from './ValuationCard';
 interface ConditionLookupProps {
   snapshot: QuantAnalysisSnapshot | null;
   holdings?: Holding[];
-  monitoredQuotes?: ReadonlyMap<string, number>;
+  monitoredQuotes?: ReadonlyMap<string, DepthQuote>;
   initialSymbol?: string;
   initialSide?: OpportunitySide;
   loading?: boolean;
@@ -122,10 +123,6 @@ function DepthStat({ stat }: { stat: NonNullable<QuantSymbolAnalysis['depth_stat
   );
 }
 
-function sessionLabel(value: string): string {
-  return ({ overnight: '夜盘', premarket: '盘前', afterhours: '盘后', regular: '盘中' } as Record<string, string>)[value] || value;
-}
-
 function usdPrice(value: number): string {
   return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -153,11 +150,13 @@ function DepthHighlight({
   presentation,
   title,
   quotePrice,
+  quote,
 }: {
   analysis: QuantSymbolAnalysis;
   presentation: QuantDepthPresentation | undefined;
   title: string;
   quotePrice: number | null;
+  quote: ReturnType<typeof depthQuoteSnapshot>;
 }) {
   const depth = analysis.depth_window;
   if (!depth?.applicable) return null;
@@ -175,6 +174,10 @@ function DepthHighlight({
     highPrice: depth.high_price ?? null,
     thresholdPrice: depth.threshold_price ?? null,
   });
+  const priceSession = prices.source === 'derived'
+    ? formatPriceSession(quote?.session, quote?.priceTime || quote?.timestamp)
+    : priceSessionLabel(depth.price_session);
+  const mismatch = quoteSessionMismatchText(depth.price_session, quote);
   return (
     <div className={`min-w-0 overflow-hidden rounded-lg border p-3 text-sm ${style.panel}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -187,20 +190,21 @@ function DepthHighlight({
       </div>
       {prices.source !== 'unavailable' && prices.currentPrice !== null && prices.highPrice !== null && prices.thresholdPrice !== null && (
         <div className="mt-3 rounded-lg bg-white/70 p-2 text-xs text-slate-700 dark:bg-slate-950/30 dark:text-slate-200">
-          现价 {usdPrice(prices.currentPrice)} · 高点 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.highPrice)} · 阈值价 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.thresholdPrice)}
+          现价 {usdPrice(prices.currentPrice)}{priceSession && `（${priceSession}）`} · 高点 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.highPrice)} · 阈值价 {prices.source === 'derived' ? '~' : ''}{usdPrice(prices.thresholdPrice)}
           {prices.source === 'derived' && (
             <div className="mt-1 text-slate-500">
-              <div>价格由行情代理现价与量化回撤反推，与量化取价时段（{sessionLabel(depth.price_session)}）可能有偏差</div>
+              <div>价格由行情代理现价与量化回撤反推，与量化取价时段（{priceSessionLabel(depth.price_session)}）可能有偏差</div>
               <div>高点为反推值，会随现价与量化回撤的更新时差而小幅变动；量化系统提供真实高点后此处将改为固定值。</div>
             </div>
           )}
         </div>
       )}
+      {mismatch && <div className="mt-2 text-xs text-amber-700 dark:text-amber-300">{mismatch}</div>}
       <div className="mt-3 flex min-w-0 items-center gap-3">
         <progress aria-label="深度位进度" className={`h-3 min-w-0 flex-1 ${style.progress}`} max={100} value={presentation.progress_pct} />
         {presentation.status === 'ready' && <span className="text-xs font-semibold">超出 {presentation.excess_pct.toFixed(2)} 点</span>}
       </div>
-      <div className="mt-2 text-xs text-slate-500">取价时段：{sessionLabel(depth.price_session)}</div>
+      {priceSessionLabel(depth.price_session) && <div className="mt-2 text-xs text-slate-500">取价时段：{priceSessionLabel(depth.price_session)}</div>}
       <div className={`mt-3 ${depth.sample_insufficient || depth.win_rate_60d === null ? 'text-slate-400 opacity-70' : 'text-indigo-700 dark:text-indigo-300'}`}>
         {depth.sample_insufficient || depth.win_rate_60d === null
           ? `60 日样本不足（n=${depth.n}）`
@@ -321,20 +325,20 @@ function ObservationBadge({ visible }: { visible: boolean }) {
   return visible ? <span className="ml-1 text-amber-700 dark:text-amber-300">（观察期，未正式生效）</span> : null;
 }
 
-function PanicWindowStatus({ status, analysis, presentation, quotePrice }: { status: QuantPanicSymbolStatus; analysis: QuantSymbolAnalysis; presentation: QuantDepthPresentation | undefined; quotePrice: number | null }) {
+function PanicWindowStatus({ status, analysis, presentation, quotePrice, quote }: { status: QuantPanicSymbolStatus; analysis: QuantSymbolAnalysis; presentation: QuantDepthPresentation | undefined; quotePrice: number | null; quote: ReturnType<typeof depthQuoteSnapshot> }) {
   return (
     <div className="mb-4 min-w-0 overflow-hidden rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm dark:border-rose-800 dark:bg-rose-950/30">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong>{status.display.title}</strong>
         <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-800 dark:bg-rose-900/60 dark:text-rose-100">{status.display.state_label}</span>
       </div>
-      <div className="mt-3"><DepthHighlight analysis={analysis} presentation={presentation} title="3 倍标的深度位" quotePrice={quotePrice} /></div>
+      <div className="mt-3"><DepthHighlight analysis={analysis} presentation={presentation} title="3 倍标的深度位" quotePrice={quotePrice} quote={quote} /></div>
       <div className={`mt-3 rounded-lg border p-3 ${status.panic.open ? 'border-rose-400 bg-rose-100 dark:border-rose-700 dark:bg-rose-950/40' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900'}`}>
         <span className={`rounded-full px-3 py-1 text-xs font-bold ${status.panic.open ? 'bg-rose-600 text-white dark:bg-rose-500' : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100'}`}>
           恐慌位 {status.panic.open ? '✓ 已触发' : '✗ 未触发'}
         </span>
         <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">{status.panic.explanation}</div>
-        {status.panic.triggered_session && <div className="mt-1 text-xs font-medium">触发时段：{sessionLabel(status.panic.triggered_session)}</div>}
+        {status.panic.triggered_session && <div className="mt-1 text-xs font-medium">触发时段：{priceSessionLabel(status.panic.triggered_session)}</div>}
       </div>
       <div className="mt-3 flex items-center gap-3">
         <progress className="h-2 flex-1 accent-rose-600" max={100} value={status.target.progress_pct} />
@@ -508,6 +512,7 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
   const selectedHoldingQuotePrice = depthQuotePrice(holdings, new Map(), selectedSymbol);
   const selectedDepthQuotePrice = depthQuotePrice(holdings, monitoredQuotes, selectedSymbol);
+  const selectedDepthQuote = depthQuoteSnapshot(holdings, monitoredQuotes, selectedSymbol);
   const selectedDepthPriceSource = selectedHoldingQuotePrice !== null
     ? 'holding'
     : selectedDepthQuotePrice !== null
@@ -571,8 +576,8 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
         <>
           <div id="buy-condition-detail" className="scroll-mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
             {panicStatus?.applicable
-              ? <PanicWindowStatus status={panicStatus} analysis={result.analysis} presentation={depthPresentation} quotePrice={selectedDepthQuotePrice} />
-              : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} />}
+              ? <PanicWindowStatus status={panicStatus} analysis={result.analysis} presentation={depthPresentation} quotePrice={selectedDepthQuotePrice} quote={selectedDepthQuote} />
+              : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} quote={selectedDepthQuote} />}
             <ValuationCard
               symbol={result.symbol}
               history={snapshot.pe_history ?? null}

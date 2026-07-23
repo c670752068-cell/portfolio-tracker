@@ -15,6 +15,7 @@ import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './mar
 import { MARKET_SESSION_REFRESH_MS, dayChangeSessionText, isRegularSession, marketSessionDateKey } from './marketSession';
 import { computeMetrics } from './metrics';
 import { fetchMonitoredQuotes } from './monitoredQuotes';
+import { quoteSyncSessionText } from './quoteSession';
 import { fetchQuantAnalysis, isQuantAnalysisStale, startQuantAnalysisAutoRefresh } from './quantAnalysis';
 import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDetailsApplyResult } from './importMerge';
 import { dedupeImportIssues } from './importIssues';
@@ -29,7 +30,7 @@ import {
   type OneTapRefreshState,
 } from './oneTapRefresh';
 import { getServerAlertRulesUrl, getServerPortfolioPositionsUrl, getServerQuantAnalysisUrl, getServerQuoteProxyUrl, getServerRefreshRequestUrl, hasServerGateway } from './runtimeConfig';
-import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState, QuantAnalysisSnapshot } from './types';
+import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding, ImportedPortfolio, ParsedOptionDetails, PortfolioState, QuantAnalysisSnapshot, QuoteSnapshot } from './types';
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
 
@@ -123,7 +124,7 @@ export default function App() {
     summary: '',
   });
   const [quantAnalysis, setQuantAnalysis] = useState<QuantAnalysisSnapshot | null>(null);
-  const [monitoredQuotes, setMonitoredQuotes] = useState<Map<string, number>>(() => new Map());
+  const [monitoredQuotes, setMonitoredQuotes] = useState<Map<string, number | QuoteSnapshot>>(() => new Map());
   const [quantAnalysisStatus, setQuantAnalysisStatus] = useState<QuantAnalysisStatus>({ loading: false, error: '', stale: false });
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertRulesStatus, setAlertRulesStatus] = useState<AlertRulesStatus>({ loading: false, error: '' });
@@ -202,11 +203,12 @@ export default function App() {
         : reason === 'session'
           ? '盘中自动刷新'
           : '已手动刷新';
+      const sessionText = quoteSyncSessionText(result.holdings);
       setQuoteStatus({
         loading: false,
         lastSyncedAt: result.updatedAt,
         error: result.failedSymbols.length > 0 ? result.failedSymbols.map((item) => `${item.symbol}: ${item.reason}`).join('；') : '',
-        summary: `${prefix} ${result.updatedSymbols.length}/${result.requestedSymbols.length} 个标的${optionText}${failedText}${skippedText}`,
+        summary: `${prefix} ${result.updatedSymbols.length}/${result.requestedSymbols.length} 个标的${optionText}${failedText}${skippedText}${sessionText ? ` · ${sessionText}` : ''}`,
       });
     } catch (error) {
       setQuoteStatus((status) => ({

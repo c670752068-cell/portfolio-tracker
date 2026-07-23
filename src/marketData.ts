@@ -269,6 +269,9 @@ async function fetchProxyQuotes(
       changePercent: asNullablePercent(row.changePercent, false),
       currency: asCurrency(row.currency),
       timestamp: asText(row.timestamp) || null,
+      session: asPriceSession(row.session),
+      priceTime: asText(row.priceTime) || null,
+      regularMarketPrice: asNullableNumber(row.regularMarketPrice),
       source: 'proxy',
       isRealtime: Boolean(row.isRealtime),
     });
@@ -386,6 +389,16 @@ function asUnixTimestamp(value: unknown): string | null {
   const seconds = asNullableNumber(value);
   if (!seconds) return null;
   return new Date(seconds * 1000).toISOString();
+}
+
+function asPriceSession(value: unknown): QuoteSnapshot['session'] {
+  return value === 'pre'
+    || value === 'regular'
+    || value === 'post'
+    || value === 'overnight'
+    || value === 'closed'
+    ? value
+    : undefined;
 }
 
 function asText(value: unknown): string {
