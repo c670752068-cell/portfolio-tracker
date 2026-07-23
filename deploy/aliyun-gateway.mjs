@@ -23,6 +23,7 @@ import {
   startAlertTracker,
 } from './alert-tracker.mjs';
 import { createRefreshRequestRoute } from './refresh-request-route.mjs';
+import { buildYahooChartUrl, parseYahooChartQuote } from './yahoo-quote.mjs';
 
 const PORT = Number(process.env.PORT || 8789);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -472,21 +473,6 @@ function asNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function lastNumber(values) {
-  if (!Array.isArray(values)) return null;
-  for (let index = values.length - 1; index >= 0; index -= 1) {
-    const value = asNumber(values[index]);
-    if (value != null) return value;
-  }
-  return null;
-}
-
-function lastTimestamp(values) {
-  if (!Array.isArray(values) || values.length === 0) return null;
-  const value = Number(values.at(-1));
-  return Number.isFinite(value) ? new Date(value * 1000).toISOString() : null;
-}
-
 function getJsonOverIpv4(url, headers, timeoutMs) {
   return new Promise((resolve, reject) => {
     const request = httpsGet(url, { headers, family: 4, timeout: timeoutMs }, (response) => {
@@ -512,26 +498,9 @@ function getJsonOverIpv4(url, headers, timeoutMs) {
 }
 
 async function fetchYahooQuote(symbol) {
-  const yahooSymbol = symbol.replace('.', '-');
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=5d&interval=1d`;
+  const url = buildYahooChartUrl(symbol);
   const data = await getJsonOverIpv4(url, { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' }, 8_000);
-  const result = data?.chart?.result?.[0];
-  const meta = result?.meta || {};
-  const price = asNumber(meta.regularMarketPrice) ?? lastNumber(result?.indicators?.quote?.[0]?.close);
-  if (price == null) throw new Error('Yahoo 未返回有效价格');
-  const previousClose = asNumber(meta.chartPreviousClose);
-  const change = previousClose == null ? null : price - previousClose;
-  return {
-    symbol,
-    price,
-    previousClose,
-    change,
-    changePercent: previousClose ? change / previousClose : null,
-    currency: meta.currency || 'USD',
-    timestamp: meta.regularMarketTime ? new Date(Number(meta.regularMarketTime) * 1000).toISOString() : lastTimestamp(result?.timestamp),
-    source: 'proxy',
-    isRealtime: false,
-  };
+  return parseYahooChartQuote(symbol, data);
 }
 
 async function fetchNasdaqQuote(symbol) {
