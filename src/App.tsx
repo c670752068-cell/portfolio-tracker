@@ -558,6 +558,7 @@ export default function App() {
           onRefresh={refreshQuantAnalysis}
           displayCurrency={settings.displayCurrency}
           rates={rates}
+          valuationSettings={settings}
         />
       )}
 

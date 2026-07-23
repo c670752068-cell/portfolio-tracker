@@ -41,7 +41,7 @@ describe('ConditionLookup', () => {
       <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="SOXL" />,
     );
 
-    expect(html).toContain('🟢 SOXL · 可买');
+    expect(html).toContain('🟢 SOXL · 条件满足');
     expect(html).toContain('🟡 AMZN · 接近');
     expect(html).toContain('⚪ MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
     expect(html).not.toContain('🟠 MSFT');

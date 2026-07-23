@@ -10,6 +10,7 @@ import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAn
 import { findSellFamily, resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
 import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview';
+import { ValuationCard, type ValuationSettings } from './ValuationCard';
 
 interface ConditionLookupProps {
   snapshot: QuantAnalysisSnapshot | null;
@@ -22,11 +23,21 @@ interface ConditionLookupProps {
   onRefresh?: () => void;
   displayCurrency?: DisplayCurrency;
   rates?: ExchangeRates;
+  valuationSettings?: ValuationSettings;
 }
 
 const USD_RATES: ExchangeRates = {
   USD: 1, CNY: 1, HKD: 1, JPY: 1, EUR: 1, GBP: 1,
   updatedAt: null, source: 'fallback',
+};
+
+const DEFAULT_VALUATION_SETTINGS: ValuationSettings = {
+  peApiKey: '',
+  valuationAnchorStart: '2025-04-01',
+  valuationAnchorEnd: '2025-04-30',
+  valuationManualAnchors: {},
+  valuationAtAnchorPct: 5,
+  valuationNearAnchorPct: 15,
 };
 
 const RISK_ROLE_LABELS: Record<string, string> = {
@@ -459,7 +470,7 @@ function SellWindow({
   );
 }
 
-export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new Map(), initialSymbol = '', initialSide, loading = false, error = '', onRefresh, displayCurrency = 'USD', rates = USD_RATES }: ConditionLookupProps) {
+export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new Map(), initialSymbol = '', initialSide, loading = false, error = '', onRefresh, displayCurrency = 'USD', rates = USD_RATES, valuationSettings = DEFAULT_VALUATION_SETTINGS }: ConditionLookupProps) {
   const monitoredSymbols = useMemo(() => snapshot
     ? Object.keys(snapshot.symbols).filter((item) => !CASH_EQUIVALENT_SYMBOLS.has(item.toUpperCase())).sort()
     : [], [snapshot]);
@@ -556,6 +567,11 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
             {panicStatus?.applicable
               ? <PanicWindowStatus status={panicStatus} analysis={result.analysis} presentation={depthPresentation} quotePrice={selectedDepthQuotePrice} />
               : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} />}
+            <ValuationCard
+              symbol={result.symbol}
+              history={snapshot.pe_history ?? null}
+              settings={valuationSettings}
+            />
             <h3 className="text-lg font-semibold">{result.symbol} 买入条件</h3>
             {!result.analysis.available ? (
               <p className="mt-3 text-amber-700 dark:text-amber-300">当前无可用判定：{result.analysis.error || '数据未生成'}</p>

@@ -31,7 +31,7 @@ describe('OpportunityOverview', () => {
     );
 
     expect(html).toContain('今日机会一览');
-    expect(html).toContain('可买入（条件已满足）');
+    expect(html).toContain('条件已满足');
     expect(html).toContain('SOXL');
     expect(html).toContain('接近买入条件');
     expect(html).toContain('AMZN');
@@ -74,7 +74,7 @@ describe('OpportunityOverview', () => {
       <OpportunityOverview snapshot={quantAnalysisFixture} compact />,
     );
 
-    expect(html).toContain('今日：可买 1 · 接近 1 · 卖出窗口 1');
+    expect(html).toContain('今日：条件满足 1 · 接近 1 · 卖出窗口 1');
     expect(html).toContain('🟢 SOXL');
     expect(html).toContain('🟡 AMZN');
     expect(html).toContain('🔴 MSFT');

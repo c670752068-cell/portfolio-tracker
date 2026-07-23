@@ -65,7 +65,7 @@ function CompactOpportunityOverview({
         <span className="text-xs text-slate-500">{quantAnalysisFreshnessText(summary.generated_at)}</span>
       </div>
       <p className="mt-2 text-sm font-semibold">
-        今日：可买 {summary.buy_ready.length} · 接近 {summary.buy_near.length} · 卖出窗口 {summary.sell_ready.length}
+        今日：条件满足 {summary.buy_ready.length} · 接近 {summary.buy_near.length} · 卖出窗口 {summary.sell_ready.length}
       </p>
       {allEmpty ? (
         <div className="mt-3 rounded-lg bg-slate-100 p-4 text-center dark:bg-slate-900">
@@ -126,7 +126,7 @@ export function OpportunityOverview({ snapshot, onSelect, compact = false }: Opp
           <span className="mt-1 block text-sm text-slate-500">三组均空是正常状态</span>
         </div>
       )}
-      <GroupTitle icon="🟢">可买入（条件已满足）</GroupTitle>
+      <GroupTitle icon="🟢">条件已满足</GroupTitle>
       <div className="space-y-2">
         {summary.buy_ready.length === 0
           ? <EmptyLine>今日没有满足条件的买入标的</EmptyLine>
