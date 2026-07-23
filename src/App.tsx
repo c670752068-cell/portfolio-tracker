@@ -115,7 +115,7 @@ export default function App() {
     summary: '',
   });
   const [quantAnalysis, setQuantAnalysis] = useState<QuantAnalysisSnapshot | null>(null);
-  const [, setMonitoredQuotes] = useState<Map<string, number>>(() => new Map());
+  const [monitoredQuotes, setMonitoredQuotes] = useState<Map<string, number>>(() => new Map());
   const [quantAnalysisStatus, setQuantAnalysisStatus] = useState<QuantAnalysisStatus>({ loading: false, error: '', stale: false });
   const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
   const [alertRulesStatus, setAlertRulesStatus] = useState<AlertRulesStatus>({ loading: false, error: '' });
@@ -550,6 +550,7 @@ export default function App() {
         <ConditionLookup
           snapshot={quantAnalysis}
           holdings={portfolio.holdings}
+          monitoredQuotes={monitoredQuotes}
           initialSymbol={conditionTarget?.symbol}
           initialSide={conditionTarget?.side}
           loading={quantAnalysisStatus.loading}

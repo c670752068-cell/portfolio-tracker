@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { depthQuotePrice } from '../depthQuotePrice';
 import { quantAnalysisFixture } from '../testFixtures/quantAnalysis';
 import type { QuantAnalysisSnapshot } from '../types';
 import { ConditionLookup } from './ConditionLookup';
@@ -207,6 +208,52 @@ describe('ConditionLookup', () => {
     expect(html).toContain('高点 ~$492.30');
     expect(html).toContain('阈值价 ~$412.35');
     expect(html).toContain('价格由行情代理现价与量化回撤反推，与量化取价时段（夜盘）可能有偏差');
+  });
+
+  it('prefers a holding quote over a monitored quote and returns null when both are missing', () => {
+    const quotedHoldings = [{
+      ...holdings[0],
+      quote: {
+        symbol: 'MSFT',
+        price: 401,
+        previousClose: 400,
+        change: 1,
+        changePercent: 0.0025,
+        currency: 'USD' as const,
+        timestamp: '2026-07-22T12:00:00Z',
+        source: 'proxy' as const,
+      },
+    }];
+    const monitored = new Map([['MSFT', 399], ['AVGO', 396.81]]);
+
+    expect(depthQuotePrice(quotedHoldings, monitored, 'MSFT')).toBe(401);
+    expect(depthQuotePrice(quotedHoldings, monitored, 'AVGO')).toBe(396.81);
+    expect(depthQuotePrice(quotedHoldings, monitored, 'MU')).toBeNull();
+  });
+
+  it('uses a monitored quote to derive prices for an unheld symbol', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.depth_window = {
+      ...snapshot.symbols.AAPL.depth_window!,
+      current_pct: -21.8,
+      threshold_pct: -16.24,
+      current_price: null,
+      high_price: null,
+      threshold_price: null,
+    };
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup
+        snapshot={snapshot}
+        holdings={[]}
+        monitoredQuotes={new Map([['AAPL', 384.98]])}
+        initialSymbol="AAPL"
+      />,
+    );
+
+    expect(html).toContain('现价 $384.98');
+    expect(html).toContain('高点 ~$492.30');
+    expect(html).toContain('阈值价 ~$412.35');
   });
 
   it('uses quant-exported depth prices without approximation marks or a warning', () => {

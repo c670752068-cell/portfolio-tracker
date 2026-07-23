@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
 import { buildDepthPriceView } from '../depthPrice';
+import { depthQuotePrice } from '../depthQuotePrice';
 import { formatDisplayMoney } from '../displayCurrency';
 import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
 import { opportunityStatusLabel } from '../opportunityPresentation';
@@ -13,6 +14,7 @@ import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview
 interface ConditionLookupProps {
   snapshot: QuantAnalysisSnapshot | null;
   holdings?: Holding[];
+  monitoredQuotes?: ReadonlyMap<string, number>;
   initialSymbol?: string;
   initialSide?: OpportunitySide;
   loading?: boolean;
@@ -115,32 +117,6 @@ function sessionLabel(value: string): string {
 
 function usdPrice(value: number): string {
   return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function depthQuotePrice(holdings: readonly Holding[], rawSymbol: string): number | null {
-  const symbol = rawSymbol.trim().toUpperCase();
-  for (const holding of holdings) {
-    if (!holding.quote) continue;
-    if (holding.assetType === 'option') {
-      if (
-        holding.option?.underlying.trim().toUpperCase() === symbol
-        && typeof holding.option.underlyingPrice === 'number'
-        && Number.isFinite(holding.option.underlyingPrice)
-        && holding.option.underlyingPrice > 0
-      ) {
-        return holding.option.underlyingPrice;
-      }
-      continue;
-    }
-    if (
-      holding.symbol.trim().toUpperCase() === symbol
-      && Number.isFinite(holding.quote.price)
-      && holding.quote.price > 0
-    ) {
-      return holding.quote.price;
-    }
-  }
-  return null;
 }
 
 const DEPTH_STYLE = {
@@ -478,7 +454,7 @@ function SellWindow({
   );
 }
 
-export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', initialSide, loading = false, error = '', onRefresh, displayCurrency = 'USD', rates = USD_RATES }: ConditionLookupProps) {
+export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new Map(), initialSymbol = '', initialSide, loading = false, error = '', onRefresh, displayCurrency = 'USD', rates = USD_RATES }: ConditionLookupProps) {
   const monitoredSymbols = useMemo(() => snapshot
     ? Object.keys(snapshot.symbols).filter((item) => !CASH_EQUIVALENT_SYMBOLS.has(item.toUpperCase())).sort()
     : [], [snapshot]);
@@ -514,7 +490,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
   } : {};
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
-  const selectedDepthQuotePrice = depthQuotePrice(holdings, selectedSymbol);
+  const selectedDepthQuotePrice = depthQuotePrice(holdings, monitoredQuotes, selectedSymbol);
   const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
     const status = resolveSellStatus(snapshot, optionSymbol);
     if (status.state === 'window_open') return `🟠 ${fallbackLabel} · 卖出窗口开启`;
