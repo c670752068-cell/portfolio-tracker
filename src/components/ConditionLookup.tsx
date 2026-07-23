@@ -448,7 +448,7 @@ export function ConditionLookup({ snapshot, holdings = [], initialSymbol = '', i
           </div>
           {onRefresh && <button type="button" onClick={onRefresh} disabled={loading} className="rounded-md bg-slate-200 px-3 py-2 text-sm dark:bg-slate-700">{loading ? '读取中…' : '刷新快照'}</button>}
         </div>
-        {snapshot && <p className="mt-2 text-xs text-slate-500">{quantAnalysisFreshnessText(snapshot.generated_at)}</p>}
+        {snapshot && <p className="mt-2 text-xs text-slate-500">{quantAnalysisFreshnessText(snapshot.generated_at)} · 每 25 分钟自动更新</p>}
         <select aria-label="量化监控标的" value={selectedSymbol} onChange={(event) => setSymbol(event.target.value)} className="mt-4 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-600">
           {monitoredSymbols.map((item) => <option key={item} value={item}>{opportunityStatusLabel(snapshot?.summary, item)}</option>)}
         </select>

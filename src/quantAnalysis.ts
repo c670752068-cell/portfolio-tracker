@@ -5,6 +5,50 @@ const HOUR_MS = 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
 const NEW_YORK_TIME_ZONE = 'America/New_York';
 
+export const QUANT_ANALYSIS_REFRESH_MS = 25 * 60 * 1000;
+export const QUANT_ANALYSIS_RESUME_REFRESH_MS = 5 * 60 * 1000;
+
+interface QuantRefreshVisibilityTarget {
+  readonly visibilityState: DocumentVisibilityState;
+  addEventListener(type: 'visibilitychange', listener: EventListener): void;
+  removeEventListener(type: 'visibilitychange', listener: EventListener): void;
+}
+
+interface QuantRefreshTimerHost {
+  setInterval(handler: () => void, timeout: number): ReturnType<typeof setInterval>;
+  clearInterval(id: ReturnType<typeof setInterval>): void;
+}
+
+export function startQuantAnalysisAutoRefresh(
+  refresh: () => void,
+  visibilityTarget: QuantRefreshVisibilityTarget,
+  timerHost: QuantRefreshTimerHost = globalThis,
+  now: () => number = Date.now,
+): () => void {
+  let lastRefreshAt = now();
+  const runRefresh = () => {
+    lastRefreshAt = now();
+    refresh();
+  };
+  const refreshIfVisible = () => {
+    if (visibilityTarget.visibilityState === 'visible') runRefresh();
+  };
+  const handleVisibilityChange = () => {
+    if (
+      visibilityTarget.visibilityState === 'visible'
+      && now() - lastRefreshAt > QUANT_ANALYSIS_RESUME_REFRESH_MS
+    ) {
+      runRefresh();
+    }
+  };
+  const timer = timerHost.setInterval(refreshIfVisible, QUANT_ANALYSIS_REFRESH_MS);
+  visibilityTarget.addEventListener('visibilitychange', handleVisibilityChange);
+  return () => {
+    timerHost.clearInterval(timer);
+    visibilityTarget.removeEventListener('visibilitychange', handleVisibilityChange);
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

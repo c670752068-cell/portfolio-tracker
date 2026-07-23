@@ -14,6 +14,14 @@ const holdings = [
 afterEach(() => vi.useRealTimers());
 
 describe('ConditionLookup', () => {
+  it('states that the loaded snapshot refreshes automatically every 25 minutes', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+    );
+
+    expect(html).toContain('每 25 分钟自动更新');
+  });
+
   it('uses a locked snapshot-symbol select and filters cash equivalents', () => {
     const html = renderToStaticMarkup(
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,

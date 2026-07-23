@@ -14,7 +14,7 @@ import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
 import { MARKET_SESSION_REFRESH_MS, dayChangeSessionText, isRegularSession, marketSessionDateKey } from './marketSession';
 import { computeMetrics } from './metrics';
-import { fetchQuantAnalysis, isQuantAnalysisStale } from './quantAnalysis';
+import { fetchQuantAnalysis, isQuantAnalysisStale, startQuantAnalysisAutoRefresh } from './quantAnalysis';
 import { applyImageImport, applyOptionDetails, countNeedsReview, type OptionDetailsApplyResult } from './importMerge';
 import { dedupeImportIssues } from './importIssues';
 import { backupPortfolio, clearPortfolioBackup, loadPortfolio, loadPortfolioBackup, loadSettings, savePortfolio, saveSettings } from './storage';
@@ -299,6 +299,13 @@ export default function App() {
     if (!url || quantAnalysisAutoLoadKeyRef.current === url) return;
     quantAnalysisAutoLoadKeyRef.current = url;
     void refreshQuantAnalysis();
+  }, [refreshQuantAnalysis]);
+
+  useEffect(() => {
+    if (!getServerQuantAnalysisUrl()) return undefined;
+    return startQuantAnalysisAutoRefresh(() => {
+      void refreshQuantAnalysis();
+    }, document);
   }, [refreshQuantAnalysis]);
 
   useEffect(() => {
