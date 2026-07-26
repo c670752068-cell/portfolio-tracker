@@ -12,6 +12,8 @@ export interface LocalBuyPlan {
   ndxPeBelow: number;
   cnnScoreBelow: number;
   drawdownBelowPct: number;
+  vixAbove?: number | null;
+  vixPercentileAbove?: number | null;
   buyPctOfNav: number;
   enabled: boolean;
 }
@@ -104,11 +106,25 @@ export function evaluateLocalBuyPlan(
   const cnn = finite(snapshot.valuation_tab?.cnn.current_score);
   const lowZone = snapshot.symbols[plan.symbol]?.gates?.low_zone;
   const drawdown = finite(lowZone?.current_drawdown_pct);
-  const conditions = [
+  const vix = vixContext(snapshot);
+  const conditions: QuantBuyPlanCondition[] = [
     condition('ndx_pe_below', 'NDX PE', plan.ndxPeBelow, realtimePe ?? dailyPe, ''),
     condition('cnn_score_below', 'CNN', plan.cnnScoreBelow, cnn, ' 点'),
     condition('drawdown_below_pct', '回撤', plan.drawdownBelowPct, drawdown, '%'),
   ];
+  const vixAbove = finite(plan.vixAbove);
+  const vixPercentileAbove = finite(plan.vixPercentileAbove);
+  if (vixAbove !== null) {
+    conditions.push(condition(
+      'vix_above', 'VIX', vixAbove, vix.value, '', 'above',
+    ));
+  }
+  if (vixPercentileAbove !== null) {
+    conditions.push(condition(
+      'vix_percentile_above', 'VIX 分位', vixPercentileAbove,
+      vix.percentile, '%', 'above',
+    ));
+  }
   const conditionsReady = conditions.every((item) => item.met);
   const gate = positionGate ?? { passed: false, note: '本地预览只计算三项条件；仓位门待量化系统同步' };
   return {
@@ -136,6 +152,8 @@ export function serverPlanToLocal(plan: QuantBuyPlan): LocalBuyPlan {
     ndxPeBelow: conditionTarget(plan, 'ndx_pe_below', 30),
     cnnScoreBelow: conditionTarget(plan, 'cnn_score_below', 30),
     drawdownBelowPct: conditionTarget(plan, 'drawdown_below_pct', -25),
+    vixAbove: optionalConditionTarget(plan, 'vix_above'),
+    vixPercentileAbove: optionalConditionTarget(plan, 'vix_percentile_above'),
     buyPctOfNav: plan.buy_pct_of_nav,
     enabled: plan.enabled,
   };
@@ -148,6 +166,13 @@ export function validateLocalBuyPlan(plan: LocalBuyPlan): string[] {
   if (!between(plan.ndxPeBelow, 0, 100, false)) errors.push('NDX PE 必须大于 0 且不超过 100');
   if (!between(plan.cnnScoreBelow, 0, 100, true)) errors.push('CNN 必须在 0–100 之间');
   if (!between(plan.drawdownBelowPct, -100, 0, false)) errors.push('回撤必须在 -100% 到 0% 之间');
+  if (finite(plan.vixAbove) !== null && !between(plan.vixAbove!, 0, 100, false)) {
+    errors.push('VIX 必须大于 0 且不超过 100');
+  }
+  if (finite(plan.vixPercentileAbove) !== null
+    && !between(plan.vixPercentileAbove!, 0, 100, true)) {
+    errors.push('VIX 分位必须在 0–100% 之间');
+  }
   if (!between(plan.buyPctOfNav, 0, 20, false)) errors.push('买入占净值必须大于 0 且不超过 20%');
   return errors;
 }
@@ -159,6 +184,9 @@ export function conditionProgress(conditionValue: QuantBuyPlanCondition): number
   if (current === null || target === null) return 0;
   if (conditionValue.key === 'drawdown_below_pct') {
     return clamp(Math.abs(current) / Math.abs(target || 1) * 100);
+  }
+  if (conditionValue.key === 'vix_above' || conditionValue.key === 'vix_percentile_above') {
+    return clamp(current / (target || 1) * 100);
   }
   if (current <= 0) return 0;
   return clamp(target / current * 100);
@@ -180,6 +208,14 @@ export function planToYaml(plans: readonly LocalBuyPlan[]): string {
       `      ndx_pe_below: ${numberScalar(plan.ndxPeBelow)}`,
       `      cnn_score_below: ${numberScalar(plan.cnnScoreBelow)}`,
       `      drawdown_below_pct: ${numberScalar(plan.drawdownBelowPct)}`,
+    );
+    if (finite(plan.vixAbove) !== null) {
+      lines.push(`      vix_above: ${numberScalar(plan.vixAbove!)}`);
+    }
+    if (finite(plan.vixPercentileAbove) !== null) {
+      lines.push(`      vix_percentile_above: ${numberScalar(plan.vixPercentileAbove!)}`);
+    }
+    lines.push(
       '    action:',
       `      buy_pct_of_nav: ${numberScalar(plan.buyPctOfNav)}`,
       `    enabled: ${plan.enabled ? 'true' : 'false'}`,
@@ -211,18 +247,21 @@ function condition(
   target: number,
   current: number | null,
   suffix: string,
+  direction: 'below' | 'above' = 'below',
 ): QuantBuyPlanCondition {
-  const met = current !== null && current < target;
+  const met = current !== null && (direction === 'above' ? current > target : current < target);
   const gap = current === null
     ? '数据暂缺'
     : met
       ? '已满足'
+      : direction === 'above'
+        ? `还差 ${(target - current).toFixed(1)}${suffix}`
       : key === 'ndx_pe_below'
         ? `还差 ${((current / target) - 1) * 100 < 0.05 ? '0.0' : (((current / target) - 1) * 100).toFixed(1)}%`
         : `还差 ${(current - target).toFixed(1)}${suffix}`;
   return {
     key,
-    name: `${label} < ${target}${key === 'drawdown_below_pct' ? '%' : ''}`,
+    name: `${label} ${direction === 'above' ? '>' : '<'} ${target}${key === 'drawdown_below_pct' || key === 'vix_percentile_above' ? suffix : ''}`,
     target,
     current,
     met,
@@ -236,6 +275,26 @@ function conditionTarget(
   fallback: number,
 ): number {
   return finite(plan.conditions.find((item) => item.key === key)?.target) ?? fallback;
+}
+
+function optionalConditionTarget(
+  plan: QuantBuyPlan,
+  key: QuantBuyPlanCondition['key'],
+): number | null {
+  return finite(plan.conditions.find((item) => item.key === key)?.target);
+}
+
+function vixContext(snapshot: QuantAnalysisSnapshot): {
+  value: number | null;
+  percentile: number | null;
+} {
+  const raw = snapshot.context.vix;
+  if (!raw || typeof raw !== 'object') return { value: null, percentile: null };
+  const value = raw as Record<string, unknown>;
+  return {
+    value: finite(value.value),
+    percentile: finite(value.percentile),
+  };
 }
 
 function finite(value: unknown): number | null {
@@ -278,6 +337,10 @@ function isLocalBuyPlan(value: unknown): value is LocalBuyPlan {
     && typeof plan.ndxPeBelow === 'number'
     && typeof plan.cnnScoreBelow === 'number'
     && typeof plan.drawdownBelowPct === 'number'
+    && (plan.vixAbove === undefined || plan.vixAbove === null || typeof plan.vixAbove === 'number')
+    && (plan.vixPercentileAbove === undefined
+      || plan.vixPercentileAbove === null
+      || typeof plan.vixPercentileAbove === 'number')
     && typeof plan.buyPctOfNav === 'number'
     && typeof plan.enabled === 'boolean';
 }

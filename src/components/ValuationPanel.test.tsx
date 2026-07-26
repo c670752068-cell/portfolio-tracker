@@ -8,7 +8,22 @@ const snapshot = {
   generated_at: '2026-07-26T07:06:13-04:00',
   rule_version: '2.2',
   disclaimer: '仅作信息展示',
-  context: {},
+  context: {
+    vix: {
+      available: true,
+      value: 18.58,
+      as_of: '2026-07-24',
+      percentile: 68.254,
+      percentile_window_days: 252,
+      zone: 'normal',
+      zone_label: '常态波动',
+      position_adjustment_pct: 0,
+      policy: 'adjustment_only',
+      is_proxy: false,
+      source: { provider: 'Cboe', kind: 'official_daily_close', is_proxy: false },
+      term_structure: { available: false, reason: '免费可靠的 VIX 期限结构数据暂不可用，未生成倒挂信号' },
+    },
+  },
   symbols: { TQQQ: { available: true, gates: { low_zone: { passed: true, current_drawdown_pct: -27.18 } } } },
   valuation_tab: {
     available: true,
@@ -195,6 +210,36 @@ const snapshot = {
       headline_caveat: '联合历史仅覆盖单边上涨区间，缺少完整熊市样本；本页胜率不具备统计结论条件',
     },
   },
+  vix_study: {
+    source: { provider: 'Cboe', kind: 'official_daily_close', is_proxy: false },
+    sample: { start: '2018-01-02', end: '2026-07-24', trading_days: 2151 },
+    persistence: {
+      ge_30: { threshold: 30, episode_count: 28, median_trading_days: 2.5, mean_trading_days: 5.5, max_trading_days: 50 },
+      ge_40: { threshold: 40, episode_count: 8, median_trading_days: 1.5, mean_trading_days: 4.875, max_trading_days: 26 },
+    },
+    buckets: {
+      '25-30': {
+        '60': { horizon_trading_days: 60, n: 211, win_rate_pct: 71.09, observed_win_rate_pct: 71.09, average_return_pct: 7.09, median_return_pct: 8.1, sample_sufficient: true, insufficient_reason: null },
+      },
+      ge40: {
+        '60': { horizon_trading_days: 60, n: 39, win_rate_pct: 100, observed_win_rate_pct: 100, average_return_pct: 21.5, median_return_pct: 20, sample_sufficient: true, insufficient_reason: null },
+      },
+    },
+    fine_buckets: {},
+    by_regime: {},
+    regime_concentration: {
+      bucket: 'ge40',
+      horizon_trading_days: 60,
+      counts: { 疫情崩盘: 33, 关税震荡: 4 },
+      top_regime: '疫情崩盘',
+      top_regime_share_pct: 84.6154,
+      concentrated: true,
+      warning: '高胜率样本中 84.6% 集中于「疫情崩盘」，不可外推为普遍规律。',
+    },
+    headline: '真实 VIX 复核：极端样本集中于疫情崩盘。',
+    limitations: ['历史统计不代表未来收益', 'VIX 已是 CNN 情绪指数的组成项之一'],
+    generated_at: '2026-07-26T13:23:39-04:00',
+  },
 } satisfies QuantAnalysisSnapshot;
 
 describe('ValuationPanel', () => {
@@ -206,6 +251,12 @@ describe('ValuationPanel', () => {
     expect(html).toContain('估值已到位');
     expect(html).toContain('纳指100 估值');
     expect(html).toContain('市场情绪');
+    expect(html).toContain('VIX 波动率');
+    expect(html).toContain('VIX 18.58');
+    expect(html).toContain('252日分位 68.25%');
+    expect(html).toContain('波动率与胜率研究');
+    expect(html).toContain('集中于「疫情崩盘」');
+    expect(html).toContain('历史统计不代表未来收益');
     expect(html).toContain('三年 PE 走势');
     expect(html).toContain('CNN 恐慌贪婪 · 近1年');
     expect(html).toContain('还差多少');
@@ -225,7 +276,7 @@ describe('ValuationPanel', () => {
     expect(html).toContain('行 = 估值高低（PE 分位），列 = 市场情绪（CNN）');
     expect(html).toContain('样本不足（n=10，需 ≥30）');
     expect(html).toContain('期限结论互相冲突');
-    expect(html).not.toContain('100.00%');
+    expect(html).not.toContain('100.00% · n=10');
   });
 
   it('degrades honestly when the backend fields are not ready', () => {
@@ -236,6 +287,46 @@ describe('ValuationPanel', () => {
     expect(html).toContain('数据准备中');
     expect(html).not.toContain('NaN');
     expect(html).not.toContain('undefined');
+  });
+
+  it('labels proxy VIX data and suppresses all insufficient research statistics', () => {
+    const html = renderToStaticMarkup(
+      <ValuationPanel
+        snapshot={{
+          ...snapshot,
+          context: {
+            vix: {
+              ...snapshot.context.vix,
+              is_proxy: true,
+              source: { provider: 'local', kind: 'rv20_proxy', is_proxy: true },
+            },
+          },
+          vix_study: {
+            ...snapshot.vix_study!,
+            source: { provider: 'local', kind: 'rv20_proxy', is_proxy: true },
+            buckets: {
+              ge40: {
+                '60': {
+                  horizon_trading_days: 60,
+                  n: 5,
+                  win_rate_pct: null,
+                  observed_win_rate_pct: 100,
+                  average_return_pct: 42,
+                  median_return_pct: 40,
+                  sample_sufficient: false,
+                  insufficient_reason: '样本不足',
+                },
+              },
+            },
+          },
+        }}
+        onDirtyChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('RV20 代理，非真实 VIX');
+    expect(html).toContain('样本不足 · n=5');
+    expect(html).not.toContain('+42.00%');
   });
 
   it('shows a calm unavailable state without inventing regime evidence', () => {

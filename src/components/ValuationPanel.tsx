@@ -1,8 +1,14 @@
-import type { QuantAnalysisSnapshot, QuantValuationDistance, QuantValuationTab } from '../types';
+import type {
+  QuantAnalysisSnapshot,
+  QuantValuationDistance,
+  QuantValuationTab,
+  QuantVixContext,
+} from '../types';
 import { buildValuationSummary } from '../valuationPlan';
 import { BuyPlanSection } from './BuyPlanSection';
 import { RegimeSection } from './RegimeSection';
 import { ValuationCharts } from './ValuationCharts';
+import { VixStudySection } from './VixStudySection';
 
 interface ValuationPanelProps {
   snapshot: QuantAnalysisSnapshot | null;
@@ -29,7 +35,8 @@ export function ValuationPanel({ snapshot, onDirtyChange }: ValuationPanelProps)
         </h2>
         <p className="mt-3 text-xs leading-relaxed text-ink-muted">冷静时定规则，市场恐慌时执行规则。这里只做证据与计划展示，不自动下单。</p>
       </section>
-      <CurrentIndicators valuation={valuation} />
+      <CurrentIndicators valuation={valuation} vix={vixContext(snapshot)} />
+      <VixStudySection study={snapshot.vix_study} context={vixContext(snapshot)} />
       <RegimeSection regime={snapshot.regime_status} />
       <ValuationCharts valuation={valuation} />
       <DistanceSection valuation={valuation} />
@@ -42,9 +49,36 @@ export function ValuationPanel({ snapshot, onDirtyChange }: ValuationPanelProps)
   );
 }
 
-function CurrentIndicators({ valuation }: { valuation: QuantValuationTab }) {
+function CurrentIndicators({
+  valuation,
+  vix,
+}: {
+  valuation: QuantValuationTab;
+  vix: QuantVixContext | null;
+}) {
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-3">
+      <IndicatorCard
+        title="VIX 波动率"
+        value={vix?.available ? finite(vix.value) : null}
+        valuePrefix="VIX "
+        tone={vixTone(vix)}
+        details={[
+          vix?.available ? `${numberText(finite(vix.percentile_window_days), 0)}日分位 ${percentText(finite(vix.percentile))}` : (vix?.reason ?? '数据暂无'),
+          vix?.zone_label ?? '档位暂无',
+          adjustmentText(vix?.position_adjustment_pct),
+        ]}
+        timestamp={`${vix?.source?.provider ?? 'VIX'} · ${vix?.as_of ?? '数据准备中'}`}
+      >
+        {vix?.is_proxy && (
+          <p className="mt-3 text-xs leading-relaxed text-trim">RV20 代理，非真实 VIX</p>
+        )}
+        {vix?.term_structure?.available === false && (
+          <p className="mt-3 text-xs leading-relaxed text-ink-muted">
+            期限结构：{vix.term_structure.reason ?? '暂无'}
+          </p>
+        )}
+      </IndicatorCard>
       <IndicatorCard
         title="纳指100 估值"
         value={valuation.ndx.current_pe}
@@ -178,12 +212,34 @@ function sentimentTone(value: number | null): string {
   return 'text-ink-primary';
 }
 
+function vixTone(vix: QuantVixContext | null): string {
+  if (vix?.zone === 'extreme') return 'text-buy';
+  if (vix?.zone === 'danger') return 'text-trim';
+  return 'text-ink-primary';
+}
+
+function vixContext(snapshot: QuantAnalysisSnapshot): QuantVixContext | null {
+  const value = snapshot.context.vix;
+  if (!value || typeof value !== 'object' || !('available' in value)) return null;
+  return value as QuantVixContext;
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function adjustmentText(value: number | null | undefined): string {
+  const numeric = finite(value);
+  if (numeric === null) return '仓位调整暂无';
+  return `参考仓位调整 ${numeric > 0 ? '+' : ''}${numeric.toFixed(2)}%`;
+}
+
 function percentText(value: number | null): string {
   return value === null ? '暂无' : `${value.toFixed(2)}%`;
 }
 
-function numberText(value: number | null): string {
-  return value === null ? '暂无' : value.toFixed(2);
+function numberText(value: number | null, digits = 2): string {
+  return value === null ? '暂无' : value.toFixed(digits);
 }
 
 function moneyText(value: number | null): string {

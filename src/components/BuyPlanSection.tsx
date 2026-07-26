@@ -24,6 +24,8 @@ const EMPTY_PLAN: LocalBuyPlan = {
   ndxPeBelow: 30,
   cnnScoreBelow: 30,
   drawdownBelowPct: -25,
+  vixAbove: null,
+  vixPercentileAbove: null,
   buyPctOfNav: 3,
   enabled: true,
 };
@@ -324,6 +326,27 @@ function PlanEditor({
         <StepperField label="回撤深于（%）" value={plan.drawdownBelowPct} step={5} onChange={(value) => onChange({ drawdownBelowPct: value })} />
         <StepperField label="买入占净值（%）" value={plan.buyPctOfNav} step={1} onChange={(value) => onChange({ buyPctOfNav: value })} />
       </div>
+      <div className="mt-4 rounded-xl border border-neutral/40 bg-surface-raised p-3">
+        <p className="text-xs leading-relaxed text-ink-muted">
+          VIX 条件为可选项；推荐优先使用分位，绝对值会随年代常态漂移。它只在你明确加入计划后参与 AND 条件。
+        </p>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <OptionalStepperField
+            label="VIX 高于"
+            value={plan.vixAbove ?? null}
+            defaultValue={25}
+            step={1}
+            onChange={(value) => onChange({ vixAbove: value })}
+          />
+          <OptionalStepperField
+            label="VIX 分位高于（推荐）"
+            value={plan.vixPercentileAbove ?? null}
+            defaultValue={90}
+            step={5}
+            onChange={(value) => onChange({ vixPercentileAbove: value })}
+          />
+        </div>
+      </div>
       <label className="mt-4 flex min-h-11 items-center gap-3 text-sm">
         <input type="checkbox" checked={plan.enabled} onChange={(event) => onChange({ enabled: event.target.checked })} className="h-5 w-5 accent-buy" />
         启用这份计划
@@ -368,6 +391,39 @@ function StepperField({
         <button type="button" aria-label={`${label}增加`} onClick={() => onChange(Number((value + step).toFixed(2)))} className="min-h-11 border-l border-neutral/40 text-lg text-ink-secondary hover:bg-surface-overlay">+</button>
       </span>
     </label>
+  );
+}
+
+function OptionalStepperField({
+  label,
+  value,
+  defaultValue,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  defaultValue: number;
+  step: number;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <div>
+      <label className="flex min-h-9 items-center gap-2 text-sm text-ink-secondary">
+        <input
+          type="checkbox"
+          checked={value !== null}
+          onChange={(event) => onChange(event.target.checked ? defaultValue : null)}
+          className="h-4 w-4 accent-buy"
+        />
+        {label}
+      </label>
+      {value !== null && (
+        <div className="mt-2">
+          <StepperField label={`${label}阈值`} value={value} step={step} onChange={onChange} />
+        </div>
+      )}
+    </div>
   );
 }
 

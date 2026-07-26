@@ -437,7 +437,7 @@ export interface QuantValuationTab {
 }
 
 export interface QuantBuyPlanCondition {
-  key: 'ndx_pe_below' | 'cnn_score_below' | 'drawdown_below_pct';
+  key: 'ndx_pe_below' | 'cnn_score_below' | 'drawdown_below_pct' | 'vix_above' | 'vix_percentile_above';
   name: string;
   target: number | null;
   current: number | null;
@@ -467,6 +467,77 @@ export interface QuantBuyPlan {
 export interface QuantBuyPlanStatus {
   evaluated_at: string;
   plans: readonly QuantBuyPlan[];
+}
+
+export interface QuantVixContext {
+  available: boolean;
+  reason?: string;
+  value?: number | null;
+  as_of?: string | null;
+  percentile?: number | null;
+  percentile_window_days?: number | null;
+  zone?: 'extreme' | 'danger' | 'normal' | string;
+  zone_label?: string;
+  position_adjustment_pct?: number | null;
+  policy?: 'adjustment_only' | string;
+  is_proxy: boolean;
+  source?: {
+    provider?: string;
+    kind?: string;
+    is_proxy?: boolean;
+  };
+  term_structure?: {
+    available: boolean;
+    reason?: string;
+  };
+}
+
+export interface QuantVixStudyStatistic {
+  horizon_trading_days: number;
+  n: number;
+  win_rate_pct: number | null;
+  observed_win_rate_pct: number | null;
+  average_return_pct: number | null;
+  median_return_pct: number | null;
+  sample_sufficient: boolean;
+  insufficient_reason: string | null;
+}
+
+export interface QuantVixPersistence {
+  threshold: number;
+  episode_count: number;
+  median_trading_days: number | null;
+  mean_trading_days: number | null;
+  max_trading_days: number | null;
+}
+
+export interface QuantVixStudy {
+  source: {
+    provider: string;
+    kind: string;
+    is_proxy: boolean;
+  };
+  sample: {
+    start: string;
+    end: string;
+    trading_days: number;
+  };
+  persistence: Record<string, QuantVixPersistence>;
+  buckets: Record<string, Record<string, QuantVixStudyStatistic>>;
+  fine_buckets: Record<string, Record<string, QuantVixStudyStatistic>>;
+  by_regime: Record<string, Record<string, Record<string, QuantVixStudyStatistic>>>;
+  regime_concentration: {
+    bucket: string;
+    horizon_trading_days: number;
+    counts: Record<string, number>;
+    top_regime: string;
+    top_regime_share_pct: number;
+    concentrated: boolean;
+    warning: string | null;
+  };
+  headline: string;
+  limitations: readonly string[];
+  generated_at: string;
 }
 
 export interface QuantRegimeStatistic {
@@ -531,12 +602,15 @@ export interface QuantRegimeStatus {
     current_risk_position_pct: number;
     matrix_target_pct: number;
     divergence_adjusted_target_pct: number;
+    vix_adjusted_target_pct?: number;
+    vix_adjustment_pct?: number;
     suggested_total_pct: number;
     basis?: 'matrix_only' | string;
     gap_pct: number;
     gap_usd: number;
     action_text: string;
     divergence_note: string | null;
+    vix_note?: string | null;
     capped_by_max_step: boolean;
     max_step_pct: number;
     position_gate: {
@@ -593,6 +667,7 @@ export interface QuantAnalysisSnapshot {
   valuation_tab?: QuantValuationTab;
   buy_plan_status?: QuantBuyPlanStatus;
   regime_status?: QuantRegimeStatus;
+  vix_study?: QuantVixStudy;
   today_verdict?: QuantTodayVerdict | null;
   behavior_mirror?: QuantBehaviorMirror | null;
   freshness?: QuantAnalysisFreshness;

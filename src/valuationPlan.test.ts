@@ -120,20 +120,33 @@ describe('valuation plan helpers', () => {
   });
 
   it('generates paste-ready strict YAML without inventing unsupported fields', () => {
-    const yaml = planToYaml([{
+    const plan = {
       id: 'tqqq-stage-1',
       symbol: 'TQQQ',
       label: '第一枪·试探',
       ndxPeBelow: 30,
       cnnScoreBelow: 30,
       drawdownBelowPct: -25,
+      vixAbove: 25,
+      vixPercentileAbove: 90,
       buyPctOfNav: 3,
       enabled: true,
-    }]);
+    };
+    const yaml = planToYaml([plan]);
+    const result = evaluateLocalBuyPlan(plan, {
+      ...snapshot,
+      context: {
+        vix: { available: true, value: 28, percentile: 94 },
+      },
+    });
 
     expect(yaml).toContain('version: 1');
     expect(yaml).toContain('ndx_pe_below: 30');
+    expect(yaml).toContain('vix_above: 25');
+    expect(yaml).toContain('vix_percentile_above: 90');
     expect(yaml).toContain('buy_pct_of_nav: 3');
     expect(yaml).not.toContain('undefined');
+    expect(result.conditions.map((item) => item.key)).toContain('vix_above');
+    expect(result.conditions.map((item) => item.key)).toContain('vix_percentile_above');
   });
 });
