@@ -38,7 +38,7 @@ elif [ "$1" = "site-export" ]; then
   printf '%s' '{"ok":true}'
 elif [ "$1" = "site-refresh" ] && [ "$2" = "--quick" ]; then
   printf '%s' '{"source":"futu-assistant","generated_at":"2026-07-23T10:32:11-04:00","rule_version":"2.2","symbols":{"MSFT":{"gates":{},"gates_passed":0,"gates_total":6}}}' > "$FUTU_ASSISTANT_SITE_EXPORT"
-  printf '%s' '{"ok":true,"checked_at":"2026-07-23T10:32:11-04:00","notifications_sent":0,"symbols_checked":18}'
+  printf '%s' '{"source":"futu-assistant","generated_at":"2026-07-23T10:32:11-04:00","freshness":{"prices_at":"2026-07-23T10:32:11-04:00"},"symbols":{"MSFT":{"gates":{}}}}'
 else
   exit 2
 fi

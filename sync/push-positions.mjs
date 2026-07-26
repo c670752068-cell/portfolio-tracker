@@ -44,8 +44,18 @@ function runSiteRefreshQuick(cliPath) {
       }
       try {
         const payload = extractFirstJsonObject(String(stdout));
-        if (payload?.ok !== true) throw new Error(payload?.error || '返回 ok=false');
-        resolve(payload);
+        if (payload?.ok === false) throw new Error(payload?.error || '返回 ok=false');
+        const isSnapshot = payload?.source === 'futu-assistant'
+          && !Number.isNaN(Date.parse(payload?.generated_at))
+          && payload?.freshness
+          && typeof payload.freshness === 'object'
+          && payload?.symbols
+          && typeof payload.symbols === 'object'
+          && !Array.isArray(payload.symbols);
+        if (payload?.ok !== true && !isSnapshot) throw new Error('返回结构不符合快速刷新契约');
+        resolve(isSnapshot
+          ? { ok: true, generated_at: payload.generated_at, freshness: payload.freshness }
+          : payload);
       } catch (parseError) {
         reject(new Error(`site-refresh --quick 返回无效：${parseError instanceof Error ? parseError.message : String(parseError)}`));
       }
