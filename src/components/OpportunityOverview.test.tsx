@@ -79,5 +79,8 @@ describe('OpportunityOverview', () => {
     expect(html).toContain('🟡 AMZN');
     expect(html).toContain('🔴 MSFT');
     expect(html).not.toContain('卖出窗口（持仓中有触发依据）');
+    expect(html).toContain('rounded-2xl');
+    expect(html).toContain('border-l-buy');
+    expect(html).toContain('min-h-11');
   });
 });

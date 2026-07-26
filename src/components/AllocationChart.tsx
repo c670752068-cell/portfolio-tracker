@@ -6,9 +6,15 @@ import { buildAllocationSlices, type AllocationSlice } from '../allocation';
 import { formatDisplayMoney } from '../displayCurrency';
 
 const COLORS = [
-  '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4',
-  '#a855f7', '#84cc16', '#f43f5e', '#0ea5e9', '#eab308',
-  '#14b8a6', '#f97316', '#8b5cf6', '#22c55e', '#ec4899',
+  'var(--color-buy)', 'var(--color-gain)', 'var(--color-trim)', 'var(--color-loss)',
+  'color-mix(in srgb, var(--color-buy) 72%, var(--color-neutral))',
+  'color-mix(in srgb, var(--color-gain) 72%, var(--color-neutral))',
+  'color-mix(in srgb, var(--color-trim) 72%, var(--color-neutral))',
+  'color-mix(in srgb, var(--color-loss) 72%, var(--color-neutral))',
+  'color-mix(in srgb, var(--color-buy) 48%, var(--color-ink-muted))',
+  'color-mix(in srgb, var(--color-gain) 48%, var(--color-ink-muted))',
+  'color-mix(in srgb, var(--color-trim) 48%, var(--color-ink-muted))',
+  'color-mix(in srgb, var(--color-loss) 48%, var(--color-ink-muted))',
 ];
 
 interface AllocationChartProps {
@@ -46,7 +52,7 @@ export function AllocationChart({ metrics, displayCurrency, rates }: AllocationC
 
   if (slices.length === 0) {
     return (
-      <div className="flex h-72 items-center justify-center text-sm text-slate-500">
+      <div className="flex h-72 items-center justify-center text-sm text-ink-muted">
         添加持仓或现金后，这里将显示占比饼图。
       </div>
     );
@@ -60,6 +66,7 @@ export function AllocationChart({ metrics, displayCurrency, rates }: AllocationC
             width={size.width}
             height={isNarrow ? 220 : size.height}
             margin={isNarrow ? undefined : { top: 24, right: 24, bottom: 24, left: 24 }}
+            className="font-mono tabular-nums"
           >
             <Pie
               data={slices}
@@ -85,23 +92,41 @@ export function AllocationChart({ metrics, displayCurrency, rates }: AllocationC
                 const num = typeof value === 'number' ? value : Number(value);
                 return [`${formatDisplayMoney(num, displayCurrency, rates)} (${formatPct(slice.weight)})`, slice.name];
               }}
+              contentStyle={{
+                backgroundColor: 'var(--color-surface-raised)',
+                borderColor: 'color-mix(in srgb, var(--color-neutral) 60%, transparent)',
+                borderRadius: '0.75rem',
+                color: 'var(--color-ink-primary)',
+                fontSize: '0.75rem',
+              }}
+              labelStyle={{ color: 'var(--color-ink-secondary)' }}
+              itemStyle={{ color: 'var(--color-ink-primary)' }}
             />
-            {!isNarrow && <Legend wrapperStyle={{ fontSize: '0.75rem' }} />}
+            {!isNarrow && (
+              <Legend
+                iconSize={8}
+                wrapperStyle={{
+                  color: 'var(--color-ink-secondary)',
+                  fontSize: '0.75rem',
+                  lineHeight: '1.5rem',
+                }}
+              />
+            )}
           </PieChart>
           {isNarrow && (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 pb-2 text-xs">
+            <div className="grid grid-cols-1 divide-y divide-neutral/30 overflow-hidden rounded-xl border border-neutral/30 bg-surface-base px-3 text-xs min-[480px]:grid-cols-2 min-[480px]:divide-y-0">
               {detailSlices.map((slice) => {
                 const index = slices.indexOf(slice);
                 return (
-                  <div key={slice.name} className="flex min-w-0 items-start gap-2">
+                  <div key={slice.name} className="flex min-w-0 items-start gap-2 py-2 min-[480px]:px-2">
                     <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                      className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-sm"
                       style={{ backgroundColor: sliceColor(slice, index) }}
                     />
-                    <span className="min-w-0 flex-1 break-all leading-tight text-slate-600" title={slice.name}>{slice.name}</span>
-                    <span className="shrink-0 text-right font-medium text-slate-800">
+                    <span className="min-w-0 flex-1 break-words leading-tight text-ink-secondary" title={slice.name}>{slice.name}</span>
+                    <span className="shrink-0 text-right font-mono font-medium tabular-nums text-ink-primary">
                       <span className="block">{formatPct(slice.weight)}</span>
-                      <span className="block text-[10px] font-normal text-slate-500">{formatDisplayMoney(slice.value, displayCurrency, rates)}</span>
+                      <span className="block text-[10px] font-normal text-ink-muted">{formatDisplayMoney(slice.value, displayCurrency, rates)}</span>
                     </span>
                   </div>
                 );
@@ -115,7 +140,7 @@ export function AllocationChart({ metrics, displayCurrency, rates }: AllocationC
 }
 
 function sliceColor(slice: AllocationSlice, index: number): string {
-  if (slice.kind === 'cash') return '#94a3b8';
-  if (slice.kind === 'cash-equivalent') return '#64748b';
+  if (slice.kind === 'cash') return 'var(--color-cash)';
+  if (slice.kind === 'cash-equivalent') return 'color-mix(in srgb, var(--color-cash) 72%, var(--color-ink-muted))';
   return COLORS[index % COLORS.length];
 }

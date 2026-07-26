@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AllocationChart } from './components/AllocationChart';
 import { AlertRulesPanel } from './components/AlertRulesPanel';
 import { ConditionLookup } from './components/ConditionLookup';
+import { DailyVerdictCard } from './components/DailyVerdictCard';
 import { OpportunityOverview, type OpportunitySide } from './components/OpportunityOverview';
 import { CashEditor } from './components/CashEditor';
 import { HoldingsTable } from './components/HoldingsTable';
@@ -527,16 +528,16 @@ export default function App() {
   }
 
   return (
-    <div className="mx-auto min-h-full max-w-5xl px-3 py-4 sm:px-6">
-      <header className="mb-4 flex items-center justify-between gap-2">
+    <div className="mx-auto min-h-full max-w-6xl px-4 py-5 sm:px-6 md:py-8">
+      <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-xl font-bold sm:text-2xl">我的投资组合</h1>
-          <p className="text-xs text-slate-500">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</p>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">我的投资组合</h1>
+          <p className="mt-1 text-xs leading-relaxed text-ink-secondary">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</p>
         </div>
-        <nav className="flex flex-wrap gap-1 text-xs sm:text-sm">
+        <nav className="grid w-full grid-cols-3 gap-1 rounded-2xl bg-surface-raised p-1 text-xs sm:text-sm md:w-auto md:grid-cols-5">
           <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} />
           <TabBtn
-            label={<>持仓 {needsReviewCount > 0 && <span className="text-amber-400">●{needsReviewCount}</span>}</>}
+            label={<>持仓 {needsReviewCount > 0 && <span className="font-mono tabular-nums text-trim">●{needsReviewCount}</span>}</>}
             active={tab === 'holdings'}
             onClick={() => setTab('holdings')}
           />
@@ -547,10 +548,11 @@ export default function App() {
       </header>
 
       {tab === 'dashboard' && (
-        <section className="space-y-4">
+        <section className="ui-enter space-y-5">
+          <DailyVerdictCard />
           {latestAlert && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-              <strong>{latestAlert.symbol} 目标提醒已触发</strong> · {latestAlert.last_reminder_at}。只提醒不下单，请在券商 App 手动执行。
+            <div className="rounded-2xl border border-trim/40 border-l-4 border-l-trim bg-trim/10 p-4 text-sm leading-relaxed text-ink-primary">
+              <strong><span className="font-mono tabular-nums">{latestAlert.symbol}</span> 目标提醒已触发</strong> · <span className="font-mono tabular-nums">{latestAlert.last_reminder_at}</span>。只提醒不下单，请在券商 App 手动执行。
             </div>
           )}
           {quantAnalysis && (
@@ -579,7 +581,7 @@ export default function App() {
             onOneTapRefresh={refreshEverything}
           />
           {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} onUndo={undoLastImport} />}
-          <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+          <div className="rounded-xl border border-neutral/40 bg-surface-raised p-3">
             <h3 className="mb-2 text-sm font-semibold">资产占比</h3>
             <AllocationChart metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
           </div>
@@ -587,7 +589,7 @@ export default function App() {
       )}
 
       {tab === 'holdings' && (
-        <section className="space-y-4">
+        <section className="ui-enter space-y-4">
           <ImageImportPanel settings={settings} onConfirm={importFromImages} onOptionDetails={importOptionDetails} onOpenSettings={() => setTab('settings')} />
           <HoldingsTable
             metrics={metrics.holdingsMetrics}
@@ -602,23 +604,25 @@ export default function App() {
       )}
 
       {tab === 'conditions' && (
-        <ConditionLookup
-          snapshot={quantAnalysis}
-          holdings={portfolio.holdings}
-          monitoredQuotes={monitoredQuotes}
-          initialSymbol={conditionTarget?.symbol}
-          initialSide={conditionTarget?.side}
-          loading={quantAnalysisStatus.loading}
-          error={quantAnalysisStatus.error}
-          onRefresh={refreshQuantAnalysis}
-          displayCurrency={settings.displayCurrency}
-          rates={rates}
-          valuationSettings={settings}
-        />
+        <section className="ui-enter">
+          <ConditionLookup
+            snapshot={quantAnalysis}
+            holdings={portfolio.holdings}
+            monitoredQuotes={monitoredQuotes}
+            initialSymbol={conditionTarget?.symbol}
+            initialSide={conditionTarget?.side}
+            loading={quantAnalysisStatus.loading}
+            error={quantAnalysisStatus.error}
+            onRefresh={refreshQuantAnalysis}
+            displayCurrency={settings.displayCurrency}
+            rates={rates}
+            valuationSettings={settings}
+          />
+        </section>
       )}
 
       {tab === 'calculator' && (
-        <section className="space-y-4">
+        <section className="ui-enter space-y-4">
           <ScenarioCalculator metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
           <AlertRulesPanel
             rules={alertRules}
@@ -634,7 +638,7 @@ export default function App() {
       )}
 
       {tab === 'settings' && (
-        <section className="space-y-4">
+        <section className="ui-enter space-y-4">
           <SettingsPanel
             settings={settings}
             holdings={portfolio.holdings}
@@ -649,7 +653,7 @@ export default function App() {
         </section>
       )}
 
-      <footer className="mt-8 text-center text-xs text-slate-400">
+      <footer className="mt-8 text-center text-xs text-ink-muted">
         数据保存在浏览器 localStorage；清除浏览器数据会丢失。风险结果仅作教育与信息展示，不构成投资建议；建议定期导出 JSON 备份。
       </footer>
     </div>
@@ -659,28 +663,28 @@ export default function App() {
 function ImportResultNotice({ result: notice, onClose, onUndo }: { result: ImportNotice; onClose: () => void; onUndo: () => void }) {
   const issues = dedupeImportIssues(notice.result.issues);
   return (
-    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+    <div className="rounded-xl border border-gain/40 bg-gain/10 p-3 text-sm text-ink-primary">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="font-semibold">{notice.mode === 'full' ? '截图识别已自动导入' : notice.mode === 'option' ? '期权详情已安全补充' : '量化系统持仓已同步'}</div>
           {notice.mode === 'full' ? (
-            <p className="mt-1 text-xs">
+            <p className="mt-1 font-mono text-xs tabular-nums">
               本次已替换上一批截图导入（手动添加的条目未受影响）；共导入 {notice.result.holdings.length} 个持仓、{notice.result.cash.length} 个现金条目。
             </p>
           ) : notice.mode === 'option' ? (
-            <p className="mt-1 text-xs">
+            <p className="mt-1 font-mono text-xs tabular-nums">
               已更新 {notice.result.updated.length} 个期权、补充新增 {notice.result.added.length} 个；未动任何正股、ETF 与现金。
             </p>
           ) : (
-            <p className="mt-1 text-xs">
+            <p className="mt-1 font-mono text-xs tabular-nums">
               已替换量化同步与截图导入条目；共同步 {notice.result.holdings.length} 个持仓、{notice.result.cash.length} 个推算现金条目，手工条目未受影响。
             </p>
           )}
         </div>
-        <button type="button" onClick={onClose} className="text-xs text-emerald-700 hover:underline dark:text-emerald-200">关闭</button>
+        <button type="button" onClick={onClose} className="text-xs text-gain hover:underline">关闭</button>
       </div>
       {issues.length > 0 && (
-        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-100">
+        <div className="mt-2 rounded-lg border border-trim/40 bg-trim/10 p-2 text-xs text-ink-primary">
           <div className="font-semibold">下一步建议补充</div>
           <ul className="mt-1 list-disc space-y-1 pl-4">
             {issues.map((issue, index) => (
@@ -691,7 +695,7 @@ function ImportResultNotice({ result: notice, onClose, onUndo }: { result: Impor
           </ul>
         </div>
       )}
-      <button type="button" onClick={onUndo} className="mt-2 rounded-md border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-100 dark:hover:bg-emerald-900/40">
+      <button type="button" onClick={onUndo} className="mt-2 rounded-md border border-gain/50 px-3 py-1.5 text-xs font-medium text-gain hover:bg-gain/10">
         {notice.mode === 'quant' ? '撤销本次同步' : '撤销本次导入'}
       </button>
     </div>
@@ -702,10 +706,10 @@ function TabBtn({ label, active, onClick }: { label: React.ReactNode; active: bo
   return (
     <button
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 font-medium transition ${
+      className={`min-h-11 rounded-xl px-3 py-2 font-medium transition-colors ${
         active
-          ? 'bg-indigo-600 text-white'
-          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600'
+          ? 'bg-buy text-surface-base'
+          : 'text-ink-secondary hover:bg-surface-overlay hover:text-ink-primary'
       }`}
     >
       {label}
@@ -746,13 +750,13 @@ function DataActions({ onExport, onImport, onClear }: DataActionsProps) {
     e.target.value = '';
   }
   return (
-    <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+    <div className="space-y-2 rounded-xl border border-neutral/40 bg-surface-raised p-3">
       <h3 className="text-sm font-semibold">数据导入 / 导出</h3>
       <div className="flex flex-wrap gap-2">
-        <button onClick={onExport} className="rounded-md bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-700">
+        <button onClick={onExport} className="rounded-md bg-surface-overlay px-3 py-1.5 text-sm text-ink-secondary hover:text-ink-primary">
           导出 JSON
         </button>
-        <label className="cursor-pointer rounded-md bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-700">
+        <label className="cursor-pointer rounded-md bg-surface-overlay px-3 py-1.5 text-sm text-ink-secondary hover:text-ink-primary">
           导入 JSON
           <input type="file" accept="application/json" className="hidden" onChange={handleFile} />
         </label>
@@ -760,7 +764,7 @@ function DataActions({ onExport, onImport, onClear }: DataActionsProps) {
           onClick={() => {
             if (confirm('确定清空所有持仓和现金？此操作不可撤销。')) onClear();
           }}
-          className="rounded-md bg-rose-100 px-3 py-1.5 text-sm text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
+          className="rounded-md bg-loss/10 px-3 py-1.5 text-sm text-loss hover:bg-loss/20"
         >
           清空数据
         </button>

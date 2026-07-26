@@ -99,8 +99,8 @@ describe('ConditionLookup', () => {
 
     expect(html).toContain('深度买入窗口（个股）');
     expect(html).toContain('深度位 ✓');
-    expect(html).toContain('当前回撤</span><strong class="text-2xl">22.50%');
-    expect(html).toContain('阈值</span><strong class="text-2xl">21.70%');
+    expect(html).toContain('当前回撤</span><strong class="font-mono text-2xl tabular-nums">22.50%');
+    expect(html).toContain('阈值</span><strong class="font-mono text-2xl tabular-nums">21.70%');
     expect(html).toContain('60 日胜率 68.00%');
     expect(html).toContain('（n=25）');
     expect(html).toContain('个股 PE 分位 45.00%');
@@ -129,7 +129,7 @@ describe('ConditionLookup', () => {
     expect(html).toContain('aria-label="个股 PE 分位"');
     expect(html).toContain('aria-valuenow="20.4"');
     expect(html).toContain('data-zone="low"');
-    expect(html).toContain('bg-emerald-600');
+    expect(html).toContain('bg-gain');
     expect(html).toContain('分位 20.40% = 当前 PE 低于过去约 80% 的时间');
   });
 
@@ -142,7 +142,7 @@ describe('ConditionLookup', () => {
     );
 
     expect(html).toContain('data-zone="high"');
-    expect(html).toContain('bg-rose-600');
+    expect(html).toContain('bg-loss');
     expect(html).toContain('分位 85.00% = 当前 PE 低于过去约 15% 的时间');
   });
 
@@ -168,8 +168,8 @@ describe('ConditionLookup', () => {
     );
 
     expect(ready).toContain('✓ 已达标');
-    expect(ready).toContain('当前回撤</span><strong class="text-2xl">22.50%');
-    expect(ready).toContain('阈值</span><strong class="text-2xl">21.70%');
+    expect(ready).toContain('当前回撤</span><strong class="font-mono text-2xl tabular-nums">22.50%');
+    expect(ready).toContain('阈值</span><strong class="font-mono text-2xl tabular-nums">21.70%');
     expect(ready).toContain('value="100"');
     expect(ready).toContain('60 日胜率 68.00%');
     expect(near).toContain('接近 · 还差 2.30 点');
@@ -433,7 +433,7 @@ describe('ConditionLookup', () => {
     expect(far).toContain('value="55.55"');
     expect(far).toContain('dark:');
     expect(insufficient).toContain('60 日样本不足（n=18）');
-    expect(insufficient).toContain('text-slate-400');
+    expect(insufficient).toContain('text-ink-muted');
     expect(insufficient).toContain('min-w-0');
     expect(insufficient).toContain('overflow-hidden');
   });

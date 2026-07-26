@@ -155,4 +155,37 @@ describe('Summary cards', () => {
     );
     expect(html).toContain('美股盘中每 35 分钟自动刷新');
   });
+
+  it('puts the two decision metrics before the secondary refresh control in a single-column mobile layout', () => {
+    const metrics = computeMetrics({
+      holdings: [{
+        id: 'msft', symbol: 'MSFT', name: 'Microsoft', shares: 2, buyPrice: 100,
+        currentPrice: 120, sector: '科技', currency: 'USD', assetType: 'stock',
+      }],
+      cash: [],
+      updatedAt: '2026-07-15T00:00:00.000Z',
+    }, rates);
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics}
+        rates={rates}
+        displayCurrency="USD"
+        onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]}
+        rateError=""
+        quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false}
+        onRefreshQuotes={() => undefined}
+        exposureTargetPct={100}
+        {...quantProps}
+      />,
+    );
+
+    expect(html).toContain('grid-cols-1');
+    expect(html).toContain('md:grid-cols-4');
+    expect(html).toContain('md:col-span-2');
+    expect(html).toContain('text-4xl');
+    expect(html.indexOf('总资产（USD）')).toBeLessThan(html.indexOf('一键刷新全部'));
+    expect(html.indexOf('今日涨跌（USD）')).toBeLessThan(html.indexOf('一键刷新全部'));
+  });
 });

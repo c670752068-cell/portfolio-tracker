@@ -43,7 +43,9 @@ interface SummaryProps {
 
 export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, dayChangeStatusText, canRefreshQuotes, onRefreshQuotes, exposureTargetPct, quantStatus, quantSyncEnabled, quantGatewayAvailable, quantTokenConfigured, onRefreshQuant, oneTapRefreshState, canOneTapRefresh, oneTapCooldownSeconds, onOneTapRefresh }: SummaryProps) {
   const dayClass =
-    metrics.dayChange > 0 ? 'text-emerald-600' : metrics.dayChange < 0 ? 'text-rose-600' : 'text-slate-500';
+    metrics.dayChange > 0 ? 'text-gain' : metrics.dayChange < 0 ? 'text-loss' : 'text-ink-secondary';
+  const dayAccentClass =
+    metrics.dayChange > 0 ? 'border-l-gain' : metrics.dayChange < 0 ? 'border-l-loss' : 'border-l-neutral';
   const trendPoints = valueHistory.slice(-30).map((point) => ({
     ...point,
     value: convertFromUsd(point.totalValueUsd, displayCurrency, rates),
@@ -53,8 +55,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
   const trendPct = trendStart && trendEnd && trendStart.totalValueUsd > 0
     ? trendEnd.totalValueUsd / trendStart.totalValueUsd - 1
     : 0;
-  const trendClass = trendPct > 0 ? 'text-emerald-600' : trendPct < 0 ? 'text-rose-600' : 'text-slate-500';
-  const trendColor = trendPct < 0 ? '#e11d48' : '#059669';
+  const trendClass = trendPct > 0 ? 'text-gain' : trendPct < 0 ? 'text-loss' : 'text-ink-secondary';
   const oneTapBusy = oneTapRefreshState.phase === 'requested'
     || oneTapRefreshState.phase === 'throttled'
     || oneTapRefreshState.phase === 'waiting';
@@ -74,44 +75,23 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
       ? `已更新（${completedTime}）`
       : '一键刷新全部';
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div className="col-span-2 rounded-xl border border-indigo-300 bg-indigo-50 p-3 shadow-sm dark:border-indigo-700 dark:bg-indigo-950/30 sm:col-span-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">一键刷新全部</div>
-            <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-              {oneTapUnavailableReason || oneTapRefreshState.message || '重新读取行情、持仓和分析，并请求量化系统立即重算。'}
-            </div>
-            {oneTapCooldownSeconds > 0 && (
-              <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                {oneTapCooldownSeconds} 秒后可再次刷新
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onOneTapRefresh}
-            disabled={!canOneTapRefresh || oneTapBusy || oneTapCooldownSeconds > 0}
-            className="min-w-40 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-400"
-          >
-            {oneTapButtonLabel}
-          </button>
-        </div>
-        <div className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-          刷新会让量化系统重新检查一次，若有符合条件的标的会照常推送到手机
-        </div>
-      </div>
-      <Card label={`总资产（${displayCurrency}）`} value={formatDisplayMoney(metrics.totalValue, displayCurrency, rates)}>
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <Card
+        label={`总资产（${displayCurrency}）`}
+        value={formatDisplayMoney(metrics.totalValue, displayCurrency, rates)}
+        variant="hero"
+        accentClass="border-l-neutral"
+      >
         {trendPoints.length >= 2 && (
           <div className="mt-1">
-            <div className="h-10 w-full" aria-label="近 30 天总资产趋势">
+            <div className={`h-10 w-full ${trendClass}`} aria-label="近 30 天总资产趋势">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trendPoints}>
-                  <Line type="monotone" dataKey="value" stroke={trendColor} strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="value" stroke="currentColor" strokeWidth={2} dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <div className={`text-[11px] ${trendClass}`}>
+            <div className={`font-mono text-[11px] tabular-nums ${trendClass}`}>
               {trendPoints.length >= 8 ? '近 7 天' : '记录以来'} {formatSignedPct(trendPct)}
             </div>
           </div>
@@ -123,13 +103,41 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
         sub={formatSignedPct(metrics.dayChangePct)}
         valueClass={dayClass}
         subClass={dayClass}
+        variant="hero"
+        accentClass={dayAccentClass}
       >
         {dayChangeStatusText && (
-          <div className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+          <div className="mt-1 font-mono text-[11px] leading-relaxed tabular-nums text-ink-secondary">
             {dayChangeStatusText}
           </div>
         )}
       </Card>
+      <div className="rounded-2xl border border-neutral/50 border-l-4 border-l-buy bg-surface-raised p-4 md:col-span-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-ink-primary">一键刷新全部</div>
+            <div className="mt-1 text-xs leading-relaxed text-ink-secondary">
+              {oneTapUnavailableReason || oneTapRefreshState.message || '重新读取行情、持仓和分析，并请求量化系统立即重算。'}
+            </div>
+            {oneTapCooldownSeconds > 0 && (
+              <div className="mt-1 font-mono text-xs tabular-nums text-trim">
+                {oneTapCooldownSeconds} 秒后可再次刷新
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onOneTapRefresh}
+            disabled={!canOneTapRefresh || oneTapBusy || oneTapCooldownSeconds > 0}
+            className="min-h-11 w-full rounded-xl bg-buy px-4 py-2 font-mono text-sm font-semibold tabular-nums text-surface-base hover:bg-buy/85 disabled:cursor-not-allowed disabled:bg-neutral disabled:text-ink-muted sm:w-auto sm:min-w-40"
+          >
+            {oneTapButtonLabel}
+          </button>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-ink-secondary">
+          刷新会让量化系统重新检查一次，若有符合条件的标的会照常推送到手机
+        </div>
+      </div>
       <Card label={`持仓市值（${displayCurrency}）`} value={formatDisplayMoney(metrics.equityValue, displayCurrency, rates)} sub={`${formatPct(1 - metrics.cashWeight)}`} />
       <Card
         label={`现金及等价物（${displayCurrency}）`}
@@ -145,78 +153,78 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
           value={formatDisplayMoney(metrics.equivalentExposureTotal, displayCurrency, rates)}
           sub={`等效仓位 ${formatPct(metrics.equivalentExposurePct)} · 目标 ${exposureTargetPct}%`}
         >
-          <div className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+          <div className="mt-1 font-mono text-[11px] leading-relaxed tabular-nums text-ink-secondary">
             正股 {formatDisplayMoney(metrics.plainEquityExposure, displayCurrency, rates)} · 杠杆折算 {formatDisplayMoney(metrics.leveragedEtfExposure, displayCurrency, rates)} · 期权Δ {formatDisplayMoney(metrics.optionDeltaExposure, displayCurrency, rates)}
           </div>
-          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">网站口径：期权按 Delta 折算</div>
+          <div className="mt-1 text-[11px] text-ink-secondary">网站口径：期权按 Delta 折算</div>
           {metrics.uncomputableOptions > 0 && (
-            <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-300">
+            <div className="mt-1 font-mono text-[11px] tabular-nums text-trim">
               ⚠ {metrics.uncomputableOptions} 个期权缺 Delta/标的价未计入（用「补充期权详情」导入）
             </div>
           )}
         </Card>
       )}
-      <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:col-span-4">
-        <label className="font-medium text-slate-700 dark:text-slate-200">
+      <div className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 text-xs md:col-span-4">
+        <label className="font-medium text-ink-primary">
           显示货币：
           <select
             aria-label="显示货币"
             value={displayCurrency}
             onChange={(event) => onDisplayCurrencyChange(event.target.value as DisplayCurrency)}
-            className="ml-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900"
+            className="ml-1 rounded border border-neutral bg-surface-overlay px-2 py-1 font-mono text-xs tabular-nums text-ink-primary"
           >
             {(['USD', 'CNY', 'HKD', 'JPY', 'EUR', 'GBP'] as DisplayCurrency[]).map((currency) => (
               <option key={currency} value={currency}>{currency}</option>
             ))}
           </select>
         </label>
-        <span className="ml-3 text-slate-500 dark:text-slate-400">1 USD ≈ {rates.CNY.toFixed(4)} CNY</span>
-        <span className="ml-2 text-slate-400">{rates.source === 'live' ? `实时数据 ${rates.updatedAt ?? ''}` : rates.source === 'cache' ? `缓存数据 ${rates.updatedAt ?? ''}` : '近似兜底值'}</span>
-        {rateError && <span className="ml-2 text-amber-600 dark:text-amber-300">{rateError}</span>}
+        <span className="ml-3 font-mono tabular-nums text-ink-secondary">1 USD ≈ {rates.CNY.toFixed(4)} CNY</span>
+        <span className="ml-2 font-mono tabular-nums text-ink-muted">{rates.source === 'live' ? `实时数据 ${rates.updatedAt ?? ''}` : rates.source === 'cache' ? `缓存数据 ${rates.updatedAt ?? ''}` : '近似兜底值'}</span>
+        {rateError && <span className="ml-2 text-trim">{rateError}</span>}
       </div>
-      <div className="col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:col-span-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral/40 bg-surface-raised p-4 text-xs md:col-span-4">
         <div>
-          <span className="font-medium text-slate-700 dark:text-slate-200">行情同步：</span>
-          <span className="text-slate-500 dark:text-slate-400">
+          <span className="font-medium text-ink-primary">行情同步：</span>
+          <span className="font-mono tabular-nums text-ink-secondary">
             {quoteStatus.loading ? '正在刷新…' : quoteStatus.summary || (canRefreshQuotes ? '美股盘中每 35 分钟自动刷新' : '未配置行情源')}
           </span>
-          {quoteStatus.lastSyncedAt && <span className="ml-2 text-slate-400">{new Date(quoteStatus.lastSyncedAt).toLocaleString()}</span>}
-          {quoteStatus.error && <span className="ml-2 text-amber-600 dark:text-amber-300">{quoteStatus.error}</span>}
+          {quoteStatus.lastSyncedAt && <span className="ml-2 font-mono tabular-nums text-ink-muted">{new Date(quoteStatus.lastSyncedAt).toLocaleString()}</span>}
+          {quoteStatus.error && <span className="ml-2 text-trim">{quoteStatus.error}</span>}
         </div>
         <button
           type="button"
           onClick={onRefreshQuotes}
           disabled={quoteStatus.loading || !canRefreshQuotes}
-          className="rounded-md bg-slate-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="min-h-11 rounded-xl bg-buy/15 px-4 py-2 text-xs font-medium text-buy hover:bg-buy/25 disabled:cursor-not-allowed disabled:bg-neutral disabled:text-ink-muted"
         >
           {quoteStatus.loading ? '刷新中' : '手动刷新'}
         </button>
       </div>
-      <div className="col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:col-span-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral/40 bg-surface-raised p-4 text-xs md:col-span-4">
         <div className="min-w-0">
-          <span className="font-medium text-slate-700 dark:text-slate-200">量化系统同步：</span>
+          <span className="font-medium text-ink-primary">量化系统同步：</span>
           {!quantGatewayAvailable ? (
-            <span className="text-amber-600 dark:text-amber-300">量化同步仅在 VPS 入口可用</span>
+            <span className="text-trim">量化同步仅在 VPS 入口可用</span>
           ) : !quantSyncEnabled ? (
-            <span className="text-slate-500 dark:text-slate-400">未启用</span>
+            <span className="text-ink-secondary">未启用</span>
           ) : !quantTokenConfigured ? (
-            <span className="text-amber-600 dark:text-amber-300">未填写同步 Token</span>
+            <span className="text-trim">未填写同步 Token</span>
           ) : (
-            <span className="text-slate-500 dark:text-slate-400">{quantStatus.loading ? '正在同步…' : quantStatus.summary || '等待首次同步'}</span>
+            <span className="font-mono tabular-nums text-ink-secondary">{quantStatus.loading ? '正在同步…' : quantStatus.summary || '等待首次同步'}</span>
           )}
           {quantStatus.asOf && quantStatus.pushedAt && (
-            <div className="mt-1 text-slate-500 dark:text-slate-400">
+            <div className="mt-1 font-mono tabular-nums text-ink-secondary">
               数据截至 {quantStatus.asOf}（IBKR 快照日）· 推送于 {new Date(quantStatus.pushedAt).toLocaleString()}
-              {quantStatus.stale && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">数据陈旧</span>}
+              {quantStatus.stale && <span className="ml-2 rounded bg-trim/10 px-1.5 py-0.5 font-medium text-trim">数据陈旧</span>}
             </div>
           )}
-          {quantStatus.error && <div className="mt-1 text-amber-600 dark:text-amber-300">{quantStatus.error}</div>}
+          {quantStatus.error && <div className="mt-1 text-trim">{quantStatus.error}</div>}
         </div>
         <button
           type="button"
           onClick={onRefreshQuant}
           disabled={quantStatus.loading || !quantGatewayAvailable || !quantSyncEnabled || !quantTokenConfigured}
-          className="rounded-md bg-slate-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-500 disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="min-h-11 rounded-xl bg-buy/15 px-4 py-2 text-xs font-medium text-buy hover:bg-buy/25 disabled:cursor-not-allowed disabled:bg-neutral disabled:text-ink-muted"
         >
           {quantStatus.loading ? '同步中' : '从量化系统同步'}
         </button>
@@ -231,15 +239,18 @@ interface CardProps {
   sub?: string;
   valueClass?: string;
   subClass?: string;
+  variant?: 'standard' | 'hero';
+  accentClass?: string;
   children?: React.ReactNode;
 }
 
-function Card({ label, value, sub, valueClass, subClass, children }: CardProps) {
+function Card({ label, value, sub, valueClass, subClass, variant = 'standard', accentClass = 'border-l-neutral', children }: CardProps) {
+  const isHero = variant === 'hero';
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-      <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
-      <div className={`mt-1 text-lg font-semibold tabular-nums ${valueClass ?? ''}`}>{value}</div>
-      {sub && <div className={`text-xs tabular-nums ${subClass ?? 'text-slate-500 dark:text-slate-400'}`}>{sub}</div>}
+    <div className={`${isHero ? `rounded-2xl border border-neutral/60 border-l-4 p-6 md:col-span-2 ${accentClass}` : 'rounded-2xl border border-neutral/40 p-4'} bg-surface-raised`}>
+      <div className={`${isHero ? 'text-sm font-medium' : 'text-xs'} text-ink-secondary`}>{label}</div>
+      <div className={`mt-2 font-mono font-semibold leading-none tracking-tight tabular-nums ${isHero ? 'text-4xl' : 'text-xl'} ${valueClass ?? ''}`}>{value}</div>
+      {sub && <div className={`mt-2 font-mono tabular-nums ${isHero ? 'text-sm' : 'text-xs'} ${subClass ?? 'text-ink-secondary'}`}>{sub}</div>}
       {children}
     </div>
   );

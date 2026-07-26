@@ -37,18 +37,18 @@ function CostCoverageCard({
   const analysis = analyzeCostCoverage(holdings, holdingCosts);
   const reasons: CostGapReason[] = ['option_no_source', 'quant_coverage_incomplete', 'manual_missing'];
   return (
-    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+    <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
       <h4 className="text-sm font-semibold">成本数据覆盖</h4>
       <p className="mt-1 text-sm">已有成本 {analysis.costed} / 共 {analysis.total} 个持仓</p>
       {analysis.gaps.length === 0 ? (
-        <p className="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">全部持仓成本齐全</p>
+        <p className="mt-2 text-sm font-medium text-gain dark:text-gain">全部持仓成本齐全</p>
       ) : reasons.map((reason) => {
         const rows = analysis.gaps.filter((gap) => gap.reason === reason);
         if (rows.length === 0) return null;
         return (
-          <div className="mt-3 rounded-md bg-slate-50 p-2 text-xs dark:bg-slate-900" key={reason}>
+          <div className="mt-3 rounded-md bg-surface-overlay/30 p-2 text-xs dark:bg-surface-base" key={reason}>
             <div className="font-semibold">{COST_GAP_LABELS[reason]}</div>
-            <ul className="mt-1 space-y-1 text-slate-600 dark:text-slate-300">
+            <ul className="mt-1 space-y-1 text-ink-secondary dark:text-ink-secondary">
               {rows.map((row, index) => {
                 const quantCost = holdingCosts[row.symbol];
                 const coverage = reason === 'quant_coverage_incomplete'
@@ -57,7 +57,7 @@ function CostCoverageCard({
                 return <li key={`${row.symbol}-${row.assetType}-${row.broker ?? ''}-${index}`}>{row.symbol}{row.broker ? ` · ${row.broker}` : ''}{coverage}</li>;
               })}
             </ul>
-            <p className="mt-2 text-amber-700 dark:text-amber-300">{COST_GAP_GUIDANCE[reason]}</p>
+            <p className="mt-2 text-trim dark:text-trim">{COST_GAP_GUIDANCE[reason]}</p>
           </div>
         );
       })}
@@ -122,10 +122,10 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+    <div className="space-y-3 rounded-xl border border-neutral/40 bg-surface-raised p-3 dark:border-neutral/60 dark:bg-surface-raised">
       <h3 className="text-sm font-semibold">设置</h3>
       {serverGatewayEnabled && (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+        <div className="rounded-md border border-gain/40 bg-gain/10 p-2 text-xs text-gain dark:border-gain/30 dark:bg-gain/20 dark:text-gain">
           已启用 {serverGatewayLabel()}：截图和行情请求先经过服务器（{serverGatewayLabel()}），手机不再直接连接 AI 接口。
         </div>
       )}
@@ -138,7 +138,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           <option value="zhipu">智谱 GLM（推荐：先用这个识别截图）</option>
           <option value="kimi">Kimi / Moonshot（备用）</option>
         </select>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-ink-muted">
           当前默认切到智谱。你手机上的 Kimi 已经表现为 90 秒超时，说明不是图片压缩问题，优先用智谱更稳。
         </p>
       </Field>
@@ -152,7 +152,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
               placeholder="填入智谱开放平台 API Key"
               className={inputCls}
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-ink-muted">
               仅保存在本机浏览器（localStorage）。解析图片时，Key 与图片会发送给智谱 API（或你填写的代理），不会进入 GitHub 仓库。
             </p>
           </Field>
@@ -176,7 +176,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
               placeholder="https://your-worker.workers.dev/zhipu/chat/completions"
               className={inputCls}
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-ink-muted">
               {serverGatewayEnabled
                 ? `当前会自动使用服务器转发（${getServerAiProxyUrl('zhipu')}），无需填写。只有要换其他代理时才填。填写后会覆盖服务器转发，通常应留空。`
                 : '直连智谱失败时再填。README 里的 Worker 模板已支持 /zhipu/chat/completions。填写后会覆盖服务器转发，通常应留空。'}
@@ -193,7 +193,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
               placeholder="sk-..."
               className={inputCls}
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-ink-muted">
               仅保存在本机浏览器（localStorage）。解析图片时，Key 与图片会发送给 Kimi API（或你填写的代理），不会进入 GitHub 仓库。
             </p>
           </Field>
@@ -217,7 +217,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
               placeholder="https://your-worker.workers.dev/v1/chat/completions"
               className={inputCls}
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-ink-muted">
               {serverGatewayEnabled
                 ? `当前会自动使用服务器转发（${getServerAiProxyUrl('kimi')}），无需填写。填写后会覆盖服务器转发，通常应留空。`
                 : '浏览器直连 Moonshot 可能超时。如仍出现 Load failed，部署 README 中的 Worker 代理并填入此处。填写后会覆盖服务器转发，通常应留空。'}
@@ -230,18 +230,18 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           type="button"
           onClick={testConnection}
           disabled={testingAi}
-          className="rounded-md bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+          className="rounded-md bg-surface-overlay px-3 py-1.5 text-sm text-ink-primary hover:bg-neutral/40 disabled:cursor-not-allowed disabled:bg-neutral/60 dark:bg-surface-overlay dark:text-ink-primary dark:hover:bg-neutral"
         >
           {testingAi ? '测试中…' : `测试 ${aiLabel} 连接`}
         </button>
         {aiTestResult && (
-          <span className={`text-xs ${aiTestResult.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`}>
+          <span className={`text-xs ${aiTestResult.ok ? 'text-gain dark:text-gain' : 'text-loss dark:text-loss'}`}>
             {aiTestResult.ok ? aiTestResult.message : `失败：${aiTestResult.message}`}
           </span>
         )}
       </div>
-      <p className="text-xs text-slate-500">当前生效接口：{activeAiEndpoint(draft)}</p>
-      {aiTestResult?.hint && <p className="text-xs text-amber-600 dark:text-amber-300">{aiTestResult.hint}</p>}
+      <p className="text-xs text-ink-muted">当前生效接口：{activeAiEndpoint(draft)}</p>
+      {aiTestResult?.hint && <p className="text-xs text-trim dark:text-trim">{aiTestResult.hint}</p>}
       <Field label="等效仓位目标 %">
         <input
           type="number"
@@ -252,20 +252,20 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           onChange={(event) => setDraft({ ...draft, exposureTargetPct: Number(event.target.value) })}
           className={inputCls}
         />
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-ink-muted">
           等效仓位 = 正股 + 杠杆 ETF×倍数 + 期权 Delta 折算后的总敞口 ÷ 总资产。留现金子弹但用杠杆/期权把等效顶到目标，是本设置的用途。
         </p>
       </Field>
-      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h4 className="mb-2 text-sm font-semibold">量化系统同步</h4>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-muted">
           {serverGatewayEnabled
             ? '已启用跨设备自动同步：Mac 量化系统每 45 分钟汇总 IBKR、长桥和富途后推送到 VPS；手机和电脑打开本网址会自动读取同一份持仓，不再需要分别填 Token。'
             : '请使用 VPS 入口打开网站，GitHub Pages 无法跨设备读取服务器持仓。'}
         </p>
       </div>
       <CostCoverageCard holdings={holdings} holdingCosts={holdingCosts} />
-      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h4 className="mb-2 text-sm font-semibold">估值数据补充</h4>
         <Field label="Alpha Vantage PE API Key">
           <input
@@ -275,14 +275,14 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
             placeholder="仅在量化 PE 序列缺失时使用"
             className={inputCls}
           />
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-ink-muted">
             仅保存在本机浏览器；每个标的每天最多请求一次。量化系统已有 PE 序列时不会调用。
           </p>
         </Field>
       </div>
-      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h4 className="mb-2 text-sm font-semibold">估值基准</h4>
-        <p className="mb-3 text-xs text-slate-500">
+        <p className="mb-3 text-xs text-ink-muted">
           {VALUATION_ANCHOR_POLICY_TEXT} 手动锚点仅在对应指数填写后覆盖自动值。阈值表示当前 PE 高于锚点的距离分区，不改变量化系统的任何开窗结论。
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -341,7 +341,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           </Field>
         </div>
       </div>
-      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h4 className="mb-2 text-sm font-semibold">每日行情同步</h4>
         <div className="space-y-3">
           <Field label="行情源">
@@ -366,7 +366,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
                 placeholder="行情服务的 API Key"
                 className={inputCls}
               />
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-ink-muted">
                 仅保存在本机浏览器。用于每天北京时间 7 点后刷新股票/ETF 价格、涨跌和组合占比；不会进入 GitHub 仓库。
               </p>
             </Field>
@@ -379,7 +379,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
                 placeholder="https://your-worker.workers.dev/quotes"
                 className={inputCls}
               />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-ink-muted">
                 {serverGatewayEnabled
                   ? `本部署可直接使用服务器免费行情地址（${getServerQuoteProxyUrl()}）。`
                   : '使用 README 中的 Cloudflare Worker 模板可代理 Yahoo/NASDAQ 免费报价，URL 填到 /quotes。'}
@@ -391,28 +391,28 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
               type="checkbox"
               checked={draft.autoRefreshQuotes}
               onChange={(e) => setDraft({ ...draft, autoRefreshQuotes: e.target.checked })}
-              className="h-4 w-4 rounded border-slate-300"
+              className="h-4 w-4 rounded border-neutral/60"
             />
             北京时间每天 7 点后自动刷新一次（同一天不重复刷）
           </label>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             不是实时盯盘；适合每天看一次组合占比和当日涨跌。需要立刻更新时，可在「总览」手动刷新。
           </p>
         </div>
       </div>
       <button
         onClick={save}
-        className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+        className="rounded-md bg-buy px-3 py-1.5 text-sm font-medium text-surface-base hover:bg-buy"
       >
         {saved ? '已保存 ✓' : '保存设置'}
       </button>
-      {saveError && <p className="text-xs text-rose-600 dark:text-rose-300">{saveError}</p>}
+      {saveError && <p className="text-xs text-loss dark:text-loss">{saveError}</p>}
     </div>
   );
 }
 
 const inputCls =
-  'w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none dark:border-slate-600 dark:bg-slate-900';
+  'w-full rounded-md border border-neutral/60 bg-surface-raised px-2 py-1.5 font-mono text-sm tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
