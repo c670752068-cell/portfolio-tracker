@@ -321,6 +321,35 @@ export interface QuantOpportunitySummary {
   generated_at: string;
 }
 
+export type QuantVerdictLevel = 'block' | 'buy' | 'trim' | 'wait' | 'hold';
+
+export interface QuantTodayVerdict {
+  as_of: string;
+  headline: string;
+  level: QuantVerdictLevel;
+  points: readonly string[];
+  rule_version: string;
+}
+
+export interface QuantBehaviorStatistic {
+  n: number;
+  sample_sufficient: boolean;
+}
+
+export interface QuantBehaviorMirror {
+  trades_analyzed: number;
+  sell_flycount: QuantBehaviorStatistic & {
+    flew_pct: number;
+    avg_missed_60d_pct: number;
+  };
+  chase_high: QuantBehaviorStatistic & {
+    chased_pct: number;
+    avg_entry_drawdown_pct: number;
+  };
+  weakness_labels: readonly string[];
+  streak_days_following_rules: number;
+}
+
 export interface QuantAnalysisSnapshot {
   source: 'futu-assistant';
   generated_at: string;
@@ -333,6 +362,8 @@ export interface QuantAnalysisSnapshot {
   sell?: QuantSellSnapshot;
   summary?: QuantOpportunitySummary;
   pe_history?: PeHistoryPayload;
+  today_verdict?: QuantTodayVerdict | null;
+  behavior_mirror?: QuantBehaviorMirror | null;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */

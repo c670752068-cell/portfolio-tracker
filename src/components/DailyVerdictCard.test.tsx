@@ -3,27 +3,33 @@ import { describe, expect, it } from 'vitest';
 import { DailyVerdictCard } from './DailyVerdictCard';
 
 describe('DailyVerdictCard', () => {
-  it('stays hidden until a verdict title is available', () => {
+  it('stays hidden until the backend verdict is available', () => {
     expect(renderToStaticMarkup(<DailyVerdictCard />)).toBe('');
-    expect(renderToStaticMarkup(<DailyVerdictCard title="   " />)).toBe('');
   });
 
-  it('renders a calm decision card without deriving any missing data', () => {
+  it('renders at most three backend points with the matching calm level', () => {
     const html = renderToStaticMarkup(
       <DailyVerdictCard
-        title="耐心等待"
-        detail="今天没有需要执行的操作。"
-        meta="数据截至 09:30"
-        accent="buy"
+        verdict={{
+          as_of: '2026-07-24',
+          headline: '今天什么都别做，拿稳',
+          level: 'hold',
+          points: ['勿加仓', '按纪律持有', '等待窗口', '不应显示'],
+          rule_version: '2.2',
+        }}
       />,
     );
 
     expect(html).toContain('今日决断');
-    expect(html).toContain('耐心等待');
-    expect(html).toContain('今天没有需要执行的操作。');
-    expect(html).toContain('数据截至 09:30');
+    expect(html).toContain('今天什么都别做，拿稳');
+    expect(html).toContain('勿加仓');
+    expect(html).toContain('按纪律持有');
+    expect(html).toContain('等待窗口');
+    expect(html).not.toContain('不应显示');
+    expect(html).toContain('2026-07-24');
+    expect(html).toContain('规则 2.2');
     expect(html).toContain('rounded-2xl');
-    expect(html).toContain('border-l-buy');
+    expect(html).toContain('border-l-neutral');
     expect(html).toContain('font-mono');
   });
 });

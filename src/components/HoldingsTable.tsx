@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import type { AssetType, Currency, DisplayCurrency, ExchangeRates, Holding, HoldingMetric } from '../types';
+import type { AssetType, Currency, DisplayCurrency, ExchangeRates, Holding, HoldingMetric, QuantAnalysisSnapshot } from '../types';
 import { formatPct, formatSignedPct } from '../format';
 import { CASH_EQUIVALENT_SYMBOLS, isCashEquivalent } from '../assetClass';
 import { formatDisplayMoney } from '../displayCurrency';
 import { sortHoldingMetrics } from '../metrics';
 import { leverageFactorFor } from '../leverageMap';
+import { HoldingEmotionLine } from './SmartInsightCards';
 
 interface HoldingsTableProps {
   metrics: HoldingMetric[];
@@ -13,6 +14,7 @@ interface HoldingsTableProps {
   onAdd: (holding: Omit<Holding, 'id'>) => void;
   displayCurrency: DisplayCurrency;
   rates: ExchangeRates;
+  analysisSnapshot?: QuantAnalysisSnapshot | null;
 }
 
 const emptyDraft: Omit<Holding, 'id'> = {
@@ -39,7 +41,15 @@ const ASSET_TYPES: Array<{ value: AssetType; label: string }> = [
   { value: 'other', label: '其他' },
 ];
 
-export function HoldingsTable({ metrics, onUpdate, onDelete, onAdd, displayCurrency, rates }: HoldingsTableProps) {
+export function HoldingsTable({
+  metrics,
+  onUpdate,
+  onDelete,
+  onAdd,
+  displayCurrency,
+  rates,
+  analysisSnapshot,
+}: HoldingsTableProps) {
   const [draft, setDraft] = useState<Omit<Holding, 'id'>>(emptyDraft);
   const sortedMetrics = sortHoldingMetrics(metrics);
 
@@ -100,6 +110,7 @@ export function HoldingsTable({ metrics, onUpdate, onDelete, onAdd, displayCurre
                 onDelete={onDelete}
                 displayCurrency={displayCurrency}
                 rates={rates}
+                analysisSnapshot={analysisSnapshot}
               />
             ))}
           </section>
@@ -120,6 +131,7 @@ export function HoldingsTable({ metrics, onUpdate, onDelete, onAdd, displayCurre
                     onDelete={onDelete}
                     displayCurrency={displayCurrency}
                     rates={rates}
+                    analysisSnapshot={analysisSnapshot}
                   />
                 ))}
               </tbody>
@@ -144,9 +156,18 @@ interface RowEditorProps {
   onDelete: (id: string) => void;
   displayCurrency: DisplayCurrency;
   rates: ExchangeRates;
+  analysisSnapshot?: QuantAnalysisSnapshot | null;
 }
 
-function RowEditor({ layout, metric, onUpdate, onDelete, displayCurrency, rates }: RowEditorProps) {
+function RowEditor({
+  layout,
+  metric,
+  onUpdate,
+  onDelete,
+  displayCurrency,
+  rates,
+  analysisSnapshot,
+}: RowEditorProps) {
   const { holding } = metric;
   const pnlClass = metric.pnl > 0 ? 'text-gain' : metric.pnl < 0 ? 'text-loss' : 'text-ink-muted';
   const dayClass = metric.dayChange > 0 ? 'text-gain' : metric.dayChange < 0 ? 'text-loss' : 'text-ink-muted';
@@ -199,6 +220,7 @@ function RowEditor({ layout, metric, onUpdate, onDelete, displayCurrency, rates 
             <div className="break-all text-[11px] leading-tight">{pnlContent}</div>
           </div>
         </div>
+        <HoldingEmotionLine metric={metric} snapshot={analysisSnapshot} />
 
         <div className="mt-3 grid min-w-0 grid-cols-2 gap-2">
           <MobileEditField label="名称">
@@ -263,6 +285,7 @@ function RowEditor({ layout, metric, onUpdate, onDelete, displayCurrency, rates 
       <td className={`px-3 py-2.5 text-right font-mono tabular-nums ${pnlClass}`}>
         {needsPnlCheck && <span className="mr-1 text-trim" title="盈亏与券商截图不符，请核对买入价/股数">⚠</span>}
         {pnlContent}
+        <HoldingEmotionLine metric={metric} snapshot={analysisSnapshot} />
       </td>
       <td className="px-3 py-2.5 font-mono text-xs tabular-nums text-ink-secondary">{deltaContent}</td>
       <td className="px-3 py-2.5 text-right"><button onClick={() => onDelete(holding.id)} className="text-xs text-loss hover:underline" aria-label={`删除 ${holding.symbol}`}>删除</button></td>

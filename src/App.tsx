@@ -3,6 +3,7 @@ import { AllocationChart } from './components/AllocationChart';
 import { AlertRulesPanel } from './components/AlertRulesPanel';
 import { ConditionLookup } from './components/ConditionLookup';
 import { DailyVerdictCard } from './components/DailyVerdictCard';
+import { BehaviorMirrorCard } from './components/BehaviorMirrorCard';
 import { OpportunityOverview, type OpportunitySide } from './components/OpportunityOverview';
 import { CashEditor } from './components/CashEditor';
 import { HoldingsTable } from './components/HoldingsTable';
@@ -10,6 +11,7 @@ import { ImageImportPanel } from './components/ImageImportPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ScenarioCalculator } from './components/ScenarioCalculator';
 import { Summary } from './components/Summary';
+import { FearComfortBanner, LeverageOpportunityRadar } from './components/SmartInsightCards';
 import { ALERT_RULES_REFRESH_MS, deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
@@ -549,14 +551,18 @@ export default function App() {
 
       {tab === 'dashboard' && (
         <section className="ui-enter space-y-5">
-          <DailyVerdictCard />
+          <DailyVerdictCard verdict={quantAnalysis?.today_verdict} />
+          <FearComfortBanner context={quantAnalysis?.context} />
           {latestAlert && (
             <div className="rounded-2xl border border-trim/40 border-l-4 border-l-trim bg-trim/10 p-4 text-sm leading-relaxed text-ink-primary">
               <strong><span className="font-mono tabular-nums">{latestAlert.symbol}</span> 目标提醒已触发</strong> · <span className="font-mono tabular-nums">{latestAlert.last_reminder_at}</span>。只提醒不下单，请在券商 App 手动执行。
             </div>
           )}
           {quantAnalysis && (
-            <OpportunityOverview snapshot={quantAnalysis} compact onSelect={openConditionOpportunity} />
+            <div className="grid items-start gap-5 lg:grid-cols-2">
+              <OpportunityOverview snapshot={quantAnalysis} compact onSelect={openConditionOpportunity} />
+              <LeverageOpportunityRadar snapshot={quantAnalysis} />
+            </div>
           )}
           <Summary
             metrics={metrics}
@@ -580,6 +586,7 @@ export default function App() {
             oneTapCooldownSeconds={oneTapCooldownSeconds}
             onOneTapRefresh={refreshEverything}
           />
+          <BehaviorMirrorCard mirror={quantAnalysis?.behavior_mirror} />
           {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} onUndo={undoLastImport} />}
           <div className="rounded-xl border border-neutral/40 bg-surface-raised p-3">
             <h3 className="mb-2 text-sm font-semibold">资产占比</h3>
@@ -595,6 +602,7 @@ export default function App() {
             metrics={metrics.holdingsMetrics}
             displayCurrency={settings.displayCurrency}
             rates={rates}
+            analysisSnapshot={quantAnalysis}
             onAdd={addHolding}
             onUpdate={updateHolding}
             onDelete={deleteHolding}
