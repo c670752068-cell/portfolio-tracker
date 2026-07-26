@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type {
   QuantRegimeGridCell,
   QuantRegimeStatistic,
@@ -84,6 +85,12 @@ function RegimeHeadline({ regime }: { regime: QuantRegimeStatus }) {
 function RegimeGrid({ regime }: { regime: QuantRegimeStatus }) {
   const cells = (regime.grid ?? []).flat();
   const current = regime.current;
+  const currentCell = cells.find((item) => (
+    item.pe_bucket_index === current?.pe_bucket_index
+    && item.cnn_bucket_index === current.cnn_bucket_index
+  ));
+  const [selectedKey, setSelectedKey] = useState(currentCell ? cellKey(currentCell) : null);
+  const selectedCell = cells.find((item) => cellKey(item) === selectedKey) ?? currentCell;
   const peLabels = uniqueLabels(cells, 'pe_bucket_index', 'pe_bucket');
   const cnnLabels = uniqueLabels(cells, 'cnn_bucket_index', 'cnn_bucket');
   return (
@@ -109,6 +116,8 @@ function RegimeGrid({ regime }: { regime: QuantRegimeStatus }) {
                   key={`${pe.index}-${cnn.index}`}
                   cell={cells.find((item) => item.pe_bucket_index === pe.index && item.cnn_bucket_index === cnn.index)}
                   current={current?.pe_bucket_index === pe.index && current.cnn_bucket_index === cnn.index}
+                  selected={selectedKey === `${pe.index}:${cnn.index}`}
+                  onSelect={setSelectedKey}
                 />
               ));
               return [
@@ -122,6 +131,7 @@ function RegimeGrid({ regime }: { regime: QuantRegimeStatus }) {
           <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
             单元格为 QQQ 60 日历史胜率及样本数；样本不足时强制灰显，不作为统计结论。
           </p>
+          {selectedCell && <GridCellDetail cell={selectedCell} />}
         </>
       )}
     </article>
@@ -131,9 +141,13 @@ function RegimeGrid({ regime }: { regime: QuantRegimeStatus }) {
 function GridCell({
   cell,
   current,
+  selected,
+  onSelect,
 }: {
   cell: QuantRegimeGridCell | undefined;
   current: boolean;
+  selected: boolean;
+  onSelect: (key: string) => void;
 }) {
   const statistic = cell?.reference;
   const sufficient = statistic?.sample_sufficient === true;
@@ -141,12 +155,19 @@ function GridCell({
     ? Math.max(8, Math.min(30, statistic.win_rate_pct * 0.3))
     : 0;
   return (
-    <div
+    <button
+      type="button"
+      disabled={!cell}
+      aria-pressed={selected}
+      aria-label={cell ? `查看 ${cell.pe_bucket} × ${cell.cnn_bucket} 详情` : '该状态格暂无样本'}
+      onClick={() => cell && onSelect(cellKey(cell))}
       className={[
         'min-w-0 rounded-lg border px-0.5 py-2 text-center',
-        'transition-transform duration-200 motion-reduce:transition-none',
-        current ? 'border-buy ring-2 ring-buy/25' : 'border-neutral/30',
+        'transition-transform duration-200 active:scale-[0.97] motion-reduce:transition-none',
+        current ? 'border-buy' : 'border-neutral/30',
+        selected ? 'ring-2 ring-buy/35' : '',
         sufficient ? 'text-ink-primary' : 'bg-surface-overlay/45 text-ink-muted',
+        cell ? 'cursor-pointer' : 'cursor-default',
       ].join(' ')}
       style={sufficient ? { backgroundColor: `color-mix(in srgb, var(--color-buy) ${intensity}%, var(--color-surface-raised))` } : undefined}
       title={cell ? `${cell.pe_bucket} × ${cell.cnn_bucket}` : '暂无样本'}
@@ -157,6 +178,28 @@ function GridCell({
       <div className="font-mono text-[8px] tabular-nums sm:text-[10px]">
         n={statistic?.n ?? 0}
       </div>
+    </button>
+  );
+}
+
+function GridCellDetail({ cell }: { cell: QuantRegimeGridCell }) {
+  const statistic = cell.reference;
+  return (
+    <div className="mt-3 rounded-xl bg-surface-overlay/45 p-3 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">状态格详情</span>
+        <span className="font-mono tabular-nums text-ink-secondary">
+          {cell.pe_bucket} × {cell.cnn_bucket}
+        </span>
+      </div>
+      <div className="mt-2 font-mono tabular-nums text-ink-muted">
+        {cell.reference_benchmark} {cell.reference_horizon_days} 日 ·
+        {' '}胜率 {percentValue(statistic?.win_rate_pct)} · n={statistic?.n ?? 0}
+        {' '}· 中位 {signedPercent(statistic?.median_return_pct)}
+      </div>
+      {statistic?.sample_warning && (
+        <p className="mt-2 leading-relaxed text-ink-muted">{statistic.sample_warning}</p>
+      )}
     </div>
   );
 }
@@ -302,6 +345,10 @@ function uniqueLabels(
 
 function shortBucket(label: string): string {
   return label.replaceAll('（', ' ').replaceAll('）', '').split(' ')[0];
+}
+
+function cellKey(cell: QuantRegimeGridCell): string {
+  return `${cell.pe_bucket_index}:${cell.cnn_bucket_index}`;
 }
 
 function numberText(value: number | undefined): string {

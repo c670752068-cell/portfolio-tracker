@@ -197,6 +197,8 @@ describe('ValuationPanel', () => {
     expect(html).toContain('生成 YAML');
     expect(html).toContain('估值中性 · 情绪中性');
     expect(html).toContain('5×5 状态定位');
+    expect(html).toContain('状态格详情');
+    expect(html).toContain('40-60% × 35-55（中性）');
     expect(html).toContain('QQQ / TQQQ 历史胜率');
     expect(html).toContain('建议总仓位，不是单笔金额');
     expect(html).toContain('样本不足（n=3），仅供参考，不构成统计结论');
