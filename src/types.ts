@@ -350,6 +350,109 @@ export interface QuantBehaviorMirror {
   streak_days_following_rules: number;
 }
 
+export interface QuantValuationHistoryPoint {
+  date: string;
+  pe: number | null;
+  pb: number | null;
+}
+
+export interface QuantCnnHistoryPoint {
+  date: string;
+  score: number | null;
+}
+
+export interface QuantValuationAnchor {
+  label: string;
+  date?: string;
+  ndx_pe?: number;
+  cnn_score?: number;
+  value_pe?: number;
+}
+
+export interface QuantValuationDistance {
+  label: string;
+  target_pe: number;
+  current_pe: number;
+  pe_gap_pct: number;
+  implied_qqq_price: number | null;
+  current_qqq_price: number | null;
+  price_gap_pct: number | null;
+  estimate_note: string;
+}
+
+export interface QuantValuationTab {
+  available: boolean;
+  reason?: string;
+  generated_at: string;
+  ndx: {
+    available: boolean;
+    current_pe: number | null;
+    current_pb: number | null;
+    pe_percentile_5y: number | null;
+    zone: string | null;
+    percentile_lines: {
+      p30: number | null;
+      median: number | null;
+      p70: number | null;
+    };
+    history: readonly QuantValuationHistoryPoint[];
+    source: string;
+    as_of: string | null;
+    realtime_estimate: {
+      pe: number;
+      basis: string;
+      qqq_price: number;
+      daily_qqq_close: number;
+      price_session: string;
+      estimated_at: string;
+      note: string;
+    } | null;
+  };
+  cnn: {
+    available: boolean;
+    current_score: number | null;
+    rating: string | null;
+    history: readonly QuantCnnHistoryPoint[];
+    source: string;
+    as_of: string | null;
+  };
+  anchors: readonly QuantValuationAnchor[];
+  distance_to_anchors: readonly QuantValuationDistance[];
+}
+
+export interface QuantBuyPlanCondition {
+  key: 'ndx_pe_below' | 'cnn_score_below' | 'drawdown_below_pct';
+  name: string;
+  target: number | null;
+  current: number | null;
+  met: boolean;
+  gap_text: string;
+}
+
+export interface QuantBuyPlan {
+  id: string;
+  symbol: string;
+  label: string;
+  enabled: boolean;
+  ready: boolean;
+  conditions_ready: boolean;
+  conditions: readonly QuantBuyPlanCondition[];
+  met_count: number;
+  total_count: number;
+  action_text: string;
+  action_amount_usd: number | null;
+  buy_pct_of_nav: number;
+  position_gate: {
+    passed: boolean;
+    note: string;
+  };
+}
+
+export interface QuantBuyPlanStatus {
+  evaluated_at: string;
+  plans: readonly QuantBuyPlan[];
+}
+
 export interface QuantAnalysisSnapshot {
   source: 'futu-assistant';
   generated_at: string;
@@ -362,6 +465,8 @@ export interface QuantAnalysisSnapshot {
   sell?: QuantSellSnapshot;
   summary?: QuantOpportunitySummary;
   pe_history?: PeHistoryPayload;
+  valuation_tab?: QuantValuationTab;
+  buy_plan_status?: QuantBuyPlanStatus;
   today_verdict?: QuantTodayVerdict | null;
   behavior_mirror?: QuantBehaviorMirror | null;
 }

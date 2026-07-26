@@ -12,6 +12,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { ScenarioCalculator } from './components/ScenarioCalculator';
 import { Summary } from './components/Summary';
 import { FearComfortBanner, LeverageOpportunityRadar } from './components/SmartInsightCards';
+import { ValuationPanel } from './components/ValuationPanel';
 import { ALERT_RULES_REFRESH_MS, deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
 import { canSyncQuotes, quoteSyncSetupHint, syncHoldingsWithQuotes } from './marketData';
@@ -37,7 +38,7 @@ import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
 
-type Tab = 'dashboard' | 'holdings' | 'conditions' | 'calculator' | 'settings';
+type Tab = 'dashboard' | 'holdings' | 'conditions' | 'calculator' | 'settings' | 'valuation';
 type QuoteRefreshReason = 'manual' | 'daily' | 'session';
 
 const DAILY_QUOTE_SYNC_KEY = 'portfolio-tracker:daily-quote-sync-key-v1';
@@ -135,6 +136,7 @@ export default function App() {
   const [oneTapCooldownSeconds, setOneTapCooldownSeconds] = useState(0);
   const [lastImport, setLastImport] = useState<ImportNotice | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
+  const [valuationEditorDirty, setValuationEditorDirty] = useState(false);
   const [conditionTarget, setConditionTarget] = useState<{ symbol: string; side: OpportunitySide } | null>(null);
   const [marketNow, setMarketNow] = useState(() => new Date());
   const holdingsRef = useRef(portfolio.holdings);
@@ -529,6 +531,19 @@ export default function App() {
     setTab('conditions');
   }
 
+  function changeTab(next: Tab) {
+    if (
+      tab === 'valuation'
+      && next !== 'valuation'
+      && valuationEditorDirty
+      && !window.confirm('开枪计划还有未保存的修改，确定离开吗？')
+    ) {
+      return;
+    }
+    if (next !== 'valuation') setValuationEditorDirty(false);
+    setTab(next);
+  }
+
   return (
     <div className="mx-auto min-h-full max-w-6xl px-4 py-5 sm:px-6 md:py-8">
       <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -536,16 +551,17 @@ export default function App() {
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">我的投资组合</h1>
           <p className="mt-1 text-xs leading-relaxed text-ink-secondary">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</p>
         </div>
-        <nav className="grid w-full grid-cols-3 gap-1 rounded-2xl bg-surface-raised p-1 text-xs sm:text-sm md:w-auto md:grid-cols-5">
-          <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} />
+        <nav className="grid w-full grid-cols-3 gap-1 rounded-2xl bg-surface-raised p-1 text-xs sm:text-sm md:w-auto md:grid-cols-6">
+          <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => changeTab('dashboard')} />
           <TabBtn
             label={<>持仓 {needsReviewCount > 0 && <span className="font-mono tabular-nums text-trim">●{needsReviewCount}</span>}</>}
             active={tab === 'holdings'}
-            onClick={() => setTab('holdings')}
+            onClick={() => changeTab('holdings')}
           />
-          <TabBtn label="条件查询" active={tab === 'conditions'} onClick={() => setTab('conditions')} />
-          <TabBtn label="计算器" active={tab === 'calculator'} onClick={() => setTab('calculator')} />
-          <TabBtn label="设置" active={tab === 'settings'} onClick={() => setTab('settings')} />
+          <TabBtn label="条件查询" active={tab === 'conditions'} onClick={() => changeTab('conditions')} />
+          <TabBtn label="计算器" active={tab === 'calculator'} onClick={() => changeTab('calculator')} />
+          <TabBtn label="设置" active={tab === 'settings'} onClick={() => changeTab('settings')} />
+          <TabBtn label="估值" active={tab === 'valuation'} onClick={() => changeTab('valuation')} />
         </nav>
       </header>
 
@@ -658,6 +674,12 @@ export default function App() {
             onImport={(next) => setPortfolio(next)}
             onClear={() => setPortfolio({ holdings: [], cash: [], updatedAt: new Date().toISOString() })}
           />
+        </section>
+      )}
+
+      {tab === 'valuation' && (
+        <section className="ui-enter">
+          <ValuationPanel snapshot={quantAnalysis} onDirtyChange={setValuationEditorDirty} />
         </section>
       )}
 
