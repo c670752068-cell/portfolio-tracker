@@ -55,6 +55,13 @@ function CompactOpportunityOverview({
   onSelect,
 }: Pick<OpportunityOverviewProps, 'snapshot' | 'onSelect'>) {
   const summary = snapshot.summary!;
+  const visibleReady = summary.buy_ready.slice(0, 2);
+  const visibleNear = summary.buy_near.slice(0, 2);
+  const visibleSell = summary.sell_ready.slice(0, 2);
+  const extraReady = summary.buy_ready.slice(2);
+  const extraNear = summary.buy_near.slice(2);
+  const extraSell = summary.sell_ready.slice(2);
+  const extraCount = extraReady.length + extraNear.length + extraSell.length;
   const allEmpty = summary.buy_ready.length === 0
     && summary.buy_near.length === 0
     && summary.sell_ready.length === 0;
@@ -72,26 +79,70 @@ function CompactOpportunityOverview({
           <strong className="text-lg">今日无操作窗口，耐心等待</strong>
         </div>
       ) : (
-        <div className="mt-3 flex min-w-0 flex-wrap gap-2">
-          {summary.buy_ready.map((item) => (
-            <button key={`ready-${item.symbol}`} type="button" onClick={() => onSelect?.(item.symbol, 'buy')} className="min-h-11 rounded-full bg-buy/15 px-4 py-2 font-mono text-sm font-semibold tabular-nums text-buy hover:bg-buy/25">
-              🟢 {item.symbol}
-            </button>
-          ))}
-          {summary.buy_near.map((item) => (
-            <button key={`near-${item.symbol}`} type="button" onClick={() => onSelect?.(item.symbol, 'buy')} className="min-h-11 rounded-full bg-trim/15 px-4 py-2 font-mono text-sm font-semibold tabular-nums text-trim hover:bg-trim/25">
-              🟡 {item.symbol}
-            </button>
-          ))}
-          {summary.sell_ready.map((item) => (
-            <button key={`sell-${item.symbol}`} type="button" onClick={() => onSelect?.(item.symbol, 'sell')} className="min-h-11 rounded-full bg-trim/15 px-4 py-2 font-mono text-sm font-semibold tabular-nums text-trim hover:bg-trim/25">
-              🔴 {item.symbol}{item.shadow ? '（观察期）' : ''}
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+            {visibleReady.map((item) => <CompactBuyPill key={`ready-${item.symbol}`} item={item} state="ready" onSelect={onSelect} />)}
+            {visibleNear.map((item) => <CompactBuyPill key={`near-${item.symbol}`} item={item} state="near" onSelect={onSelect} />)}
+            {visibleSell.map((item) => <CompactSellPill key={`sell-${item.symbol}`} item={item} onSelect={onSelect} />)}
+          </div>
+          {extraCount > 0 && (
+            <details className="mt-3 rounded-xl border border-neutral/40 bg-surface-base px-3 py-2">
+              <summary className="min-h-11 cursor-pointer py-2 font-mono text-sm font-medium tabular-nums text-ink-secondary">
+                查看其余 {extraCount} 个标的
+              </summary>
+              <div className="flex min-w-0 flex-wrap gap-2 border-t border-neutral/30 pt-3">
+                {extraReady.map((item) => <CompactBuyPill key={`ready-extra-${item.symbol}`} item={item} state="ready" onSelect={onSelect} />)}
+                {extraNear.map((item) => <CompactBuyPill key={`near-extra-${item.symbol}`} item={item} state="near" onSelect={onSelect} />)}
+                {extraSell.map((item) => <CompactSellPill key={`sell-extra-${item.symbol}`} item={item} onSelect={onSelect} />)}
+              </div>
+            </details>
+          )}
+          <p className="mt-2 text-[11px] text-ink-muted">首屏显示每组前 2 个；展开后可查看全部。</p>
+        </>
       )}
       <p className="mt-3 text-xs text-ink-secondary">点击标的直接查看量化系统详情；只提醒不下单。</p>
     </section>
+  );
+}
+
+function CompactBuyPill({
+  item,
+  state,
+  onSelect,
+}: {
+  item: QuantBuyOpportunity;
+  state: 'ready' | 'near';
+  onSelect?: OpportunityOverviewProps['onSelect'];
+}) {
+  const ready = state === 'ready';
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect?.(item.symbol, 'buy')}
+      className={`min-h-11 rounded-full px-4 py-2 font-mono text-sm font-semibold tabular-nums ${
+        ready ? 'bg-buy/15 text-buy hover:bg-buy/25' : 'bg-trim/15 text-trim hover:bg-trim/25'
+      }`}
+    >
+      {ready ? '🟢' : '🟡'} {item.symbol}
+    </button>
+  );
+}
+
+function CompactSellPill({
+  item,
+  onSelect,
+}: {
+  item: QuantSellOpportunity;
+  onSelect?: OpportunityOverviewProps['onSelect'];
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect?.(item.symbol, 'sell')}
+      className="min-h-11 rounded-full bg-trim/15 px-4 py-2 font-mono text-sm font-semibold tabular-nums text-trim hover:bg-trim/25"
+    >
+      🔴 {item.symbol}{item.shadow ? '（观察期）' : ''}
+    </button>
   );
 }
 

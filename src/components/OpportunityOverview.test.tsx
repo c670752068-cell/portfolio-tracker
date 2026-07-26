@@ -83,4 +83,40 @@ describe('OpportunityOverview', () => {
     expect(html).toContain('border-l-buy');
     expect(html).toContain('min-h-11');
   });
+
+  it('keeps a busy compact snapshot within the first glance and makes every extra symbol expandable', () => {
+    const ready = quantAnalysisFixture.summary!.buy_ready[0];
+    const near = quantAnalysisFixture.summary!.buy_near[0];
+    const sell = quantAnalysisFixture.summary!.sell_ready[0];
+    const snapshot = {
+      ...quantAnalysisFixture,
+      summary: {
+        ...quantAnalysisFixture.summary!,
+        buy_ready: [
+          { ...ready, symbol: 'AAA' },
+          { ...ready, symbol: 'BBB' },
+          { ...ready, symbol: 'CCC' },
+        ],
+        buy_near: [
+          { ...near, symbol: 'DDD' },
+          { ...near, symbol: 'EEE' },
+          { ...near, symbol: 'FFF' },
+        ],
+        sell_ready: [
+          { ...sell, symbol: 'GGG' },
+          { ...sell, symbol: 'HHH' },
+          { ...sell, symbol: 'III' },
+        ],
+      },
+    };
+
+    const html = renderToStaticMarkup(<OpportunityOverview snapshot={snapshot} compact />);
+
+    expect(html).toContain('首屏显示每组前 2 个');
+    expect(html).toContain('查看其余 3 个标的');
+    expect(html).toContain('<details');
+    expect(html).toContain('CCC');
+    expect(html).toContain('FFF');
+    expect(html).toContain('III');
+  });
 });
