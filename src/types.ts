@@ -453,6 +453,89 @@ export interface QuantBuyPlanStatus {
   plans: readonly QuantBuyPlan[];
 }
 
+export interface QuantRegimeStatistic {
+  horizon_trading_days: number;
+  n: number;
+  win_rate_pct: number | null;
+  mean_return_pct: number | null;
+  median_return_pct: number | null;
+  worst_return_pct: number | null;
+  sample_sufficient: boolean;
+  sample_warning: string | null;
+}
+
+export interface QuantRegimeGridCell {
+  pe_bucket_index: number;
+  cnn_bucket_index: number;
+  pe_bucket: string;
+  cnn_bucket: string;
+  n: number;
+  reference_benchmark: string;
+  reference_horizon_days: number;
+  reference: QuantRegimeStatistic | null;
+}
+
+export interface QuantRegimeStatus {
+  available: boolean;
+  reason?: string;
+  evaluated_at?: string;
+  current?: {
+    pe: number;
+    pe_percentile_5y: number;
+    pe_bucket_index: number;
+    pe_bucket: string;
+    cnn_score: number;
+    cnn_bucket_index: number;
+    cnn_bucket: string;
+    regime_label: string;
+  };
+  grid?: readonly (readonly QuantRegimeGridCell[])[];
+  divergence?: {
+    detected: boolean;
+    direction: 'cnn_too_high' | 'cnn_too_low' | null;
+    expected_cnn_median: number | null;
+    cnn_q1: number | null;
+    cnn_q3: number | null;
+    cnn_iqr: number | null;
+    actual_cnn: number;
+    note: string;
+    historical_occurrences: number;
+    sample_sufficient: boolean;
+    sample_warning: string | null;
+    win_rates: Record<string, Record<string, QuantRegimeStatistic>>;
+  };
+  win_rates?: Record<string, Record<string, QuantRegimeStatistic>>;
+  position_advice?: {
+    current_risk_position_pct: number;
+    matrix_target_pct: number;
+    divergence_adjusted_target_pct: number;
+    suggested_total_pct: number;
+    gap_pct: number;
+    gap_usd: number;
+    action_text: string;
+    divergence_note: string | null;
+    capped_by_max_step: boolean;
+    max_step_pct: number;
+    position_gate: {
+      passed: boolean;
+      note: string;
+      evidence?: Record<string, boolean>;
+    };
+    scope_note: string;
+    disclaimer: string;
+  };
+  data_quality?: {
+    joint_sample_days: number;
+    joint_start: string | null;
+    joint_end: string | null;
+    raw_pe_observations: number;
+    raw_cnn_observations: number;
+    pe_interpolated: boolean;
+    cnn_history_span: string;
+    caveat: string;
+  };
+}
+
 export interface QuantAnalysisSnapshot {
   source: 'futu-assistant';
   generated_at: string;
@@ -467,6 +550,7 @@ export interface QuantAnalysisSnapshot {
   pe_history?: PeHistoryPayload;
   valuation_tab?: QuantValuationTab;
   buy_plan_status?: QuantBuyPlanStatus;
+  regime_status?: QuantRegimeStatus;
   today_verdict?: QuantTodayVerdict | null;
   behavior_mirror?: QuantBehaviorMirror | null;
 }

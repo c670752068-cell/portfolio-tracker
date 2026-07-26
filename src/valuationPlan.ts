@@ -2,6 +2,7 @@ import type {
   QuantAnalysisSnapshot,
   QuantBuyPlan,
   QuantBuyPlanCondition,
+  QuantValuationHistoryPoint,
 } from './types';
 
 export interface LocalBuyPlan {
@@ -49,6 +50,25 @@ export const BUY_PLAN_TEMPLATES = [
     },
   },
 ] as const;
+
+export function alignValuationHistoryAsOf(
+  history: readonly QuantValuationHistoryPoint[],
+  asOf: string | null,
+  currentPe: number | null,
+  currentPb: number | null,
+): readonly QuantValuationHistoryPoint[] {
+  if (!asOf || currentPe === null || !Number.isFinite(currentPe)) return history;
+  const last = history.at(-1);
+  if (last?.date === asOf || (last && last.date > asOf)) return history;
+  const current = { date: asOf, pe: currentPe, pb: currentPb };
+  if (!last) return [current];
+  const samePe = last.pe !== null && Math.abs(last.pe - currentPe) < Number.EPSILON;
+  const samePb = last.pb === currentPb
+    || (last.pb !== null && currentPb !== null && Math.abs(last.pb - currentPb) < Number.EPSILON);
+  return samePe && samePb
+    ? [...history.slice(0, -1), current]
+    : [...history, current];
+}
 
 export function buildValuationSummary(snapshot: QuantAnalysisSnapshot): string {
   const valuation = snapshot.valuation_tab;

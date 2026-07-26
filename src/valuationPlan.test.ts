@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BUY_PLAN_TEMPLATES,
+  alignValuationHistoryAsOf,
   buildValuationSummary,
   evaluateLocalBuyPlan,
   planToYaml,
@@ -63,6 +64,23 @@ const snapshot = {
 } satisfies QuantAnalysisSnapshot;
 
 describe('valuation plan helpers', () => {
+  it('aligns a stale final history point to the valuation as-of date', () => {
+    const history = [
+      { date: '2026-07-16', pe: 31.2, pb: 9.4 },
+      { date: '2026-07-23', pe: 30.1128, pb: 9.2752 },
+    ];
+
+    expect(alignValuationHistoryAsOf(
+      history,
+      '2026-07-24',
+      30.1128,
+      9.2752,
+    )).toEqual([
+      history[0],
+      { date: '2026-07-24', pe: 30.1128, pb: 9.2752 },
+    ]);
+  });
+
   it('evaluates all configured conditions as AND and uses the realtime PE estimate', () => {
     const plan = {
       id: 'tqqq-stage-1',

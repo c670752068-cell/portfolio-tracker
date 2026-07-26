@@ -1,6 +1,7 @@
 import type { QuantAnalysisSnapshot, QuantValuationDistance, QuantValuationTab } from '../types';
 import { buildValuationSummary } from '../valuationPlan';
 import { BuyPlanSection } from './BuyPlanSection';
+import { RegimeSection } from './RegimeSection';
 import { ValuationCharts } from './ValuationCharts';
 
 interface ValuationPanelProps {
@@ -29,6 +30,7 @@ export function ValuationPanel({ snapshot, onDirtyChange }: ValuationPanelProps)
         <p className="mt-3 text-xs leading-relaxed text-ink-muted">冷静时定规则，市场恐慌时执行规则。这里只做证据与计划展示，不自动下单。</p>
       </section>
       <CurrentIndicators valuation={valuation} />
+      <RegimeSection regime={snapshot.regime_status} />
       <ValuationCharts valuation={valuation} />
       <DistanceSection valuation={valuation} />
       {snapshot.buy_plan_status ? (

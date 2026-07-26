@@ -78,6 +78,104 @@ const snapshot = {
       position_gate: { passed: true, note: 'TQQQ 族当前 7.0%/上限 10.0%' },
     }],
   },
+  regime_status: {
+    available: true,
+    evaluated_at: '2026-07-26T07:06:13-04:00',
+    current: {
+      pe: 30.1128,
+      pe_percentile_5y: 47.08,
+      pe_bucket_index: 2,
+      pe_bucket: '40-60%',
+      cnn_score: 39.43,
+      cnn_bucket_index: 2,
+      cnn_bucket: '35-55（中性）',
+      regime_label: '估值中性 · 情绪中性',
+    },
+    grid: [[{
+      pe_bucket_index: 2,
+      cnn_bucket_index: 2,
+      pe_bucket: '40-60%',
+      cnn_bucket: '35-55（中性）',
+      n: 21,
+      reference_benchmark: 'QQQ',
+      reference_horizon_days: 60,
+      reference: {
+        horizon_trading_days: 60,
+        n: 10,
+        win_rate_pct: 100,
+        mean_return_pct: 12.94,
+        median_return_pct: 13.6,
+        worst_return_pct: 4.68,
+        sample_sufficient: true,
+        sample_warning: null,
+      },
+    }]],
+    divergence: {
+      detected: false,
+      direction: null,
+      expected_cnn_median: 55.17,
+      cnn_q1: 41.36,
+      cnn_q3: 59.87,
+      cnn_iqr: 18.51,
+      actual_cnn: 39.43,
+      note: '当前 CNN 位于该估值分位的历史常态区间',
+      historical_occurrences: 0,
+      sample_sufficient: false,
+      sample_warning: '样本不足（n=0），仅供参考，不构成统计结论',
+      win_rates: {},
+    },
+    win_rates: {
+      QQQ: {
+        '20': {
+          horizon_trading_days: 20,
+          n: 16,
+          win_rate_pct: 31.25,
+          mean_return_pct: -0.2,
+          median_return_pct: -1.1,
+          worst_return_pct: -5.91,
+          sample_sufficient: true,
+          sample_warning: null,
+        },
+      },
+      TQQQ: {
+        '120': {
+          horizon_trading_days: 120,
+          n: 3,
+          win_rate_pct: 100,
+          mean_return_pct: 15.1,
+          median_return_pct: 11.88,
+          worst_return_pct: 8.21,
+          sample_sufficient: false,
+          sample_warning: '样本不足（n=3），仅供参考，不构成统计结论',
+        },
+      },
+    },
+    position_advice: {
+      current_risk_position_pct: 64.18,
+      matrix_target_pct: 50,
+      divergence_adjusted_target_pct: 50,
+      suggested_total_pct: 54.18,
+      gap_pct: -10,
+      gap_usd: -14044.91,
+      action_text: '当前风险仓位高于本状态参考区间，保持克制并分步评估',
+      divergence_note: null,
+      capped_by_max_step: true,
+      max_step_pct: 10,
+      position_gate: { passed: false, note: '现有仓位门未通过' },
+      scope_note: '建议总仓位，不是单笔金额',
+      disclaimer: '统计参考，不构成投资建议或交易指令',
+    },
+    data_quality: {
+      joint_sample_days: 248,
+      joint_start: '2025-07-28',
+      joint_end: '2026-07-24',
+      raw_pe_observations: 156,
+      raw_cnn_observations: 248,
+      pe_interpolated: true,
+      cnn_history_span: '近1年公开历史上限',
+      caveat: 'CNN 公开历史约1年，联合样本有限；PE 插值不等于原始日频观测',
+    },
+  },
 } satisfies QuantAnalysisSnapshot;
 
 describe('ValuationPanel', () => {
@@ -97,6 +195,11 @@ describe('ValuationPanel', () => {
     expect(html).toContain('1/3 条件满足');
     expect(html).toContain('量化快照');
     expect(html).toContain('生成 YAML');
+    expect(html).toContain('估值中性 · 情绪中性');
+    expect(html).toContain('5×5 状态定位');
+    expect(html).toContain('QQQ / TQQQ 历史胜率');
+    expect(html).toContain('建议总仓位，不是单笔金额');
+    expect(html).toContain('样本不足（n=3），仅供参考，不构成统计结论');
   });
 
   it('degrades honestly when the backend fields are not ready', () => {
@@ -107,5 +210,24 @@ describe('ValuationPanel', () => {
     expect(html).toContain('数据准备中');
     expect(html).not.toContain('NaN');
     expect(html).not.toContain('undefined');
+  });
+
+  it('shows a calm unavailable state without inventing regime evidence', () => {
+    const html = renderToStaticMarkup(
+      <ValuationPanel
+        snapshot={{
+          ...snapshot,
+          regime_status: {
+            available: false,
+            reason: '联合历史暂不可用',
+          },
+        }}
+        onDirtyChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('联合历史准备中');
+    expect(html).toContain('联合历史暂不可用');
+    expect(html).not.toContain('NaN');
   });
 });

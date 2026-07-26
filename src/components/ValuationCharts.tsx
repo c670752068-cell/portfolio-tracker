@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 import type { QuantValuationTab } from '../types';
+import { alignValuationHistoryAsOf } from '../valuationPlan';
 
 interface ValuationChartsProps {
   valuation: QuantValuationTab;
@@ -33,7 +34,12 @@ export function ValuationCharts({ valuation }: ValuationChartsProps) {
 }
 
 function PeHistoryChart({ valuation }: ValuationChartsProps) {
-  const history = valuation.ndx.history.filter((item) => item.pe !== null);
+  const history = alignValuationHistoryAsOf(
+    valuation.ndx.history,
+    valuation.ndx.as_of,
+    valuation.ndx.current_pe,
+    valuation.ndx.current_pb,
+  ).filter((item) => item.pe !== null);
   const tariff = valuation.anchors.find((item) => item.label.includes('2025-04'));
   return (
     <ChartCard
