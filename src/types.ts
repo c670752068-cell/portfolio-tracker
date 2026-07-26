@@ -196,16 +196,31 @@ export interface QuantSellFamily {
   family: string;
   market_value: number;
   held_symbols: readonly string[];
+  profit_gate?: {
+    available: boolean;
+    market_value: number;
+    cost: number | null;
+    unrealized_pnl_usd: number | null;
+    unrealized_pnl_pct: number | null;
+    in_profit: boolean | null;
+    min_ladder_gain_pct: number;
+    reaches_first_ladder: boolean;
+    verdict: 'hold_loss' | 'hold_below_ladder' | 'ladder_active';
+    verdict_text: string;
+  };
   repair: {
     status: string;
     base_date: string | null;
     window_open: boolean;
+    actionable?: boolean;
+    display_text?: string;
     priority: readonly string[];
     source?: string;
   };
   contentment: QuantSellBasis & {
     available: boolean;
     triggered: boolean;
+    actionable?: boolean;
     asset_gain_pct?: number;
     qqq_gain_pct?: number;
     gap_vs_qqq_pct?: number;
@@ -214,6 +229,7 @@ export interface QuantSellFamily {
   };
   convergence: QuantSellBasis & {
     triggered: boolean;
+    actionable?: boolean;
     count: number;
     minimum_assets: number;
     symbols: readonly string[];

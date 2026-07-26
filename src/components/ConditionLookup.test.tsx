@@ -535,8 +535,8 @@ describe('ConditionLookup', () => {
     expect(html).toContain('value="TQQQ"');
     expect(html).not.toContain('value="SGOV"');
     expect(html).toContain('卖出窗口未开启：深跌修复期内，耐心持有（基准日 2026-03-30）');
-    expect(html).toContain('建议至少减仓 50%');
-    expect(html).toContain('市场亢奋·清仓杠杆品种或调仓 SGOV');
+    expect(html).toContain('量化剧本参考比例 50%');
+    expect(html).toContain('市场亢奋·量化剧本参考：清仓杠杆品种或调仓 SGOV');
     expect(html).toContain('止盈阶梯参考 · 剧本：个股');
     expect(html).toContain('（观察期，未正式生效）');
     expect(html).toContain('触发依据：知足常乐');
@@ -635,6 +635,54 @@ describe('ConditionLookup', () => {
     expect(html).not.toContain('仅含已知成本部分');
     expect(html).not.toContain('止盈阶梯参考请以券商实际成本为准');
     expect(html).not.toContain('data-active="true"');
+  });
+
+  it('uses the backend profit gate and keeps a repaired losing family non-actionable', () => {
+    const snapshot = {
+      ...quantAnalysisFixture,
+      sell: {
+        ...quantAnalysisFixture.sell,
+        symbols: {
+          ...quantAnalysisFixture.sell.symbols,
+          MSFT: {
+            ...quantAnalysisFixture.sell.symbols.MSFT,
+            profit_gate: {
+              available: true,
+              market_value: 800,
+              cost: 1_000,
+              unrealized_pnl_usd: -200,
+              unrealized_pnl_pct: -20,
+              in_profit: false,
+              min_ladder_gain_pct: 5,
+              reaches_first_ladder: false,
+              verdict: 'hold_loss',
+              verdict_text: '当前浮亏 -20.00%，按你的规则继续持有，不减仓',
+            },
+            repair: {
+              ...quantAnalysisFixture.sell.symbols.MSFT.repair,
+              status: 'complete',
+              window_open: true,
+              actionable: false,
+              display_text: '市场已修复，但你的仓位仍浮亏 -20.00%，按你的规则继续持有',
+            },
+          },
+        },
+      },
+    } as unknown as QuantAnalysisSnapshot;
+    const losingHoldings = [
+      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 80 },
+    ];
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={losingHoldings} initialSymbol="MSFT" />,
+    );
+
+    expect(html).toContain('当前浮亏 -20.00%，按你的规则继续持有，不减仓');
+    expect(html).toContain('市场已修复，但你的仓位仍浮亏 -20.00%，按你的规则继续持有');
+    expect(html).toContain('这是市场维度（相对 QQQ 强弱），与你的买入成本无关');
+    expect(html).toContain('只在浮盈达到最低档 +5.00% 后适用');
+    expect(html).toContain('data-profit-actionable="false"');
+    expect(html).not.toContain('修复完成，可开始分批减仓');
+    expect(html.indexOf('本族当前盈亏')).toBeLessThan(html.indexOf('当前浮亏 -20.00%'));
   });
 
   it('qualifies partial family pnl and lists option holdings with unknown costs', () => {

@@ -386,11 +386,11 @@ function SellWindow({
   rates: ExchangeRates;
   audit: Record<string, unknown>;
 }) {
-  const repairText = item.repair.window_open
-    ? '修复完成，可开始分批减仓：优先减期权与两三倍杠杆，不要一次性减完'
+  const repairText = item.repair.display_text || (item.repair.window_open
+    ? '市场修复状态已完成；盈利闸门数据尚未生成，当前不显示减仓提示'
     : item.repair.status === 'repairing'
       ? `卖出窗口未开启：深跌修复期内，耐心持有（基准日 ${item.repair.base_date || '暂无'}）`
-      : '修复期状态暂不可用，当前不生成卖出动作';
+      : '修复期状态暂不可用，当前不生成卖出动作');
   const steps = item.playbook.sell_steps;
   const firstStep = steps[0];
   const hasKnownLoss = pnl.pnlPct !== null && pnl.pnlPct < 0;
@@ -403,7 +403,12 @@ function SellWindow({
     hasUnknownOptionCost ? '期权成本需用「补充期权详情」导入' : '',
     hasUnknownNonOptionCost ? '请在持仓表补填买入价' : '',
   ].filter(Boolean).join('；');
-  const activeStep = !hasKnownLoss && pnl.pnlPct !== null
+  const gateActionable = item.profit_gate
+    ? item.profit_gate.verdict === 'ladder_active'
+    : !hasKnownLoss;
+  const repairActionable = item.repair.actionable
+    ?? (item.repair.window_open && gateActionable);
+  const activeStep = gateActionable && pnl.pnlPct !== null
     ? steps.find((step) => pnl.pnlPct! >= step.gain_min_pct && pnl.pnlPct! < step.gain_max_pct)
     : undefined;
   const belowFirst = !hasKnownLoss && pnl.pnlPct !== null && firstStep && pnl.pnlPct < firstStep.gain_min_pct;
@@ -431,6 +436,12 @@ function SellWindow({
           {pnl.unknownCostHoldings.length} 个持仓成本未知（{unknownCostGuidance}），未计入本次盈亏：{pnl.unknownCostHoldings.join('、')}
         </p>}
       </div>
+      {item.profit_gate && (
+        <div className={`rounded-lg border p-3 ${gateActionable ? 'border-gain/40 bg-gain/10' : 'border-neutral/50 bg-surface-overlay/50'}`}>
+          <div className="text-xs font-medium text-ink-muted">当前结论</div>
+          <div className="mt-1 font-semibold">{item.profit_gate.verdict_text}</div>
+        </div>
+      )}
       {status.state !== 'none' && (
         <div className={`rounded-lg border p-3 ${status.state === 'window_open' ? 'border-trim/40 bg-trim/10' : 'border-neutral/40 bg-surface-overlay/50'}`}>
           <div className="flex flex-wrap items-center gap-2 font-semibold">
@@ -441,8 +452,19 @@ function SellWindow({
           <p className="mt-2 text-xs text-ink-muted">该判定来自量化系统的相对强弱口径（自反弹基准日涨幅 vs QQQ），与你的买入成本无关；是否盈利请看下方「本族当前盈亏」。</p>
         </div>
       )}
-      <div className={`rounded-lg border p-3 ${item.repair.window_open ? 'border-gain/40 bg-gain/10' : 'border-neutral/40'}`}>
-        <div className="font-semibold">{repairText}</div>
+      <div
+        data-profit-actionable={repairActionable ? 'true' : 'false'}
+        className={`rounded-lg border p-3 ${repairActionable ? 'border-gain/40 bg-gain/10' : 'border-neutral/50 bg-surface-overlay/50'}`}
+      >
+        <div className="font-semibold">
+          修复期
+          <span
+            className="ml-1 text-xs text-ink-muted"
+            title="这是市场维度（相对 QQQ 强弱），与你的买入成本无关"
+          >ⓘ</span>
+        </div>
+        <p className="mt-1">{repairText}</p>
+        <p className="mt-2 text-xs text-ink-muted">这是市场维度（相对 QQQ 强弱），与你的买入成本无关。</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-neutral/40 p-3">
@@ -450,25 +472,29 @@ function SellWindow({
           {!item.contentment.available ? <p className="mt-1 text-ink-muted">该持仓族暂无反弹基准对比数据。</p> : (
             <>
               <p className="mt-1 font-mono tabular-nums text-ink-muted">本标的 {numberText(item.contentment.asset_gain_pct, '%')} · QQQ {numberText(item.contentment.qqq_gain_pct, '%')} · 差距 {numberText(item.contentment.gap_vs_qqq_pct, ' 点')}</p>
-              <p className={`mt-1 font-mono font-medium tabular-nums ${item.contentment.triggered ? 'text-trim' : 'text-ink-muted'}`}>{item.contentment.triggered ? `建议至少减仓 ${integerText(item.contentment.minimum_reduction_pct)}%` : '尚未接近或超过 QQQ，不触发该依据'}</p>
+              <p className={`mt-1 font-mono font-medium tabular-nums ${item.contentment.triggered && (item.contentment.actionable ?? gateActionable) ? 'text-trim' : 'text-ink-muted'}`}>{item.contentment.triggered ? ((item.contentment.actionable ?? gateActionable) ? `量化剧本参考比例 ${integerText(item.contentment.minimum_reduction_pct)}%` : '市场依据已出现，但盈利闸门未通过，不构成减仓提示') : '尚未接近或超过 QQQ，不触发该依据'}</p>
             </>
           )}
         </div>
         <div className="rounded-lg border border-neutral/40 p-3">
           <div className="font-semibold">补涨收敛<ObservationBadge visible={item.convergence.observation} /></div>
           <p className="mt-1 font-mono tabular-nums text-ink-muted">大科技追平 QQQ：{integerText(item.convergence.count)}/{integerText(item.convergence.minimum_assets)} 只</p>
-          <p className={`mt-1 font-medium ${item.convergence.triggered ? 'text-trim' : 'text-ink-muted'}`}>{item.convergence.triggered ? `市场亢奋·${item.convergence.action.replace('，仅手动操作', '')}` : '尚未达到补涨收敛门槛'}</p>
+          <p className={`mt-1 font-medium ${item.convergence.triggered && (item.convergence.actionable ?? gateActionable) ? 'text-trim' : 'text-ink-muted'}`}>{item.convergence.triggered ? ((item.convergence.actionable ?? gateActionable) ? `市场亢奋·量化剧本参考：${item.convergence.action.replace('，仅手动操作', '')}` : '市场依据已出现，但盈利闸门未通过，不构成减仓提示') : '尚未达到补涨收敛门槛'}</p>
         </div>
       </div>
       <div className="rounded-lg border border-neutral/40 p-3">
-        <div className="font-semibold">止盈阶梯参考 · 剧本：{item.playbook.label || '未标注'}</div>
+        <div className="font-semibold">
+          止盈阶梯参考 · 剧本：{item.playbook.label || '未标注'}
+          <span className="ml-1 text-xs text-ink-muted" title="只在浮盈达到最低档后适用">ⓘ</span>
+        </div>
+        {firstStep && <p className="mt-1 text-xs text-ink-muted">只在浮盈达到最低档 +{firstStep.gain_min_pct.toFixed(2)}% 后适用。</p>}
         {isCompleteLoss && firstStep && <p className="mt-2 rounded-lg bg-loss/10 p-3 font-mono font-medium tabular-nums text-loss">当前为浮亏 {signedPct(pnl.pnlPct!)}，止盈阶梯（最低档 +{firstStep.gain_min_pct.toFixed(2)}%）尚未适用。下方阶梯仅作参考，不构成减仓提示。</p>}
         {isPartialLoss && <p className="mt-2 rounded-lg bg-trim/10 p-3 font-mono font-medium tabular-nums text-trim">已知成本部分为浮亏 {signedPct(pnl.pnlPct!)}（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知）。止盈阶梯参考请以券商实际成本为准。</p>}
         {isPartialGain && <p className="mt-2 rounded-lg bg-trim/10 p-3 font-mono font-medium tabular-nums text-trim">该档位基于已计成本部分（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知），实际盈利可能不同；减仓比例请以券商实际成本为准。</p>}
         {belowFirst && firstStep && <p className="mt-2 font-mono tabular-nums text-trim">距第一档 +{firstStep.gain_min_pct.toFixed(2)}% 还差 {(firstStep.gain_min_pct - pnl.pnlPct!).toFixed(2)} 点{pnl.coverage === 'partial' ? '（基于已计成本部分）' : ''}</p>}
         {!item.playbook.available ? <p className="mt-1 text-ink-muted">该持仓族尚未配置止盈剧本。</p> : (
           <>
-            <ul className={`mt-2 space-y-1 font-mono tabular-nums text-ink-secondary ${isCompleteLoss ? 'opacity-40 grayscale' : ''}`}>
+            <ul className={`mt-2 space-y-1 font-mono tabular-nums text-ink-secondary ${gateActionable ? '' : 'opacity-40 grayscale'}`}>
               {steps.map((step) => {
                 const active = activeStep === step;
                 return <li data-active={active ? 'true' : undefined} className={active ? 'rounded bg-gain/15 px-2 py-1 font-semibold text-gain' : ''} key={`${step.gain_min_pct}-${step.gain_max_pct}`}>盈利 {step.gain_min_pct.toFixed(2)}%{step.gain_max_pct >= 999 ? '+' : `–${step.gain_max_pct.toFixed(2)}%`}：减总仓 {step.sell_position_pct.toFixed(2)}%</li>;
