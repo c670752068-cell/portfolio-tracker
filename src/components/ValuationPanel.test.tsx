@@ -106,8 +106,12 @@ const snapshot = {
         mean_return_pct: 12.94,
         median_return_pct: 13.6,
         worst_return_pct: 4.68,
-        sample_sufficient: true,
-        sample_warning: null,
+        sample_sufficient: false,
+        sample_warning: '样本不足（n=10，需 ≥30）；联合历史不足 500 天；缺少完整熊市样本',
+        insufficient_reason: '样本不足（n=10，需 ≥30）',
+        horizon_conflict: true,
+        horizon_conflict_gap_pct: 68.75,
+        horizon_conflict_note: '20日与60日观察相差 68.75 个百分点，期限结论互相冲突',
       },
     }]],
     divergence: {
@@ -120,6 +124,8 @@ const snapshot = {
       actual_cnn: 39.43,
       note: '当前 CNN 位于该估值分位的历史常态区间',
       historical_occurrences: 0,
+      no_reference: true,
+      reference_note: '该背离在可用历史中未出现过，无任何统计参考',
       sample_sufficient: false,
       sample_warning: '样本不足（n=0），仅供参考，不构成统计结论',
       win_rates: {},
@@ -129,12 +135,16 @@ const snapshot = {
         '20': {
           horizon_trading_days: 20,
           n: 16,
-          win_rate_pct: 31.25,
+          win_rate_pct: null,
           mean_return_pct: -0.2,
           median_return_pct: -1.1,
           worst_return_pct: -5.91,
-          sample_sufficient: true,
-          sample_warning: null,
+          sample_sufficient: false,
+          sample_warning: '样本不足（n=16，需 ≥30）',
+          insufficient_reason: '样本不足（n=16，需 ≥30）',
+          horizon_conflict: true,
+          horizon_conflict_gap_pct: 68.75,
+          horizon_conflict_note: '20日与60日观察相差 68.75 个百分点，期限结论互相冲突',
         },
       },
       TQQQ: {
@@ -155,6 +165,7 @@ const snapshot = {
       matrix_target_pct: 50,
       divergence_adjusted_target_pct: 50,
       suggested_total_pct: 54.18,
+      basis: 'matrix_only',
       gap_pct: -10,
       gap_usd: -14044.91,
       action_text: '当前风险仓位高于本状态参考区间，保持克制并分步评估',
@@ -174,6 +185,14 @@ const snapshot = {
       pe_interpolated: true,
       cnn_history_span: '近1年公开历史上限',
       caveat: 'CNN 公开历史约1年，联合样本有限；PE 插值不等于原始日频观测',
+      joint_span_days: 361,
+      bear_sample_included: false,
+      conclusion_allowed: false,
+      insufficient_reason: '联合历史不足 500 天；缺少完整熊市样本',
+      regime_bias: 'bull_only',
+      qqq_span_return_pct: 21.01,
+      qqq_span_max_drawdown_pct: -11.96,
+      headline_caveat: '联合历史仅覆盖单边上涨区间，缺少完整熊市样本；本页胜率不具备统计结论条件',
     },
   },
 } satisfies QuantAnalysisSnapshot;
@@ -202,6 +221,11 @@ describe('ValuationPanel', () => {
     expect(html).toContain('QQQ / TQQQ 历史胜率');
     expect(html).toContain('建议总仓位，不是单笔金额');
     expect(html).toContain('样本不足（n=3），仅供参考，不构成统计结论');
+    expect(html).toContain('联合历史仅覆盖单边上涨区间');
+    expect(html).toContain('行 = 估值高低（PE 分位），列 = 市场情绪（CNN）');
+    expect(html).toContain('样本不足（n=10，需 ≥30）');
+    expect(html).toContain('期限结论互相冲突');
+    expect(html).not.toContain('100.00%');
   });
 
   it('degrades honestly when the backend fields are not ready', () => {

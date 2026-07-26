@@ -6,6 +6,9 @@ import {
   parseQuantAnalysis,
   quantAnalysisFreshnessText,
   quantAnalysisAgeHours,
+  quantAnalysisRefreshMs,
+  QUANT_ANALYSIS_MARKET_REFRESH_MS,
+  QUANT_ANALYSIS_REFRESH_MS,
 } from './quantAnalysis';
 import { quantAnalysisFixture } from './testFixtures/quantAnalysis';
 
@@ -80,5 +83,12 @@ describe('quant analysis contract', () => {
       symbol: 'AMD',
       monitoredSymbols: ['AAPL', 'AMZN', 'SGOV', 'SOXL'],
     });
+  });
+
+  it('refreshes analysis every 5 minutes in regular session and every 25 minutes otherwise', () => {
+    expect(quantAnalysisRefreshMs(new Date('2026-07-23T14:00:00.000Z')))
+      .toBe(QUANT_ANALYSIS_MARKET_REFRESH_MS);
+    expect(quantAnalysisRefreshMs(new Date('2026-07-23T22:00:00.000Z')))
+      .toBe(QUANT_ANALYSIS_REFRESH_MS);
   });
 });

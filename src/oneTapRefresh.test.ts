@@ -54,10 +54,10 @@ describe('one-tap refresh orchestration', () => {
       'waiting',
       'done',
     ]);
-    expect(states[0]?.message).toBe('已请求量化重算…');
-    expect(states[1]?.message).toBe('正在计算（约 1 分钟）…');
+    expect(states[0]?.message).toBe('已请求全量刷新，正在同步持仓与价格…');
+    expect(states[1]?.message).toBe('正在重算买入判定、卖出判定与胜率状态…');
     expect(states[2]).toMatchObject({
-      message: '已更新',
+      message: '持仓、价格、买卖判定与胜率状态均已更新',
       completedAt: '2026-07-23T12:00:20.000Z',
     });
   });

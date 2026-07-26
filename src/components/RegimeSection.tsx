@@ -78,6 +78,14 @@ function RegimeHeadline({ regime }: { regime: QuantRegimeStatus }) {
           <div className="mt-1">{quality.caveat}</div>
         </div>
       )}
+      {quality?.conclusion_allowed === false && quality.headline_caveat && (
+        <div className="mt-4 rounded-xl border border-trim/35 bg-trim/10 p-3 text-sm leading-relaxed text-ink-primary">
+          <strong className="text-trim">样本范围提醒：</strong> {quality.headline_caveat}
+        </div>
+      )}
+      {divergence?.no_reference && divergence.reference_note && (
+        <p className="mt-3 text-xs leading-relaxed text-ink-muted">{divergence.reference_note}</p>
+      )}
     </article>
   );
 }
@@ -99,6 +107,9 @@ function RegimeGrid({ regime }: { regime: QuantRegimeStatus }) {
         <h3 className="font-semibold">5×5 状态定位</h3>
         <span className="text-[11px] text-ink-muted">行=PE分位 · 列=CNN情绪</span>
       </div>
+      <p className="mt-2 text-xs leading-relaxed text-ink-secondary">
+        行 = 估值高低（PE 分位），列 = 市场情绪（CNN）。每格 = 该状态下买入 QQQ 持有 60 天的胜率与样本数。
+      </p>
       {cells.length === 0 ? (
         <EmptyEvidence />
       ) : (
@@ -128,9 +139,7 @@ function RegimeGrid({ regime }: { regime: QuantRegimeStatus }) {
               ];
             })}
           </div>
-          <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
-            单元格为 QQQ 60 日历史胜率及样本数；样本不足时强制灰显，不作为统计结论。
-          </p>
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">样本不足时不展示胜率数字，仅保留样本量与当前格位置。</p>
           {selectedCell && <GridCellDetail cell={selectedCell} />}
         </>
       )}
@@ -173,7 +182,7 @@ function GridCell({
       title={cell ? `${cell.pe_bucket} × ${cell.cnn_bucket}` : '暂无样本'}
     >
       <div className="font-mono text-[10px] font-semibold tabular-nums sm:text-xs">
-        {percentValue(statistic?.win_rate_pct)}
+        {sufficient ? percentValue(statistic?.win_rate_pct) : '样本不足'}
       </div>
       <div className="font-mono text-[8px] tabular-nums sm:text-[10px]">
         n={statistic?.n ?? 0}
@@ -184,6 +193,7 @@ function GridCell({
 
 function GridCellDetail({ cell }: { cell: QuantRegimeGridCell }) {
   const statistic = cell.reference;
+  const sufficient = statistic?.sample_sufficient === true;
   return (
     <div className="mt-3 rounded-xl bg-surface-overlay/45 p-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -193,10 +203,17 @@ function GridCellDetail({ cell }: { cell: QuantRegimeGridCell }) {
         </span>
       </div>
       <div className="mt-2 font-mono tabular-nums text-ink-muted">
-        {cell.reference_benchmark} {cell.reference_horizon_days} 日 ·
-        {' '}胜率 {percentValue(statistic?.win_rate_pct)} · n={statistic?.n ?? 0}
-        {' '}· 中位 {signedPercent(statistic?.median_return_pct)}
+        {sufficient ? (
+          <>{cell.reference_benchmark} {cell.reference_horizon_days} 日 · 胜率 {percentValue(statistic?.win_rate_pct)} · n={statistic?.n ?? 0} · 中位 {signedPercent(statistic?.median_return_pct)}</>
+        ) : (
+          <>样本不足（n={statistic?.n ?? 0}，需 ≥30）· 仅作参考的中位 {signedPercent(statistic?.median_return_pct)}</>
+        )}
       </div>
+      {statistic?.horizon_conflict && (
+        <p className="mt-2 rounded-lg bg-trim/10 px-2 py-1.5 leading-relaxed text-trim">
+          ⓘ {statistic.horizon_conflict_note ?? `不同期限相差 ${numberText(statistic.horizon_conflict_gap_pct)} 个百分点`}
+        </p>
+      )}
       {statistic?.sample_warning && (
         <p className="mt-2 leading-relaxed text-ink-muted">{statistic.sample_warning}</p>
       )}
@@ -257,7 +274,7 @@ function StatisticRow({
       <tr className={insufficient ? 'text-ink-muted' : 'text-ink-secondary'}>
         <td className="border-t border-neutral/20 py-2 font-mono tabular-nums">{horizon} 日</td>
         <td className="border-t border-neutral/20 py-2 font-mono font-semibold tabular-nums">
-          {percentValue(statistic?.win_rate_pct)} · n={statistic?.n ?? 0}
+          {insufficient ? `样本不足 · n=${statistic?.n ?? 0}` : `${percentValue(statistic?.win_rate_pct)} · n=${statistic?.n ?? 0}`}
         </td>
         <td className="border-t border-neutral/20 py-2 font-mono tabular-nums">{signedPercent(statistic?.median_return_pct)}</td>
         <td className="border-t border-neutral/20 py-2 font-mono tabular-nums">{signedPercent(statistic?.worst_return_pct)}</td>
@@ -266,6 +283,13 @@ function StatisticRow({
         <tr>
           <td colSpan={4} className="pb-2 text-[10px] leading-relaxed text-ink-muted">
             {statistic.sample_warning}
+          </td>
+        </tr>
+      )}
+      {statistic?.horizon_conflict && (
+        <tr>
+          <td colSpan={4} className="pb-2 text-[10px] leading-relaxed text-trim">
+            ⓘ {statistic.horizon_conflict_note}
           </td>
         </tr>
       )}
@@ -303,6 +327,7 @@ function PositionAdvice({ regime }: { regime: QuantRegimeStatus }) {
       <div className="mt-3 space-y-1 rounded-xl bg-surface-overlay/45 p-3 text-xs leading-relaxed text-ink-muted">
         <p>矩阵目标 {advice.matrix_target_pct.toFixed(2)}% · 单次变化上限 {advice.max_step_pct.toFixed(2)}%{advice.capped_by_max_step && '（本次已限幅）'}</p>
         {advice.divergence_note && <p>{advice.divergence_note}</p>}
+        {advice.basis === 'matrix_only' && <p>仓位参考仅来自预设矩阵，未引用当前小样本胜率。</p>}
         <p>仓位门：{advice.position_gate.note}</p>
         <p>{advice.disclaimer}</p>
       </div>
@@ -351,7 +376,7 @@ function cellKey(cell: QuantRegimeGridCell): string {
   return `${cell.pe_bucket_index}:${cell.cnn_bucket_index}`;
 }
 
-function numberText(value: number | undefined): string {
+function numberText(value: number | null | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '暂无';
 }
 

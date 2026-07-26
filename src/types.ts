@@ -478,6 +478,10 @@ export interface QuantRegimeStatistic {
   worst_return_pct: number | null;
   sample_sufficient: boolean;
   sample_warning: string | null;
+  insufficient_reason?: string | null;
+  horizon_conflict?: boolean;
+  horizon_conflict_gap_pct?: number | null;
+  horizon_conflict_note?: string | null;
 }
 
 export interface QuantRegimeGridCell {
@@ -516,6 +520,8 @@ export interface QuantRegimeStatus {
     actual_cnn: number;
     note: string;
     historical_occurrences: number;
+    no_reference?: boolean;
+    reference_note?: string | null;
     sample_sufficient: boolean;
     sample_warning: string | null;
     win_rates: Record<string, Record<string, QuantRegimeStatistic>>;
@@ -526,6 +532,7 @@ export interface QuantRegimeStatus {
     matrix_target_pct: number;
     divergence_adjusted_target_pct: number;
     suggested_total_pct: number;
+    basis?: 'matrix_only' | string;
     gap_pct: number;
     gap_usd: number;
     action_text: string;
@@ -549,7 +556,26 @@ export interface QuantRegimeStatus {
     pe_interpolated: boolean;
     cnn_history_span: string;
     caveat: string;
+    joint_span_days?: number;
+    bear_sample_included?: boolean;
+    conclusion_allowed?: boolean;
+    insufficient_reason?: string | null;
+    regime_bias?: string | null;
+    qqq_span_return_pct?: number | null;
+    qqq_span_max_drawdown_pct?: number | null;
+    headline_caveat?: string | null;
   };
+}
+
+export interface QuantAnalysisFreshness {
+  positions_as_of: string | null;
+  prices_at: string | null;
+  price_session: string | null;
+  valuation_as_of: string | null;
+  cnn_as_of: string | null;
+  regime_evaluated_at: string | null;
+  sell_evaluated_at: string | null;
+  buy_plan_evaluated_at: string | null;
 }
 
 export interface QuantAnalysisSnapshot {
@@ -569,6 +595,7 @@ export interface QuantAnalysisSnapshot {
   regime_status?: QuantRegimeStatus;
   today_verdict?: QuantTodayVerdict | null;
   behavior_mirror?: QuantBehaviorMirror | null;
+  freshness?: QuantAnalysisFreshness;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */

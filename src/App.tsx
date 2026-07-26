@@ -3,6 +3,7 @@ import { AllocationChart } from './components/AllocationChart';
 import { AlertRulesPanel } from './components/AlertRulesPanel';
 import { ConditionLookup } from './components/ConditionLookup';
 import { DailyVerdictCard } from './components/DailyVerdictCard';
+import { DecisionStatusBar } from './components/DecisionStatusBar';
 import { BehaviorMirrorCard } from './components/BehaviorMirrorCard';
 import { OpportunityOverview, type OpportunitySide } from './components/OpportunityOverview';
 import { CashEditor } from './components/CashEditor';
@@ -564,6 +565,11 @@ export default function App() {
           <TabBtn label="估值" active={tab === 'valuation'} onClick={() => changeTab('valuation')} />
         </nav>
       </header>
+      {quantAnalysis && (
+        <div className="mb-5">
+          <DecisionStatusBar snapshot={quantAnalysis} />
+        </div>
+      )}
 
       {tab === 'dashboard' && (
         <section className="ui-enter space-y-5">

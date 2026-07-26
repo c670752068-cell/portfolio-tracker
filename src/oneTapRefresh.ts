@@ -65,10 +65,10 @@ export async function runOneTapRefresh({
     const response = await request();
     onState('throttled' in response && response.throttled
       ? { phase: 'throttled', message: '刚刚已有刷新请求，正在处理中' }
-      : { phase: 'requested', message: '已请求量化重算…' });
+      : { phase: 'requested', message: '已请求全量刷新，正在同步持仓与价格…' });
 
     await refreshExisting();
-    onState({ phase: 'waiting', message: '正在计算（约 1 分钟）…' });
+    onState({ phase: 'waiting', message: '正在重算买入判定、卖出判定与胜率状态…' });
 
     const maxPolls = Math.max(1, Math.ceil(timeoutMs / pollIntervalMs));
     for (let attempt = 0; attempt < maxPolls; attempt += 1) {
@@ -85,7 +85,7 @@ export async function runOneTapRefresh({
       await refreshExisting();
       onState({
         phase: 'done',
-        message: '已更新',
+        message: '持仓、价格、买卖判定与胜率状态均已更新',
         completedAt: status.completed_at || new Date().toISOString(),
       });
       return;

@@ -35,11 +35,11 @@ function runSiteExport(cliPath) {
   });
 }
 
-function runRefreshNow(cliPath) {
+function runSiteRefreshQuick(cliPath) {
   return new Promise((resolve, reject) => {
-    execFile(cliPath, ['refresh-now'], { timeout: 180_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(cliPath, ['site-refresh', '--quick'], { timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(`refresh-now 失败：${error.message}${stderr ? `；${String(stderr).trim().slice(0, 200)}` : ''}`));
+        reject(new Error(`site-refresh --quick 失败：${error.message}${stderr ? `；${String(stderr).trim().slice(0, 200)}` : ''}`));
         return;
       }
       try {
@@ -47,7 +47,7 @@ function runRefreshNow(cliPath) {
         if (payload?.ok !== true) throw new Error(payload?.error || '返回 ok=false');
         resolve(payload);
       } catch (parseError) {
-        reject(new Error(`refresh-now 返回无效：${parseError instanceof Error ? parseError.message : String(parseError)}`));
+        reject(new Error(`site-refresh --quick 返回无效：${parseError instanceof Error ? parseError.message : String(parseError)}`));
       }
     });
   });
@@ -76,9 +76,9 @@ async function postSnapshot(origin, token, pathname, snapshot) {
   }
 }
 
-async function pushAnalysis(cliPath, origin, token) {
+async function pushAnalysis(cliPath, origin, token, reuseExisting = false) {
   const exportPath = process.env.FUTU_ASSISTANT_SITE_EXPORT || DEFAULT_SITE_EXPORT;
-  await runSiteExport(cliPath);
+  if (!reuseExisting) await runSiteExport(cliPath);
   const snapshot = JSON.parse(await readFile(exportPath, 'utf8'));
   const symbolsValid = snapshot?.symbols && typeof snapshot.symbols === 'object' && !Array.isArray(snapshot.symbols);
   if (snapshot?.source !== 'futu-assistant' || !symbolsValid || Number.isNaN(Date.parse(snapshot?.generated_at))) {
@@ -159,9 +159,9 @@ export async function createDefaultRefreshRequestProcessor() {
   const token = await readSyncToken();
   return createRefreshRequestProcessor({
     readRequest: () => getRefreshRequest(origin, token),
-    refreshNow: () => runRefreshNow(cliPath),
+    refreshNow: () => runSiteRefreshQuick(cliPath),
     pushSnapshots: async () => {
-      const result = await pushPositions();
+      const result = await pushPositions({ reuseAnalysisSnapshot: true });
       if (!result.analysisPushed) throw new Error('量化分析快照上传失败');
       return result;
     },
@@ -190,7 +190,7 @@ export async function watchRefreshRequests({
   }
 }
 
-export async function pushPositions() {
+export async function pushPositions({ reuseAnalysisSnapshot = false } = {}) {
   const cliPath = process.env.FUTU_ASSISTANT_CLI || DEFAULT_CLI;
   const origin = process.env.PORTFOLIO_GATEWAY_ORIGIN || DEFAULT_ORIGIN;
   let count = 0;
@@ -210,7 +210,7 @@ export async function pushPositions() {
         await appendSyncLog('success', count);
         let analysisPushed = false;
         try {
-          const symbolCount = await pushAnalysis(cliPath, origin, token);
+          const symbolCount = await pushAnalysis(cliPath, origin, token, reuseAnalysisSnapshot);
           analysisPushed = true;
           await appendSyncLog('analysis_success', symbolCount);
         } catch (error) {

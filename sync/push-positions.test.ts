@@ -36,7 +36,8 @@ elif [ "$1" = "site-export" ]; then
     head -c "${analysisStdoutBytes}" /dev/zero | tr '\\0' 'x'
   fi
   printf '%s' '{"ok":true}'
-elif [ "$1" = "refresh-now" ]; then
+elif [ "$1" = "site-refresh" ] && [ "$2" = "--quick" ]; then
+  printf '%s' '{"source":"futu-assistant","generated_at":"2026-07-23T10:32:11-04:00","rule_version":"2.2","symbols":{"MSFT":{"gates":{},"gates_passed":0,"gates_total":6}}}' > "$FUTU_ASSISTANT_SITE_EXPORT"
   printf '%s' '{"ok":true,"checked_at":"2026-07-23T10:32:11-04:00","notifications_sent":0,"symbols_checked":18}'
 else
   exit 2
@@ -111,7 +112,7 @@ describe('portfolio Mac push chain', () => {
     expect(readme).toContain('com.portfolio.refresh-watch.plist');
   });
 
-  it('runs refresh-now before pushing snapshots and then reports completion', async () => {
+  it('runs site-refresh --quick before pushing snapshots and then reports completion', async () => {
     const calls: string[] = [];
     const processor = createRefreshRequestProcessor({
       readRequest: async () => {
@@ -119,7 +120,7 @@ describe('portfolio Mac push chain', () => {
         return { status: 'pending', requested_at: '2026-07-23T10:32:00.000Z' };
       },
       refreshNow: async () => {
-        calls.push('refresh-now');
+        calls.push('site-refresh --quick');
         return { ok: true, checked_at: '2026-07-23T10:32:11-04:00' };
       },
       pushSnapshots: async () => {
@@ -133,7 +134,7 @@ describe('portfolio Mac push chain', () => {
 
     await processor.pollOnce();
 
-    expect(calls).toEqual(['poll', 'refresh-now', 'push-snapshots', 'complete']);
+    expect(calls).toEqual(['poll', 'site-refresh --quick', 'push-snapshots', 'complete']);
   });
 
   it('reports an on-demand failure without throwing out of watch mode', async () => {
@@ -209,9 +210,8 @@ describe('portfolio Mac push chain', () => {
         result: expect.objectContaining({ ok: true }),
       }));
       expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n')).toEqual([
-        'refresh-now',
+        'site-refresh',
         'positions-status',
-        'site-export',
       ]);
       expect(fixture.requests.map((item) => item.url)).toEqual([
         '/api/refresh-request',

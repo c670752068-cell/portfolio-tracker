@@ -596,7 +596,7 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
           </div>
           {onRefresh && <button type="button" onClick={onRefresh} disabled={loading} className="rounded-md bg-neutral/30 px-3 py-2 text-sm">{loading ? '读取中…' : '刷新快照'}</button>}
         </div>
-        {snapshot && <p className="mt-2 font-mono text-xs tabular-nums text-ink-muted">{quantAnalysisFreshnessText(snapshot.generated_at)} · 每 25 分钟自动更新</p>}
+        {snapshot && <p className="mt-2 font-mono text-xs tabular-nums text-ink-muted">{quantAnalysisFreshnessText(snapshot.generated_at)} · 盘中每 5 分钟、其他时段每 25 分钟自动更新</p>}
         <select aria-label="量化监控标的" value={selectedSymbol} onChange={(event) => setSymbol(event.target.value)} className="mt-4 w-full rounded-md border border-neutral bg-transparent px-3 py-2">
           {monitoredSymbols.map((item) => <option key={item} value={item}>{opportunityStatusLabel(snapshot?.summary, item)}</option>)}
         </select>

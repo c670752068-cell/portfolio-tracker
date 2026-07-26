@@ -1,4 +1,5 @@
 import type { QuantAnalysisSnapshot, QuantSignalStatWindow, QuantSymbolAnalysis } from './types';
+import { isRegularSession } from './marketSession';
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -6,7 +7,12 @@ const MINUTE_MS = 60 * 1000;
 const NEW_YORK_TIME_ZONE = 'America/New_York';
 
 export const QUANT_ANALYSIS_REFRESH_MS = 25 * 60 * 1000;
+export const QUANT_ANALYSIS_MARKET_REFRESH_MS = 5 * 60 * 1000;
 export const QUANT_ANALYSIS_RESUME_REFRESH_MS = 5 * 60 * 1000;
+
+export function quantAnalysisRefreshMs(date: Date): number {
+  return isRegularSession(date) ? QUANT_ANALYSIS_MARKET_REFRESH_MS : QUANT_ANALYSIS_REFRESH_MS;
+}
 
 interface QuantRefreshVisibilityTarget {
   readonly visibilityState: DocumentVisibilityState;
@@ -31,7 +37,12 @@ export function startQuantAnalysisAutoRefresh(
     refresh();
   };
   const refreshIfVisible = () => {
-    if (visibilityTarget.visibilityState === 'visible') runRefresh();
+    if (
+      visibilityTarget.visibilityState === 'visible'
+      && now() - lastRefreshAt >= quantAnalysisRefreshMs(new Date(now()))
+    ) {
+      runRefresh();
+    }
   };
   const handleVisibilityChange = () => {
     if (
@@ -41,7 +52,7 @@ export function startQuantAnalysisAutoRefresh(
       runRefresh();
     }
   };
-  const timer = timerHost.setInterval(refreshIfVisible, QUANT_ANALYSIS_REFRESH_MS);
+  const timer = timerHost.setInterval(refreshIfVisible, QUANT_ANALYSIS_MARKET_REFRESH_MS);
   visibilityTarget.addEventListener('visibilitychange', handleVisibilityChange);
   return () => {
     timerHost.clearInterval(timer);
