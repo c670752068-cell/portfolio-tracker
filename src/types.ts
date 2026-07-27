@@ -569,6 +569,37 @@ export interface QuantRegimeGridCell {
   statistics?: Record<string, Record<string, QuantRegimeStatistic>>;
 }
 
+export interface QuantRegimeCurrentCell {
+  row_index: number;
+  col_index: number;
+  row_label: string;
+  col_label: string;
+  row_value: number;
+  col_value: number;
+  row_basis: string;
+  col_basis: string;
+  as_of: string;
+  price_session: string;
+  n: number;
+  bear_included: boolean;
+  statistics: Record<string, Record<string, QuantRegimeStatistic>>;
+}
+
+export interface QuantRegimeVerdictCard {
+  headline: string;
+  cell_label: string;
+  sample_sufficient: boolean;
+  bear_included: boolean;
+  sample_context: string;
+  primary: { horizon_days: number | null; win_rate_pct: number | null; median_return_pct: number | null; worst_return_pct: number | null; n: number | null };
+  horizons: Record<string, { win_rate_pct: number | null; median_return_pct: number | null; worst_return_pct: number | null; n: number } | null>;
+  leveraged: { symbol: string; [horizon: string]: string | { win_rate_pct: number | null; median_return_pct: number | null; worst_return_pct: number | null; n: number } | null };
+  overlay_note: string;
+  action_hint: string;
+  caveats: readonly string[];
+  plan_link: { ready_count: number; total_count: number; nearest: { label: string | null; missing: readonly string[] } | null };
+}
+
 export interface QuantRegimeStatus {
   available: boolean;
   reason?: string;
@@ -603,6 +634,8 @@ export interface QuantRegimeStatus {
     };
     cell_stats: Record<string, Record<string, QuantRegimeStatistic>>;
   };
+  current_cell?: QuantRegimeCurrentCell;
+  verdict_card?: QuantRegimeVerdictCard;
   grid?: readonly (readonly QuantRegimeGridCell[])[];
   divergence?: {
     detected: boolean;

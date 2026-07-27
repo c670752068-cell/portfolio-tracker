@@ -125,6 +125,23 @@ const snapshot = {
       },
       cell_stats: {},
     },
+    current_cell: {
+      row_index: 2, col_index: 3, row_label: '-12~-6%', col_label: '60-80%', row_value: -8.2, col_value: 68.25,
+      row_basis: 'QQQ 自120 日高点回撤', col_basis: 'VIX 近 1 年分位', as_of: '2026-07-26T07:06:13-04:00', price_session: 'closed', n: 66, bear_included: true,
+      statistics: {
+        QQQ: {
+          '20': { horizon_trading_days: 20, n: 66, win_rate_pct: 60.61, mean_return_pct: 2.38, median_return_pct: 2.38, worst_return_pct: -13.6, sample_sufficient: true, sample_warning: null },
+          '60': { horizon_trading_days: 60, n: 66, win_rate_pct: 81.82, mean_return_pct: 8.45, median_return_pct: 8.45, worst_return_pct: -23.97, sample_sufficient: true, sample_warning: null },
+          '120': { horizon_trading_days: 120, n: 66, win_rate_pct: 83.33, mean_return_pct: 15.5, median_return_pct: 15.5, worst_return_pct: -23.7, sample_sufficient: true, sample_warning: null },
+        },
+      },
+    },
+    verdict_card: {
+      headline: '中度回撤 × 波动偏高 —— 历史 60 日胜率 81.82%', cell_label: '回撤 -8.20% × VIX 分位 68.25%', sample_sufficient: true, bear_included: true,
+      sample_context: '样本 n=66 · 已包含 2020/2022/2025 下跌时段', primary: { horizon_days: 60, win_rate_pct: 81.82, median_return_pct: 8.45, worst_return_pct: -23.97, n: 66 },
+      horizons: { '20': { win_rate_pct: 60.61, median_return_pct: 2.38, worst_return_pct: -13.6, n: 66 }, '60': { win_rate_pct: 81.82, median_return_pct: 8.45, worst_return_pct: -23.97, n: 66 }, '120': { win_rate_pct: 83.33, median_return_pct: 15.5, worst_return_pct: -23.7, n: 66 } },
+      leveraged: { symbol: 'TQQQ', '60': { win_rate_pct: 80.3, median_return_pct: 21.79, worst_return_pct: -60.9, n: 66 } }, overlay_note: '叠加层：估值 PE 分位 47% · 情绪 CNN 39（历史仅约1年，仅供参考）', action_hint: '历史统计仅供参考，请与既有买入计划和仓位纪律一同查看', caveats: ['历史统计不代表未来收益', '最差情形 QQQ -23.97% / TQQQ -60.90%，需能承受'], plan_link: { ready_count: 0, total_count: 3, nearest: { label: '第一枪·试探', missing: ['CNN < 30（当前 39.4）'] } },
+    },
     grid: [[{
       row_bucket_index: 2,
       col_bucket_index: 3,
@@ -298,19 +315,14 @@ describe('ValuationPanel', () => {
     expect(html).toContain('量化快照');
     expect(html).toContain('生成 YAML');
     expect(html).toContain('中度回撤 × 波动偏高');
-    expect(html).toContain('5×5 状态定位');
-    expect(html).toContain('状态格详情');
-    expect(html).toContain('-12~-6% × 60-80%');
-    expect(html).toContain('QQQ 回撤 -8.20%');
-    expect(html).toContain('VIX 分位 68.25%');
-    expect(html).toContain('PE / CNN 叠加层');
-    expect(html).toContain('不参与状态格建模');
-    expect(html).toContain('熊市样本');
-    expect(html).toContain('熊');
-    expect(html).toContain('QQQ / TQQQ 历史胜率');
+    expect(html).toContain('当前状态');
+    expect(html).toContain('最差情形');
+    expect(html).toContain('查看完整状态矩阵');
+    expect(html).toContain('回撤 -8.20% × VIX 分位 68.25%');
+    expect(html).not.toContain('熊市样本');
+    expect(html).not.toContain('QQQ / TQQQ 历史胜率');
     expect(html).toContain('建议总仓位，不是单笔金额');
-    expect(html).toContain('行 = QQQ 自高点回撤，列 = VIX 近 1 年分位');
-    expect(html).toContain('2018-01-02 至 2026-07-24');
+    expect(html).toContain('当前状态已在上方结论卡显示');
     expect(html).not.toContain('行 = 估值高低（PE 分位）');
   });
 
@@ -378,8 +390,35 @@ describe('ValuationPanel', () => {
       />,
     );
 
-    expect(html).toContain('长样本状态格准备中');
+    expect(html).toContain('当前状态准备中');
     expect(html).toContain('联合历史暂不可用');
     expect(html).not.toContain('NaN');
+  });
+
+  it('withholds all verdict statistics when the backend marks the current cell insufficient', () => {
+    const verdict = snapshot.regime_status!.verdict_card!;
+    const html = renderToStaticMarkup(
+      <ValuationPanel
+        snapshot={{
+          ...snapshot,
+          regime_status: {
+            ...snapshot.regime_status!,
+            verdict_card: {
+              ...verdict,
+              sample_sufficient: false,
+              headline: '当前状态的历史样本不足，暂不展示胜率结论。',
+              sample_context: '样本不足（n=8，需≥30），不构成统计结论。',
+              primary: { horizon_days: null, win_rate_pct: null, median_return_pct: null, worst_return_pct: null, n: null },
+              horizons: { '20': null, '60': null, '120': null },
+            },
+          },
+        }}
+        onDirtyChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('无统计结论');
+    expect(html).not.toContain('TQQQ 同状态 60 日');
+    expect(html).not.toContain('⚠ 最差情形');
   });
 });
