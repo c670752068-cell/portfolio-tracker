@@ -4,7 +4,22 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#4f46e5" />
+    <meta name="theme-color" content="#F7F8FA" />
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem('portfolio-tracker:theme');
+          const dark = saved === 'dark'
+            || ((saved !== 'light') && matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          document.querySelector('meta[name="theme-color"]')
+            ?.setAttribute('content', dark ? '#0B0F14' : '#F7F8FA');
+        } catch {
+          // Hardened browsers may block storage; the light CSS default remains safe.
+        }
+      })();
+    </script>
     <title>我的投资组合 · Portfolio Tracker</title>
   </head>
   <body>

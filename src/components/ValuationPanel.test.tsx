@@ -96,38 +96,60 @@ const snapshot = {
   regime_status: {
     available: true,
     evaluated_at: '2026-07-26T07:06:13-04:00',
+    axes: {
+      row: 'drawdown_from_high',
+      column: 'vix_percentile_1y',
+    },
     current: {
-      pe: 30.1128,
-      pe_percentile_5y: 47.08,
-      pe_bucket_index: 2,
-      pe_bucket: '40-60%',
-      cnn_score: 39.43,
-      cnn_bucket_index: 2,
-      cnn_bucket: '35-55（中性）',
-      regime_label: '估值中性 · 情绪中性',
+      primary: {
+        symbol: 'QQQ',
+        drawdown_pct: -8.2,
+        vix_value: 18.58,
+        vix_percentile_1y: 68.25,
+        vix_is_proxy: false,
+        row_bucket_index: 2,
+        row_bucket: '-12~-6%',
+        col_bucket_index: 3,
+        col_bucket: '60-80%',
+        cell_label: '中度回撤 × 波动偏高',
+      },
+      overlay: {
+        overlay_available: true,
+        participates_in_grid: false,
+        pe: 30.1128,
+        pe_percentile_5y: 47.08,
+        pe_zone: '估值中性',
+        cnn_score: 39.43,
+        cnn_rating: '35-55（中性）',
+        overlay_note: '估值中性、情绪中性（叠加层，因历史仅约1年不参与建格）',
+      },
+      cell_stats: {},
     },
     grid: [[{
-      pe_bucket_index: 2,
-      cnn_bucket_index: 2,
-      pe_bucket: '40-60%',
-      cnn_bucket: '35-55（中性）',
-      n: 21,
+      row_bucket_index: 2,
+      col_bucket_index: 3,
+      row_bucket: '-12~-6%',
+      col_bucket: '60-80%',
+      n: 70,
+      bear_included: true,
       reference_benchmark: 'QQQ',
       reference_horizon_days: 60,
       reference: {
         horizon_trading_days: 60,
-        n: 10,
-        win_rate_pct: 100,
-        mean_return_pct: 12.94,
-        median_return_pct: 13.6,
-        worst_return_pct: 4.68,
-        sample_sufficient: false,
-        sample_warning: '样本不足（n=10，需 ≥30）；联合历史不足 500 天；缺少完整熊市样本',
-        insufficient_reason: '样本不足（n=10，需 ≥30）',
-        horizon_conflict: true,
-        horizon_conflict_gap_pct: 68.75,
-        horizon_conflict_note: '20日与60日观察相差 68.75 个百分点，期限结论互相冲突',
+        n: 66,
+        win_rate_pct: 81.82,
+        mean_return_pct: 6.06,
+        median_return_pct: 8.45,
+        worst_return_pct: -23.97,
+        sample_sufficient: true,
+        sample_warning: null,
+        insufficient_reason: null,
+        bear_included: true,
+        horizon_conflict: false,
+        horizon_conflict_gap_pct: null,
+        horizon_conflict_note: null,
       },
+      statistics: {},
     }]],
     divergence: {
       detected: false,
@@ -177,14 +199,17 @@ const snapshot = {
     },
     position_advice: {
       current_risk_position_pct: 64.18,
-      matrix_target_pct: 50,
-      divergence_adjusted_target_pct: 50,
-      suggested_total_pct: 54.18,
-      basis: 'matrix_only',
-      gap_pct: -10,
-      gap_usd: -14044.91,
+      matrix_target_pct: 60,
+      overlay_adjusted_target_pct: 60,
+      overlay_adjustment_pct: 0,
+      vix_adjusted_target_pct: 60,
+      vix_adjustment_pct: 0,
+      suggested_total_pct: 60,
+      basis: 'matrix_and_winrate',
+      gap_pct: -4.18,
+      gap_usd: -5869.77,
       action_text: '当前风险仓位高于本状态参考区间，保持克制并分步评估',
-      divergence_note: null,
+      overlay_note: null,
       capped_by_max_step: true,
       max_step_pct: 10,
       position_gate: { passed: false, note: '现有仓位门未通过' },
@@ -192,22 +217,29 @@ const snapshot = {
       disclaimer: '统计参考，不构成投资建议或交易指令',
     },
     data_quality: {
-      joint_sample_days: 248,
-      joint_start: '2025-07-28',
-      joint_end: '2026-07-24',
-      raw_pe_observations: 156,
-      raw_cnn_observations: 248,
-      pe_interpolated: true,
-      cnn_history_span: '近1年公开历史上限',
-      caveat: 'CNN 公开历史约1年，联合样本有限；PE 插值不等于原始日频观测',
-      joint_span_days: 361,
-      bear_sample_included: false,
-      conclusion_allowed: false,
-      insufficient_reason: '联合历史不足 500 天；缺少完整熊市样本',
-      regime_bias: 'bull_only',
-      qqq_span_return_pct: 21.01,
-      qqq_span_max_drawdown_pct: -11.96,
-      headline_caveat: '联合历史仅覆盖单边上涨区间，缺少完整熊市样本；本页胜率不具备统计结论条件',
+      grid_sample_days: 2151,
+      grid_start: '2018-01-02',
+      grid_end: '2026-07-24',
+      vix_observations: 2151,
+      is_proxy: false,
+      vix_source: { provider: 'Cboe', kind: 'official_daily_close', is_proxy: false },
+      joint_span_days: 3125,
+      joint_span_start: '2018-01-02',
+      joint_span_end: '2026-07-24',
+      bear_sample_included: true,
+      conclusion_allowed: true,
+      insufficient_reason: null,
+      regime_bias: 'mixed_or_unclear',
+      qqq_span_return_pct: 357.97,
+      qqq_span_max_drawdown_pct: -35.12,
+      headline_caveat: null,
+      caveat: '状态格仅使用 QQQ 回撤与 VIX 分位长历史；PE/CNN 仅作当前叠加说明，不参与建格',
+    },
+    headline: '中度回撤 × 波动偏高 × 估值中性 —— 该格历史 60 日胜率 81.82%（n=66，含熊市样本）。',
+    legacy_pe_cnn_grid: {
+      deprecated: true,
+      display: false,
+      reason: 'CNN 公开历史仅约1年，不再作为状态格主轴',
     },
   },
   vix_study: {
@@ -265,18 +297,21 @@ describe('ValuationPanel', () => {
     expect(html).toContain('1/3 条件满足');
     expect(html).toContain('量化快照');
     expect(html).toContain('生成 YAML');
-    expect(html).toContain('估值中性 · 情绪中性');
+    expect(html).toContain('中度回撤 × 波动偏高');
     expect(html).toContain('5×5 状态定位');
     expect(html).toContain('状态格详情');
-    expect(html).toContain('40-60% × 35-55（中性）');
+    expect(html).toContain('-12~-6% × 60-80%');
+    expect(html).toContain('QQQ 回撤 -8.20%');
+    expect(html).toContain('VIX 分位 68.25%');
+    expect(html).toContain('PE / CNN 叠加层');
+    expect(html).toContain('不参与状态格建模');
+    expect(html).toContain('熊市样本');
+    expect(html).toContain('熊');
     expect(html).toContain('QQQ / TQQQ 历史胜率');
     expect(html).toContain('建议总仓位，不是单笔金额');
-    expect(html).toContain('样本不足（n=3），仅供参考，不构成统计结论');
-    expect(html).toContain('联合历史仅覆盖单边上涨区间');
-    expect(html).toContain('行 = 估值高低（PE 分位），列 = 市场情绪（CNN）');
-    expect(html).toContain('样本不足（n=10，需 ≥30）');
-    expect(html).toContain('期限结论互相冲突');
-    expect(html).not.toContain('100.00% · n=10');
+    expect(html).toContain('行 = QQQ 自高点回撤，列 = VIX 近 1 年分位');
+    expect(html).toContain('2018-01-02 至 2026-07-24');
+    expect(html).not.toContain('行 = 估值高低（PE 分位）');
   });
 
   it('degrades honestly when the backend fields are not ready', () => {
@@ -343,7 +378,7 @@ describe('ValuationPanel', () => {
       />,
     );
 
-    expect(html).toContain('联合历史准备中');
+    expect(html).toContain('长样本状态格准备中');
     expect(html).toContain('联合历史暂不可用');
     expect(html).not.toContain('NaN');
   });

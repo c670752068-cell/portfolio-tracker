@@ -12,6 +12,7 @@ import { ImageImportPanel } from './components/ImageImportPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ScenarioCalculator } from './components/ScenarioCalculator';
 import { Summary } from './components/Summary';
+import { ThemeControl } from './components/ThemeControl';
 import { FearComfortBanner, LeverageOpportunityRadar } from './components/SmartInsightCards';
 import { ValuationPanel } from './components/ValuationPanel';
 import { ALERT_RULES_REFRESH_MS, deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
@@ -552,18 +553,21 @@ export default function App() {
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">我的投资组合</h1>
           <p className="mt-1 text-xs leading-relaxed text-ink-secondary">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</p>
         </div>
-        <nav className="grid w-full grid-cols-3 gap-1 rounded-2xl bg-surface-raised p-1 text-xs sm:text-sm md:w-auto md:grid-cols-6">
-          <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => changeTab('dashboard')} />
-          <TabBtn
-            label={<>持仓 {needsReviewCount > 0 && <span className="font-mono tabular-nums text-trim">●{needsReviewCount}</span>}</>}
-            active={tab === 'holdings'}
-            onClick={() => changeTab('holdings')}
-          />
-          <TabBtn label="条件查询" active={tab === 'conditions'} onClick={() => changeTab('conditions')} />
-          <TabBtn label="计算器" active={tab === 'calculator'} onClick={() => changeTab('calculator')} />
-          <TabBtn label="设置" active={tab === 'settings'} onClick={() => changeTab('settings')} />
-          <TabBtn label="估值" active={tab === 'valuation'} onClick={() => changeTab('valuation')} />
-        </nav>
+        <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
+          <ThemeControl />
+          <nav className="grid w-full grid-cols-3 gap-1 rounded-2xl border border-neutral/30 bg-surface-raised p-1 text-xs sm:text-sm md:w-auto md:grid-cols-6">
+            <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => changeTab('dashboard')} />
+            <TabBtn
+              label={<>持仓 {needsReviewCount > 0 && <span className="font-mono tabular-nums text-trim">●{needsReviewCount}</span>}</>}
+              active={tab === 'holdings'}
+              onClick={() => changeTab('holdings')}
+            />
+            <TabBtn label="条件查询" active={tab === 'conditions'} onClick={() => changeTab('conditions')} />
+            <TabBtn label="计算器" active={tab === 'calculator'} onClick={() => changeTab('calculator')} />
+            <TabBtn label="设置" active={tab === 'settings'} onClick={() => changeTab('settings')} />
+            <TabBtn label="估值" active={tab === 'valuation'} onClick={() => changeTab('valuation')} />
+          </nav>
+        </div>
       </header>
       {quantAnalysis && (
         <div className="mb-5">

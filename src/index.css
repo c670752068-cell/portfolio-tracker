@@ -3,23 +3,56 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --color-gain: #2ecc71;
-  --color-loss: #ff5a5f;
-  --color-buy: #c77dff;
-  --color-trim: #ffb84d;
-  --color-cash: #7c8b9a;
-  --color-neutral: #3a4553;
-  --color-surface-raised: #141a22;
-  --color-surface-overlay: #1c242e;
-  --color-ink-primary: #e8edf3;
-  --color-ink-secondary: #9ba8b8;
-  --color-ink-muted: #5f6c7c;
+  --surface-base: 247 248 250;
+  --surface-raised: 255 255 255;
+  --surface-overlay: 238 241 245;
+  --ink-primary: 26 32 41;
+  --ink-secondary: 72 83 97;
+  --ink-muted: 98 112 130;
+  --gain: 11 125 62;
+  --loss: 199 53 58;
+  --buy: 124 54 209;
+  --trim: 162 95 0;
+  --cash: 82 96 112;
+  --neutral: 217 222 229;
+  --color-gain: rgb(var(--gain));
+  --color-loss: rgb(var(--loss));
+  --color-buy: rgb(var(--buy));
+  --color-trim: rgb(var(--trim));
+  --color-cash: rgb(var(--cash));
+  --color-neutral: rgb(var(--neutral));
+  --color-surface-raised: rgb(var(--surface-raised));
+  --color-surface-overlay: rgb(var(--surface-overlay));
+  --color-ink-primary: rgb(var(--ink-primary));
+  --color-ink-secondary: rgb(var(--ink-secondary));
+  --color-ink-muted: rgb(var(--ink-muted));
+  --color-grid-base: rgb(var(--surface-raised));
+  --chart-grid: rgb(217 222 229);
+  --chart-axis: rgb(72 83 97);
+}
+
+:root.dark {
+  color-scheme: dark;
+  --surface-base: 11 15 20;
+  --surface-raised: 20 26 34;
+  --surface-overlay: 28 36 46;
+  --ink-primary: 232 237 243;
+  --ink-secondary: 155 168 184;
+  --ink-muted: 108 122 139;
+  --gain: 46 204 113;
+  --loss: 255 90 95;
+  --buy: 199 125 255;
+  --trim: 255 184 77;
+  --cash: 124 139 154;
+  --neutral: 58 69 83;
+  --chart-grid: rgb(58 69 83);
+  --chart-axis: rgb(155 168 184);
 }
 
 html,
@@ -30,6 +63,8 @@ body,
 
 body {
   @apply m-0 bg-surface-base font-sans text-ink-primary;
+  transition: background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    color 180ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 button,
@@ -82,5 +117,11 @@ a:focus-visible {
 
   button:active:not(:disabled) {
     transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [class*='backdrop-blur'] {
+    backdrop-filter: none !important;
   }
 }

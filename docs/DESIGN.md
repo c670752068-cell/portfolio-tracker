@@ -15,26 +15,17 @@
 
 ## 2. 配色系统
 
-深色主题为主。颜色只从 `tailwind.config.js` 的语义 token 获取：
+颜色只从 `tailwind.config.js` 的语义 token 获取。主题使用 `darkMode: 'class'` 与 CSS
+变量共享同一套组件，不允许复制两套 JSX：
 
 ```js
 colors: {
   surface: {
-    base: '#0B0F14',
-    raised: '#141A22',
-    overlay: '#1C242E',
+    base: 'rgb(var(--surface-base) / <alpha-value>)',
+    raised: 'rgb(var(--surface-raised) / <alpha-value>)',
+    overlay: 'rgb(var(--surface-overlay) / <alpha-value>)',
   },
-  ink: {
-    primary: '#E8EDF3',
-    secondary: '#9BA8B8',
-    muted: '#5F6C7C',
-  },
-  gain: '#2ECC71',
-  loss: '#FF5A5F',
-  buy: '#C77DFF',
-  trim: '#FFB84D',
-  cash: '#7C8B9A',
-  neutral: '#3A4553',
+  // ink / gain / loss / buy / trim / cash / neutral 同样读取 CSS 变量
 }
 ```
 
@@ -109,3 +100,16 @@ fontFamily: {
 - **一致性**：相同视觉必须代表相同语义；同一操作在所有 tab 中使用相同反馈。
 - **可访问性**：保持对比度、键盘焦点和触控面积，支持减少动效与减少透明度偏好。
 - **禁止焦虑式设计**：不闪烁、不放大红色告警、不使用恐吓文案；风险信息清楚呈现即可。
+
+## 9. 浅色、深色与跟随系统
+
+- 主题控制提供“跟随系统 / 浅色 / 深色”三档，默认跟随系统，选择持久化在
+  `portfolio-tracker:theme`。
+- 页面加载前的内联脚本先应用主题，避免白屏闪烁；系统主题变化时，“跟随系统”会即时响应。
+- 浅色主题：`surface.base #F7F8FA`、`surface.raised #FFFFFF`、
+  `surface.overlay #EEF1F5`。正文 `#1A2029`，次级正文和状态色使用经过白底
+  WCAG AA 调整后的更深色值；边框可继续使用浅中性灰。
+- 深色主题沿用原有三层背景与语义色。涨跌、买点、止盈的含义在两套主题里完全一致。
+- 图表、5×5 状态格和 Tooltip 必须读取 CSS 变量；浅色下不直接搬运深色色值。
+- 主题变化只过渡背景、文字、边框等必要属性 180ms；尊重
+  `prefers-reduced-motion` 与 `prefers-reduced-transparency`。

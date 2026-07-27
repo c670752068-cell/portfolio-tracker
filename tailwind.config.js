@@ -1,25 +1,26 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
         surface: {
-          base: '#0B0F14',
-          raised: '#141A22',
-          overlay: '#1C242E',
+          base: 'rgb(var(--surface-base) / <alpha-value>)',
+          raised: 'rgb(var(--surface-raised) / <alpha-value>)',
+          overlay: 'rgb(var(--surface-overlay) / <alpha-value>)',
         },
         ink: {
-          primary: '#E8EDF3',
-          secondary: '#9BA8B8',
-          muted: '#5F6C7C',
+          primary: 'rgb(var(--ink-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--ink-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--ink-muted) / <alpha-value>)',
         },
-        gain: '#2ECC71',
-        loss: '#FF5A5F',
-        buy: '#C77DFF',
-        trim: '#FFB84D',
-        cash: '#7C8B9A',
-        neutral: '#3A4553',
+        gain: 'rgb(var(--gain) / <alpha-value>)',
+        loss: 'rgb(var(--loss) / <alpha-value>)',
+        buy: 'rgb(var(--buy) / <alpha-value>)',
+        trim: 'rgb(var(--trim) / <alpha-value>)',
+        cash: 'rgb(var(--cash) / <alpha-value>)',
+        neutral: 'rgb(var(--neutral) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"PingFang SC"', 'system-ui', 'sans-serif'],

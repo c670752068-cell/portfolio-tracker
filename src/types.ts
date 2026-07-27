@@ -553,32 +553,55 @@ export interface QuantRegimeStatistic {
   horizon_conflict?: boolean;
   horizon_conflict_gap_pct?: number | null;
   horizon_conflict_note?: string | null;
+  bear_included?: boolean;
 }
 
 export interface QuantRegimeGridCell {
-  pe_bucket_index: number;
-  cnn_bucket_index: number;
-  pe_bucket: string;
-  cnn_bucket: string;
+  row_bucket_index: number;
+  col_bucket_index: number;
+  row_bucket: string;
+  col_bucket: string;
   n: number;
+  bear_included: boolean;
   reference_benchmark: string;
   reference_horizon_days: number;
   reference: QuantRegimeStatistic | null;
+  statistics?: Record<string, Record<string, QuantRegimeStatistic>>;
 }
 
 export interface QuantRegimeStatus {
   available: boolean;
   reason?: string;
   evaluated_at?: string;
+  headline?: string;
+  axes?: {
+    row: 'drawdown_from_high';
+    column: 'vix_percentile_1y';
+  };
   current?: {
-    pe: number;
-    pe_percentile_5y: number;
-    pe_bucket_index: number;
-    pe_bucket: string;
-    cnn_score: number;
-    cnn_bucket_index: number;
-    cnn_bucket: string;
-    regime_label: string;
+    primary: {
+      symbol: string;
+      drawdown_pct: number;
+      vix_value: number;
+      vix_percentile_1y: number;
+      vix_is_proxy: boolean;
+      row_bucket_index: number;
+      row_bucket: string;
+      col_bucket_index: number;
+      col_bucket: string;
+      cell_label: string;
+    };
+    overlay: {
+      overlay_available: boolean;
+      participates_in_grid: false;
+      pe: number | null;
+      pe_percentile_5y: number | null;
+      pe_zone: string | null;
+      cnn_score: number | null;
+      cnn_rating: string | null;
+      overlay_note: string;
+    };
+    cell_stats: Record<string, Record<string, QuantRegimeStatistic>>;
   };
   grid?: readonly (readonly QuantRegimeGridCell[])[];
   divergence?: {
@@ -601,7 +624,8 @@ export interface QuantRegimeStatus {
   position_advice?: {
     current_risk_position_pct: number;
     matrix_target_pct: number;
-    divergence_adjusted_target_pct: number;
+    overlay_adjusted_target_pct: number;
+    overlay_adjustment_pct: number;
     vix_adjusted_target_pct?: number;
     vix_adjustment_pct?: number;
     suggested_total_pct: number;
@@ -609,7 +633,7 @@ export interface QuantRegimeStatus {
     gap_pct: number;
     gap_usd: number;
     action_text: string;
-    divergence_note: string | null;
+    overlay_note: string | null;
     vix_note?: string | null;
     capped_by_max_step: boolean;
     max_step_pct: number;
@@ -622,15 +646,21 @@ export interface QuantRegimeStatus {
     disclaimer: string;
   };
   data_quality?: {
-    joint_sample_days: number;
-    joint_start: string | null;
-    joint_end: string | null;
-    raw_pe_observations: number;
-    raw_cnn_observations: number;
-    pe_interpolated: boolean;
-    cnn_history_span: string;
+    grid_sample_days: number;
+    grid_start: string | null;
+    grid_end: string | null;
+    vix_observations: number;
+    is_proxy: boolean;
+    vix_source?: {
+      provider: string;
+      kind: string;
+      is_proxy: boolean;
+      usage_note?: string;
+    };
     caveat: string;
     joint_span_days?: number;
+    joint_span_start?: string | null;
+    joint_span_end?: string | null;
     bear_sample_included?: boolean;
     conclusion_allowed?: boolean;
     insufficient_reason?: string | null;
@@ -638,6 +668,11 @@ export interface QuantRegimeStatus {
     qqq_span_return_pct?: number | null;
     qqq_span_max_drawdown_pct?: number | null;
     headline_caveat?: string | null;
+  };
+  legacy_pe_cnn_grid?: {
+    deprecated: boolean;
+    display: boolean;
+    reason: string;
   };
 }
 
