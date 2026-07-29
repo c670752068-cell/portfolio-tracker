@@ -462,6 +462,24 @@ export interface QuantBuyPlan {
     passed: boolean;
     note: string;
   };
+  buy_sizing?: {
+    suggested_usd: number | null;
+    gate?: {
+      passed: boolean;
+      reason: string;
+    };
+    risk_context?: {
+      total_effective_pct: number;
+      total_cash_pct: number;
+      sleeve: {
+        name: string;
+        effective_pct: number;
+        cash_pct: number;
+        hard_cap_pct: number;
+        over_hard_cap_usd: number;
+      };
+    };
+  };
 }
 
 export interface QuantBuyPlanStatus {

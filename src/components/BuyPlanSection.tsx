@@ -236,6 +236,12 @@ function PlanCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const sizing = plan.buy_sizing;
+  const risk = sizing?.risk_context;
+  const gatePassed = sizing?.gate?.passed ?? plan.position_gate.passed;
+  const gateNote = sizing?.gate?.reason ?? plan.position_gate.note;
+  const proposedAmount = sizing?.suggested_usd ?? plan.action_amount_usd;
+  const isHardCapBlocked = (risk?.sleeve.over_hard_cap_usd ?? 0) > 0;
   const readyStyle = plan.ready ? 'border-buy/60 bg-buy/10' : 'border-neutral/40 bg-surface-overlay/35';
   return (
     <article className={`rounded-xl border p-4 ${readyStyle}`}>
@@ -268,12 +274,21 @@ function PlanCard({
       </div>
       <div className="mt-4 border-t border-neutral/30 pt-3 text-xs">
         <div className="font-mono tabular-nums text-ink-secondary">
-          {plan.action_amount_usd === null
+          {proposedAmount === null
             ? `${plan.action_text} · 金额待量化同步`
-            : `触发时：$${plan.action_amount_usd.toLocaleString('en-US', { maximumFractionDigits: 2 })}（账户 ${plan.buy_pct_of_nav}%）`}
+            : sizing
+              ? `当前仓位门额度：$${proposedAmount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+            : `触发时：$${proposedAmount.toLocaleString('en-US', { maximumFractionDigits: 2 })}（账户 ${plan.buy_pct_of_nav}%）`}
         </div>
-        <div className={`mt-2 rounded-lg px-3 py-2 ${plan.position_gate.passed ? 'bg-buy/10 text-buy' : 'bg-trim/10 text-trim'}`}>
-          {plan.position_gate.passed ? '仓位门通过：' : '仓位门未过：'}{plan.position_gate.note}
+        {risk && (
+          <div className="mt-2 rounded-lg border border-neutral/30 bg-surface-overlay/45 px-3 py-2 font-mono tabular-nums text-ink-secondary">
+            <div>等效敞口 {risk.total_effective_pct.toFixed(2)}% · 实付现金 {risk.total_cash_pct.toFixed(2)}%</div>
+            <div className="mt-1">{risk.sleeve.name}：等效 {risk.sleeve.effective_pct.toFixed(2)}% · 现金 {risk.sleeve.cash_pct.toFixed(2)}%</div>
+          </div>
+        )}
+        <div className={`mt-2 rounded-lg px-3 py-2 ${gatePassed ? 'bg-buy/10 text-buy' : 'bg-trim/10 text-trim'}`}>
+          {isHardCapBlocked ? '本轮不建议新增：' : gatePassed ? '仓位门通过：' : '仓位门未过：'}{gateNote}
+          {isHardCapBlocked && <span className="ml-1 font-mono tabular-nums">（{risk!.sleeve.name}超硬顶 {risk!.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
         </div>
       </div>
     </article>

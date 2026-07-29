@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { QuantAnalysisSnapshot } from '../types';
+import type { QuantAnalysisSnapshot, QuantBuyPlan } from '../types';
 import { ValuationPanel } from './ValuationPanel';
 
 const snapshot = {
@@ -324,6 +324,33 @@ describe('ValuationPanel', () => {
     expect(html).toContain('建议总仓位，不是单笔金额');
     expect(html).toContain('当前状态已在上方结论卡显示');
     expect(html).not.toContain('行 = 估值高低（PE 分位）');
+  });
+
+  it('renders the backend-provided dual risk context and blocked amount on a buy plan', () => {
+    const plan = {
+      ...snapshot.buy_plan_status!.plans[0],
+      buy_sizing: {
+        suggested_usd: 0,
+        gate: { passed: false, reason: '科技已超硬顶，不建议新增' },
+        risk_context: {
+          total_effective_pct: 200.84,
+          total_cash_pct: 67.85,
+          sleeve: { name: '科技', effective_pct: 91.23, cash_pct: 54.04, hard_cap_pct: 75, over_hard_cap_usd: 22746.78 },
+        },
+      },
+    } as unknown as QuantBuyPlan;
+    const html = renderToStaticMarkup(
+      <ValuationPanel
+        snapshot={{ ...snapshot, buy_plan_status: { ...snapshot.buy_plan_status!, plans: [plan] } }}
+        onDirtyChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('等效敞口 200.84%');
+    expect(html).toContain('实付现金 67.85%');
+    expect(html).toContain('科技超硬顶 75.00%');
+    expect(html).toContain('本轮不建议新增');
+    expect(html).toContain('当前仓位门额度：$0');
   });
 
   it('degrades honestly when the backend fields are not ready', () => {
