@@ -1,4 +1,4 @@
-import type { DisplayCurrency, ExchangeRates, PortfolioMetrics } from '../types';
+import type { DisplayCurrency, ExchangeRates, PortfolioMetrics, QuantAnalysisSnapshot } from '../types';
 import { formatPct, formatSignedPct } from '../format';
 import { formatDisplayMoney } from '../displayCurrency';
 import { convertFromUsd } from '../displayCurrency';
@@ -39,9 +39,10 @@ interface SummaryProps {
   canOneTapRefresh: boolean;
   oneTapCooldownSeconds: number;
   onOneTapRefresh: () => void;
+  analysisSnapshot?: QuantAnalysisSnapshot | null;
 }
 
-export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, dayChangeStatusText, canRefreshQuotes, onRefreshQuotes, exposureTargetPct, quantStatus, quantSyncEnabled, quantGatewayAvailable, quantTokenConfigured, onRefreshQuant, oneTapRefreshState, canOneTapRefresh, oneTapCooldownSeconds, onOneTapRefresh }: SummaryProps) {
+export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChange, valueHistory, rateError, quoteStatus, dayChangeStatusText, canRefreshQuotes, onRefreshQuotes, exposureTargetPct, quantStatus, quantSyncEnabled, quantGatewayAvailable, quantTokenConfigured, onRefreshQuant, oneTapRefreshState, canOneTapRefresh, oneTapCooldownSeconds, onOneTapRefresh, analysisSnapshot }: SummaryProps) {
   const dayClass =
     metrics.dayChange > 0 ? 'text-gain' : metrics.dayChange < 0 ? 'text-loss' : 'text-ink-secondary';
   const dayAccentClass =
@@ -164,6 +165,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
           )}
         </Card>
       )}
+      <RiskOverview snapshot={analysisSnapshot} displayCurrency={displayCurrency} rates={rates} />
       <div className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 text-xs md:col-span-4">
         <label className="font-medium text-ink-primary">
           显示货币：
@@ -231,6 +233,59 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
       </div>
     </div>
   );
+}
+
+function RiskOverview({ snapshot, displayCurrency, rates }: { snapshot?: QuantAnalysisSnapshot | null; displayCurrency: DisplayCurrency; rates: ExchangeRates }) {
+  const ammo = snapshot?.ammo_overview;
+  const maxLoss = snapshot?.max_loss;
+  const options = snapshot?.option_exposure;
+  const sleeves = snapshot?.sleeve_status;
+  const allocation = snapshot?.allocation_plan;
+  const dips = snapshot?.dip_status;
+  if (!ammo && !maxLoss && !options && !sleeves && !allocation && !dips) return null;
+  const power = ammo?.buying_power;
+  const sleeveRows = sleeves ? ['tech', 'options', 'broad_dow'].flatMap((key) => sleeves[key] ? [[key, sleeves[key]] as const] : []) : [];
+  return (
+    <section className="grid gap-4 md:col-span-4 lg:grid-cols-2" aria-label="账户风险与资金总览">
+      <div className="rounded-2xl border border-neutral/50 bg-surface-raised p-4">
+        <div className="text-sm font-semibold text-ink-primary">风险总览</div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <RiskMetric label="等效敞口" value={formatDisplayMoney(ammo?.exposure?.effective_usd ?? 0, displayCurrency, rates)} sub={ammo?.exposure?.effective_pct !== undefined ? `${ammo.exposure.effective_pct.toFixed(2)}% 净值` : '暂无'} />
+          <RiskMetric label="最大可损" value={formatDisplayMoney(maxLoss?.total_usd ?? 0, displayCurrency, rates)} sub={maxLoss?.pct_of_nav !== undefined ? `${maxLoss.pct_of_nav.toFixed(2)}% 净值` : '暂无'} tone="trim" />
+        </div>
+        <div className="mt-3 rounded-xl border border-neutral/35 bg-surface-overlay/60 p-3">
+          <div className="text-xs font-medium text-ink-primary">弹药总览</div>
+          <div className="mt-2 grid grid-cols-3 gap-2 font-mono text-xs tabular-nums text-ink-secondary">
+            <span>正股 {formatDisplayMoney(power?.by_underlying_usd ?? 0, displayCurrency, rates)}</span>
+            <span>2× {formatDisplayMoney(power?.by_2x_usd ?? 0, displayCurrency, rates)}</span>
+            <span>3× {formatDisplayMoney(power?.by_3x_usd ?? 0, displayCurrency, rates)}</span>
+          </div>
+          {power?.headline && <p className="mt-2 text-xs leading-relaxed text-trim">{power.headline}</p>}
+          {ammo?.top_consumers?.length ? <p className="mt-2 font-mono text-[11px] tabular-nums text-ink-muted">主要敞口：{ammo.top_consumers.map((item) => `${item.symbol} ${item.pct_of_nav.toFixed(2)}%`).join(' · ')}</p> : null}
+        </div>
+      </div>
+      <div className="rounded-2xl border border-neutral/50 bg-surface-raised p-4">
+        <div className="text-sm font-semibold text-ink-primary">目标配比 65/5/30</div>
+        <div className="mt-3 space-y-3">
+          {sleeveRows.map(([name, row]) => <SleeveBar key={name} name={name} pct={row.pct} target={row.target_pct} />)}
+        </div>
+        {allocation?.by_sleeve?.length ? <div className="mt-4 border-t border-neutral/35 pt-3 text-xs text-ink-secondary"><div className="font-medium text-ink-primary">弹药定向</div>{allocation.by_sleeve.slice(0, 3).map((item) => <div key={item.sleeve} className="mt-1 flex justify-between gap-2"><span>{item.priority ? `优先 ${item.priority} · ` : ''}{item.sleeve}</span><span className="font-mono tabular-nums">{formatDisplayMoney(item.suggested_usd ?? 0, displayCurrency, rates)}{item.candidates?.length ? ` · ${item.candidates.map((candidate) => candidate.symbol).join('/')}` : ''}</span></div>)}</div> : null}
+      </div>
+      {options && <details className="rounded-2xl border border-neutral/50 bg-surface-raised p-4 lg:col-span-2"><summary className="cursor-pointer text-sm font-semibold text-ink-primary">期权风险专区 · Delta 敞口 {formatDisplayMoney(options.delta_exposure_usd ?? 0, displayCurrency, rates)}</summary><div className="mt-3 grid gap-3 sm:grid-cols-3"><RiskMetric label="权利金" value={formatDisplayMoney(options.premium_usd ?? 0, displayCurrency, rates)} sub={`${(options.premium_pct_of_nav ?? 0).toFixed(2)}% / 上限 ${(options.premium_cap_pct ?? 0).toFixed(2)}%`} tone={options.over_limit ? 'trim' : undefined} />{options.items?.map((item, index) => <RiskMetric key={`${item.symbol}-${index}`} label={`${item.symbol} · ${item.delta_source === 'broker' ? '券商 Delta' : '估算 Delta'}`} value={formatDisplayMoney(item.delta_notional_usd ?? 0, displayCurrency, rates)} sub={item.days_to_expiry === null || item.days_to_expiry === undefined ? '到期日暂无' : `距到期 ${item.days_to_expiry} 天`} tone={item.status === 'critical' ? 'trim' : undefined} />)}</div></details>}
+      {dips && Object.entries(dips).map(([symbol, status]) => <div key={symbol} className="rounded-2xl border border-buy/30 bg-buy/5 p-4 text-sm leading-relaxed text-ink-primary lg:col-span-2"><span className="font-mono font-semibold tabular-nums">{symbol}</span> · {status.companion_text || '暂无分批进度'}<div className="mt-1 font-mono text-xs tabular-nums text-ink-secondary">计划剩余 {formatDisplayMoney(status.ammo?.remaining_usd ?? 0, displayCurrency, rates)} · 账户可动用 {formatDisplayMoney(status.ammo?.account_gate?.allowed_usd ?? 0, displayCurrency, rates)}</div></div>)}
+    </section>
+  );
+}
+
+function RiskMetric({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: 'trim' }) {
+  return <div className="rounded-xl border border-neutral/35 bg-surface-overlay/60 p-3"><div className="text-xs text-ink-secondary">{label}</div><div className={`mt-1 font-mono text-lg font-semibold tabular-nums ${tone === 'trim' ? 'text-trim' : 'text-ink-primary'}`}>{value}</div><div className="mt-1 font-mono text-[11px] tabular-nums text-ink-secondary">{sub}</div></div>;
+}
+
+function SleeveBar({ name, pct, target }: { name: string; pct?: number; target?: number }) {
+  const current = Math.max(0, pct ?? 0);
+  const targetPct = Math.max(0, target ?? 0);
+  const width = Math.min(100, current);
+  return <div><div className="flex justify-between gap-2 text-xs"><span className="text-ink-primary">{name}</span><span className="font-mono tabular-nums text-ink-secondary">{current.toFixed(2)}% / {targetPct.toFixed(2)}%</span></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-overlay"><div className="h-full rounded-full bg-buy transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${width}%` }} /></div></div>;
 }
 
 interface CardProps {

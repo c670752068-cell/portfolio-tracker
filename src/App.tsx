@@ -611,6 +611,7 @@ export default function App() {
             canOneTapRefresh={hasServerGateway() && Boolean(settings.quantSyncToken.trim())}
             oneTapCooldownSeconds={oneTapCooldownSeconds}
             onOneTapRefresh={refreshEverything}
+            analysisSnapshot={quantAnalysis}
           />
           <BehaviorMirrorCard mirror={quantAnalysis?.behavior_mirror} />
           {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} onUndo={undoLastImport} />}

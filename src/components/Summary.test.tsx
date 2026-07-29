@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { computeMetrics } from '../metrics';
-import type { ExchangeRates } from '../types';
+import type { ExchangeRates, QuantAnalysisSnapshot } from '../types';
 import { Summary } from './Summary';
 
 const rates: ExchangeRates = {
@@ -22,6 +22,37 @@ const quantProps = {
 };
 
 describe('Summary cards', () => {
+  it('renders server risk, ammunition, sleeve, option, and dip data without inventing a buy amount', () => {
+    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-28T12:00:00Z', rule_version: 'test', disclaimer: 'test', context: {}, symbols: {},
+      ammo_overview: {
+        buying_power: { by_underlying_usd: 0, by_2x_usd: 0, by_3x_usd: 0, binding_constraint: 'exposure_cap', headline: '按当前敞口上限，暂无新增买入空间（有钱但没额度——杠杆已占满敞口）' },
+        top_consumers: [{ symbol: 'TQQQ', effective_usd: 59_286, pct_of_nav: 42.3 }],
+      },
+      max_loss: { total_usd: 43_000, pct_of_nav: 30.7 },
+      option_exposure: { premium_usd: 13_519, premium_pct_of_nav: 9.6, premium_cap_pct: 5, over_limit: true, delta_exposure_usd: 71_000, items: [{ symbol: 'MSFT', delta: 0.5, delta_source: 'estimated', delta_notional_usd: 20_000, days_to_expiry: 18, status: 'critical' }] },
+      sleeve_status: { tech: { pct: 87.1, target_pct: 65, deviation_pp: 22.1 }, options: { pct: 9.6, target_pct: 5, deviation_pp: 4.6 }, broad_dow: { pct: 0.6, target_pct: 30, deviation_pp: -29.4 } },
+      allocation_plan: { total_available_usd: 0, by_sleeve: [{ sleeve: 'broad_dow', priority: 1, suggested_usd: 0, candidates: [{ symbol: 'UPRO' }] }] },
+      dip_status: { SOXL: { companion_text: '不必猜最低点。还有 2 批。', ammo: { remaining_usd: 8_400, account_gate: { allowed_usd: 0 } } } },
+    } as unknown as QuantAnalysisSnapshot;
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        analysisSnapshot={snapshot} {...quantProps}
+      />,
+    );
+    expect(html).toContain('等效敞口');
+    expect(html).toContain('最大可损');
+    expect(html).toContain('有钱但没额度——杠杆已占满敞口');
+    expect(html).toContain('65/5/30');
+    expect(html).toContain('期权风险专区');
+    expect(html).toContain('不必猜最低点');
+    expect(html).not.toContain('可以买入');
+  });
+
   it('omits the misleading total PnL card while retaining portfolio value cards', () => {
     const metrics = computeMetrics({
       holdings: [{

@@ -720,6 +720,32 @@ export interface QuantAnalysisFreshness {
   buy_plan_evaluated_at: string | null;
 }
 
+export interface QuantPortfolioRisk {
+  ammo_overview?: {
+    exposure?: { effective_usd?: number; effective_pct?: number };
+    buying_power?: {
+      by_underlying_usd?: number;
+      by_2x_usd?: number;
+      by_3x_usd?: number;
+      binding_constraint?: string;
+      headline?: string;
+    };
+    top_consumers?: Array<{ symbol: string; effective_usd: number; pct_of_nav: number }>;
+  };
+  max_loss?: { total_usd?: number; pct_of_nav?: number };
+  option_exposure?: {
+    premium_usd?: number;
+    premium_pct_of_nav?: number;
+    premium_cap_pct?: number;
+    over_limit?: boolean;
+    delta_exposure_usd?: number;
+    items?: Array<{ symbol: string; delta?: number; delta_source?: string; delta_notional_usd?: number; days_to_expiry?: number | null; status?: string }>;
+  };
+  sleeve_status?: Record<string, { pct?: number; target_pct?: number; deviation_pp?: number }>;
+  allocation_plan?: { total_available_usd?: number; by_sleeve?: Array<{ sleeve: string; priority?: number; suggested_usd?: number; candidates?: Array<{ symbol: string }> }> };
+  dip_status?: Record<string, { companion_text?: string; ammo?: { remaining_usd?: number; account_gate?: { allowed_usd?: number } } }>;
+}
+
 export interface QuantAnalysisSnapshot {
   source: 'futu-assistant';
   generated_at: string;
@@ -739,6 +765,12 @@ export interface QuantAnalysisSnapshot {
   today_verdict?: QuantTodayVerdict | null;
   behavior_mirror?: QuantBehaviorMirror | null;
   freshness?: QuantAnalysisFreshness;
+  ammo_overview?: QuantPortfolioRisk['ammo_overview'];
+  max_loss?: QuantPortfolioRisk['max_loss'];
+  option_exposure?: QuantPortfolioRisk['option_exposure'];
+  sleeve_status?: QuantPortfolioRisk['sleeve_status'];
+  allocation_plan?: QuantPortfolioRisk['allocation_plan'];
+  dip_status?: QuantPortfolioRisk['dip_status'];
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */
