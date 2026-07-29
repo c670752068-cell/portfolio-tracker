@@ -414,6 +414,9 @@ export interface QuantValuationTab {
     history: readonly QuantValuationHistoryPoint[];
     source: string;
     as_of: string | null;
+    stale?: boolean;
+    stale_days?: number | null;
+    gate_available?: boolean;
     realtime_estimate: {
       pe: number;
       basis: string;
@@ -434,6 +437,30 @@ export interface QuantValuationTab {
   };
   anchors: readonly QuantValuationAnchor[];
   distance_to_anchors: readonly QuantValuationDistance[];
+}
+
+export interface QuantForwardPeEntry {
+  current: number | null;
+  percentile: number | null;
+  percentile_unavailable_reason: string | null;
+  series: readonly { date: string; value: number }[];
+  series_start: string | null;
+  series_end: string | null;
+  constituents_used: number;
+  constituents_excluded: number;
+  weight_coverage_pct: number | null;
+}
+
+export interface QuantForwardPeHistory {
+  generated_at: string;
+  metric: 'forward_pe';
+  frequency: 'daily';
+  method: string;
+  approximation_note: string;
+  history_ready: boolean;
+  history_days: number;
+  history_days_required: number;
+  symbols: Record<string, QuantForwardPeEntry>;
 }
 
 export interface QuantBuyPlanCondition {
@@ -805,6 +832,7 @@ export interface QuantAnalysisSnapshot {
   sell?: QuantSellSnapshot;
   summary?: QuantOpportunitySummary;
   pe_history?: PeHistoryPayload;
+  pe_history_forward?: QuantForwardPeHistory;
   valuation_tab?: QuantValuationTab;
   buy_plan_status?: QuantBuyPlanStatus;
   regime_status?: QuantRegimeStatus;

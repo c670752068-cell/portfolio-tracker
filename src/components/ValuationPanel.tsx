@@ -38,7 +38,11 @@ export function ValuationPanel({ snapshot, onDirtyChange }: ValuationPanelProps)
       <CurrentIndicators valuation={valuation} vix={vixContext(snapshot)} />
       <VixStudySection study={snapshot.vix_study} context={vixContext(snapshot)} />
       <RegimeSection regime={snapshot.regime_status} />
-      <ValuationCharts valuation={valuation} />
+      <ValuationCharts
+        valuation={valuation}
+        ttmHistory={snapshot.pe_history}
+        forwardHistory={snapshot.pe_history_forward}
+      />
       <DistanceSection valuation={valuation} />
       {snapshot.buy_plan_status ? (
         <BuyPlanSection snapshot={snapshot} onDirtyChange={onDirtyChange} />
@@ -96,6 +100,12 @@ function CurrentIndicators({
             {' '}（QQQ {sessionText(valuation.ndx.realtime_estimate.price_session)}价；盈利基数按季更新）
             <div className="mt-1 text-ink-muted">{valuation.ndx.realtime_estimate.note}</div>
           </div>
+        )}
+        {valuation.ndx.stale && (
+          <p className="mt-3 rounded-lg border border-trim/40 bg-trim/10 px-3 py-2 text-xs leading-relaxed text-ink-secondary">
+            ⚠ 数据停留在 {valuation.ndx.as_of ?? '未知日期'}（{valuation.ndx.stale_days ?? 0} 天前）
+            {valuation.ndx.gate_available === false ? '；估值闸门当前不可判定' : ''}
+          </p>
         )}
       </IndicatorCard>
       <IndicatorCard

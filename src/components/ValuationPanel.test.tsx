@@ -306,7 +306,7 @@ describe('ValuationPanel', () => {
     expect(html).toContain('波动率与胜率研究');
     expect(html).toContain('集中于「疫情崩盘」');
     expect(html).toContain('历史统计不代表未来收益');
-    expect(html).toContain('三年 PE 走势');
+    expect(html).toContain('1 年 PE 走势');
     expect(html).toContain('CNN 恐慌贪婪 · 近1年');
     expect(html).toContain('还差多少');
     expect(html).toContain('按当前盈利基数估算');
