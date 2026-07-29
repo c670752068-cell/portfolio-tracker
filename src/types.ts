@@ -751,7 +751,9 @@ export interface QuantSleeveMetric {
   usd?: number;
   pct?: number;
   zone?: 'empty' | 'under' | 'on_target' | 'borrowing' | 'over_hard_cap' | string;
+  over_baseline_usd?: number;
   over_hard_cap_usd?: number;
+  gap_usd?: number;
   lent_pp?: number;
   available_target_pct?: number;
 }

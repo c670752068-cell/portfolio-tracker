@@ -5,6 +5,7 @@ import { convertFromUsd } from '../displayCurrency';
 import { Line, LineChart, ResponsiveContainer } from 'recharts';
 import type { ValuePoint } from '../valueHistory';
 import type { OneTapRefreshState } from '../oneTapRefresh';
+import { useState } from 'react';
 
 interface SummaryProps {
   metrics: PortfolioMetrics;
@@ -242,6 +243,7 @@ function RiskOverview({ snapshot, displayCurrency, rates }: { snapshot?: QuantAn
   const sleeves = snapshot?.sleeve_status;
   const allocation = snapshot?.allocation_plan;
   const dips = snapshot?.dip_status;
+  const [displayBasis, setDisplayBasis] = useState<'both' | 'effective' | 'cash'>('both');
   if (!ammo && !maxLoss && !options && !sleeves && !allocation && !dips) return null;
   const power = ammo?.buying_power;
   const sleeveRows = sleeves ? ['tech', 'options', 'broad_dow', 'other'].flatMap((key) => sleeves[key] ? [[key, sleeves[key]] as const] : []) : [];
@@ -266,10 +268,17 @@ function RiskOverview({ snapshot, displayCurrency, rates }: { snapshot?: QuantAn
         </div>
       </div>
       <div className="rounded-2xl border border-neutral/50 bg-surface-raised p-4">
-        <div className="text-sm font-semibold text-ink-primary">目标配比 65/5/25/5</div>
-        <p className="mt-1 text-xs leading-relaxed text-ink-secondary">上层为等效敞口、底层为实付现金；同一基准分别计量，不混算。</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-ink-primary">目标配比 65/5/25/5</div>
+          <div className="inline-flex rounded-lg border border-neutral/45 bg-surface-overlay p-0.5 text-[11px]" aria-label="配比口径显示">
+            {([['both', '双显'], ['effective', '等效'], ['cash', '现金']] as const).map(([basis, label]) => (
+              <button key={basis} type="button" onClick={() => setDisplayBasis(basis)} className={`rounded-md px-2 py-1 font-medium ${displayBasis === basis ? 'bg-surface-raised text-ink-primary shadow-sm' : 'text-ink-secondary hover:text-ink-primary'}`}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <p className="mt-1 text-xs leading-relaxed text-ink-secondary">上粗条为等效敞口、下细条为实付现金；同一基准分别计量，不混算。</p>
         <div className="mt-3 space-y-3">
-          {sleeveRows.map(([name, row]) => <SleeveBar key={name} name={name} row={row} />)}
+          {sleeveRows.map(([name, row]) => <SleeveBar key={name} name={name} row={row} displayBasis={displayBasis} />)}
         </div>
         {allocation?.by_sleeve?.length ? <div className="mt-4 border-t border-neutral/35 pt-3 text-xs text-ink-secondary"><div className="font-medium text-ink-primary">弹药定向</div>{allocation.by_sleeve.slice(0, 3).map((item) => <div key={item.sleeve} className="mt-1 flex justify-between gap-2"><span>{item.priority ? `优先 ${item.priority} · ` : ''}{item.sleeve}</span><span className="font-mono tabular-nums">{formatDisplayMoney(item.suggested_usd ?? 0, displayCurrency, rates)}{item.candidates?.length ? ` · ${item.candidates.map((candidate) => candidate.symbol).join('/')}` : ''}</span></div>)}</div> : null}
       </div>
@@ -283,15 +292,43 @@ function RiskMetric({ label, value, sub, tone }: { label: string; value: string;
   return <div className="rounded-xl border border-neutral/35 bg-surface-overlay/60 p-3"><div className="text-xs text-ink-secondary">{label}</div><div className={`mt-1 font-mono text-lg font-semibold tabular-nums ${tone === 'trim' ? 'text-trim' : 'text-ink-primary'}`}>{value}</div><div className="mt-1 font-mono text-[11px] tabular-nums text-ink-secondary">{sub}</div></div>;
 }
 
-function SleeveBar({ name, row }: { name: string; row: QuantSleeveStatus }) {
+function SleeveBar({ name, row, displayBasis }: { name: string; row: QuantSleeveStatus; displayBasis: 'both' | 'effective' | 'cash' }) {
   const labels: Record<string, string> = { tech: '科技', options: '期权', broad_dow: '宽基+道指', other: '其他' };
   const target = Math.max(0, row.baseline_pct ?? row.target_pct ?? 0);
   const effective = Math.max(0, row.effective?.pct ?? row.pct ?? 0);
   const cash = Math.max(0, row.cash?.pct ?? 0);
   const zone = row.effective?.zone;
+  const hardCap = row.hard_cap_pct ?? null;
+  const effectiveAvailableTarget = name === 'broad_dow' ? row.effective?.available_target_pct ?? row.available_target_pct : undefined;
+  const cashAvailableTarget = name === 'broad_dow' ? row.cash?.available_target_pct ?? row.available_target_pct : undefined;
   const effectiveClass = zone === 'over_hard_cap' ? 'bg-loss' : zone === 'borrowing' ? 'bg-trim' : zone === 'on_target' ? 'bg-buy' : 'bg-cash';
   const status = zone === 'over_hard_cap' ? '超硬顶' : zone === 'borrowing' ? '借用中' : zone === 'on_target' ? '在基准内' : zone === 'empty' ? '待补' : '低于基准';
-  return <div className="rounded-xl border border-neutral/25 bg-surface-overlay/35 p-3"><div className="flex items-start justify-between gap-2 text-xs"><div><span className="font-medium text-ink-primary">{labels[name] ?? name}</span><span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${zone === 'over_hard_cap' ? 'bg-loss/10 text-loss' : zone === 'borrowing' ? 'bg-trim/10 text-trim' : 'bg-neutral/25 text-ink-secondary'}`}>{status}</span></div><span className="font-mono tabular-nums text-ink-secondary">基准 {target.toFixed(2)}%{row.hard_cap_pct !== null && row.hard_cap_pct !== undefined ? ` · 硬顶 ${row.hard_cap_pct.toFixed(2)}%` : ''}</span></div><div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums"><span className="text-ink-primary">等效 {effective.toFixed(2)}%</span><span className="text-cash">现金 {cash.toFixed(2)}%</span></div><div className="relative mt-2 h-3 overflow-hidden rounded-full bg-surface-base" aria-label={`${labels[name] ?? name} 双口径进度条`}><div className="absolute inset-y-0 left-0 bg-cash/55 transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${Math.min(100, cash)}%` }} /><div className={`absolute left-0 top-0 h-1.5 rounded-r-full ${effectiveClass} transition-[width] duration-200 ease-out motion-reduce:transition-none`} style={{ width: `${Math.min(100, effective)}%` }} /><span className="absolute inset-y-0 w-px bg-ink-primary/70" style={{ left: `${Math.min(100, target)}%` }} /></div>{name === 'broad_dow' && row.lent_pp !== undefined ? <p className="mt-2 text-[11px] text-trim">已被科技借走 {row.lent_pp.toFixed(2)}pp · 可用目标 {row.available_target_pct?.toFixed(2) ?? target.toFixed(2)}%</p> : null}{name === 'tech' && row.borrowed_pp ? <p className="mt-2 text-[11px] text-trim">已使用借额 {row.borrowed_pp.toFixed(2)}pp · 剩余 {row.borrow_room_pp?.toFixed(2) ?? 0}pp</p> : null}{row.note ? <p className="mt-2 text-[11px] leading-relaxed text-ink-secondary">{row.note}</p> : null}</div>;
+  const metricLine = (label: string, metric: typeof row.effective) => (
+    <p className="mt-1 font-mono text-[10px] leading-relaxed tabular-nums text-ink-secondary">
+      {label}：超基准 ${metric?.over_baseline_usd?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? '0'} · 超硬顶 ${metric?.over_hard_cap_usd?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? '0'} · 缺口 ${metric?.gap_usd?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? '0'}
+    </p>
+  );
+  return <div className="rounded-xl border border-neutral/25 bg-surface-overlay/35 p-3">
+    <div className="flex items-start justify-between gap-2 text-xs"><div><span className="font-medium text-ink-primary">{labels[name] ?? name}</span><span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${zone === 'over_hard_cap' ? 'bg-loss/10 text-loss' : zone === 'borrowing' ? 'bg-trim/10 text-trim' : 'bg-neutral/25 text-ink-secondary'}`}>{status}</span></div><span className="font-mono tabular-nums text-ink-secondary">基准 {target.toFixed(2)}%{hardCap !== null ? ` · 硬顶 ${hardCap.toFixed(2)}%` : ''}</span></div>
+    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums"><span className="text-ink-primary">等效 {effective.toFixed(2)}%</span><span className="text-cash">现金 {cash.toFixed(2)}%</span></div>
+    <div className="relative mt-2 h-5 overflow-hidden rounded-full border border-neutral/30 bg-surface-base" aria-label={`${labels[name] ?? name} 双口径进度条`}>
+      {hardCap !== null && hardCap > target && <div className="absolute inset-y-0 bg-trim/12" style={{ left: `${Math.min(100, target)}%`, width: `${Math.min(100, hardCap) - Math.min(100, target)}%` }} />}
+      {effectiveAvailableTarget !== undefined && <div className="absolute inset-y-0 bg-trim/10" style={{ left: `${Math.min(100, effectiveAvailableTarget)}%`, width: `${Math.max(0, Math.min(100, target) - Math.min(100, effectiveAvailableTarget))}%` }} />}
+      {displayBasis !== 'effective' && <div className="absolute bottom-0 left-0 h-1.5 bg-cash/65 transition-[width] duration-200 ease-out motion-reduce:transition-none" style={{ width: `${Math.min(100, cash)}%` }} />}
+      {displayBasis !== 'cash' && <div className={`absolute left-0 top-0 h-2.5 ${effectiveClass} transition-[width] duration-200 ease-out motion-reduce:transition-none`} style={{ width: `${Math.min(100, effective)}%` }} />}
+      {effectiveAvailableTarget !== undefined && <span className="absolute left-0 top-0 h-2.5 w-px border-l border-dashed border-trim/90" style={{ left: `${Math.min(100, effectiveAvailableTarget)}%` }} title={`等效可用目标 ${effectiveAvailableTarget.toFixed(2)}%`} />}
+      {cashAvailableTarget !== undefined && cashAvailableTarget !== effectiveAvailableTarget && <span className="absolute bottom-0 left-0 h-1.5 w-px border-l border-dashed border-cash" style={{ left: `${Math.min(100, cashAvailableTarget)}%` }} title={`现金可用目标 ${cashAvailableTarget.toFixed(2)}%`} />}
+      <span className="absolute inset-y-0 w-px bg-ink-primary/70" style={{ left: `${Math.min(100, target)}%` }} title={`基准 ${target.toFixed(2)}%`} />
+      {hardCap !== null && <span className="absolute inset-y-0 w-px bg-loss/90" style={{ left: `${Math.min(100, hardCap)}%` }} title={`硬顶 ${hardCap.toFixed(2)}%`} />}
+    </div>
+    <div className="mt-1 flex flex-wrap gap-x-2 font-mono text-[10px] tabular-nums text-ink-muted"><span>↑ 基准 {target.toFixed(0)}%</span>{hardCap !== null && <span className="text-loss">↑ 硬顶 {hardCap.toFixed(0)}%</span>}{effectiveAvailableTarget !== undefined && <span className="text-trim">↑ 等效目标 {effectiveAvailableTarget.toFixed(0)}%</span>}{cashAvailableTarget !== undefined && cashAvailableTarget !== effectiveAvailableTarget && <span className="text-cash">↓ 现金目标 {cashAvailableTarget.toFixed(0)}%</span>}</div>
+    {displayBasis !== 'cash' && metricLine('等效', row.effective)}
+    {displayBasis !== 'effective' && metricLine('现金', row.cash)}
+    {name === 'options' && <p className="mt-2 text-[11px] text-trim">禁区，不可借</p>}
+    {name === 'broad_dow' && row.lent_pp !== undefined ? <p className="mt-2 text-[11px] text-trim">已被科技借走 {row.lent_pp.toFixed(2)}pp · 等效可用目标 {effectiveAvailableTarget?.toFixed(2) ?? target.toFixed(2)}% · 现金可用目标 {cashAvailableTarget?.toFixed(2) ?? target.toFixed(2)}%</p> : null}
+    {name === 'tech' && row.borrowed_pp ? <p className="mt-2 text-[11px] text-trim">已使用借额 {row.borrowed_pp.toFixed(2)}pp · 剩余 {row.borrow_room_pp?.toFixed(2) ?? 0}pp</p> : null}
+    {row.note ? <p className="mt-2 text-[11px] leading-relaxed text-ink-secondary">{row.note}</p> : null}
+  </div>;
 }
 
 interface CardProps {

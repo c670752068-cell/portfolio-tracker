@@ -35,9 +35,9 @@ describe('Summary cards', () => {
       max_loss: { total_usd: 43_000, pct_of_nav: 30.7 },
       option_exposure: { premium_usd: 13_519, premium_pct_of_nav: 9.6, premium_cap_pct: 5, over_limit: true, delta_exposure_usd: 71_000, items: [{ symbol: 'MSFT', delta: 0.5, delta_source: 'estimated', delta_notional_usd: 20_000, days_to_expiry: 18, status: 'critical' }] },
       sleeve_status: {
-        tech: { baseline_pct: 65, hard_cap_pct: 75, borrowed_pp: 10, borrow_room_pp: 0, block_new_buy: true, effective: { pct: 91.22, zone: 'over_hard_cap', over_hard_cap_usd: 22_724 }, cash: { pct: 54.03, zone: 'under' } },
+        tech: { baseline_pct: 65, hard_cap_pct: 75, borrowed_pp: 10, borrow_room_pp: 0, block_new_buy: true, effective: { pct: 91.22, zone: 'over_hard_cap', over_baseline_usd: 36_757.77, over_hard_cap_usd: 22_724, gap_usd: 0 }, cash: { pct: 54.03, zone: 'under', over_baseline_usd: 0, over_hard_cap_usd: 0, gap_usd: 15_353.33 } },
         options: { baseline_pct: 5, hard_cap_pct: 5, block_new_buy: true, effective: { pct: 104.92, zone: 'over_hard_cap' }, cash: { pct: 9.58, zone: 'over_hard_cap' } },
-        broad_dow: { baseline_pct: 25, lent_pp: 10, available_target_pct: 15, effective: { pct: 0.71, zone: 'empty' }, cash: { pct: 0.24, zone: 'empty' } },
+        broad_dow: { baseline_pct: 25, lent_pp: 10, available_target_pct: 15, effective: { pct: 0.71, zone: 'empty', available_target_pct: 15 }, cash: { pct: 0.24, zone: 'empty', available_target_pct: 25 } },
       },
       allocation_plan: { total_available_usd: 0, by_sleeve: [{ sleeve: 'broad_dow', priority: 1, suggested_usd: 0, candidates: [{ symbol: 'UPRO' }] }] },
       dip_status: { SOXL: { companion_text: '不必猜最低点。还有 2 批。', ammo: { remaining_usd: 8_400, account_gate: { allowed_usd: 0 } } } },
@@ -57,7 +57,12 @@ describe('Summary cards', () => {
     expect(html).toContain('65/5/25/5');
     expect(html).toContain('等效 91.22%');
     expect(html).toContain('现金 54.03%');
+    expect(html).toContain('双显');
+    expect(html).toContain('硬顶 75.00%');
+    expect(html).toContain('超基准 $36,758');
+    expect(html).toContain('禁区，不可借');
     expect(html).toContain('已被科技借走 10.00pp');
+    expect(html).toContain('现金可用目标 25.00%');
     expect(html).toContain('期权风险专区');
     expect(html).toContain('不必猜最低点');
     expect(html).not.toContain('可以买入');
