@@ -723,6 +723,7 @@ export interface QuantAnalysisFreshness {
 export interface QuantPortfolioRisk {
   ammo_overview?: {
     exposure?: { effective_usd?: number; effective_pct?: number };
+    cash_exposure?: { invested_usd?: number; invested_pct?: number; available_usd?: number; basis?: string };
     buying_power?: {
       by_underlying_usd?: number;
       by_2x_usd?: number;
@@ -741,9 +742,35 @@ export interface QuantPortfolioRisk {
     delta_exposure_usd?: number;
     items?: Array<{ symbol: string; delta?: number; delta_source?: string; delta_notional_usd?: number; days_to_expiry?: number | null; status?: string }>;
   };
-  sleeve_status?: Record<string, { pct?: number; target_pct?: number; deviation_pp?: number }>;
+  sleeve_status?: Record<string, QuantSleeveStatus>;
   allocation_plan?: { total_available_usd?: number; by_sleeve?: Array<{ sleeve: string; priority?: number; suggested_usd?: number; candidates?: Array<{ symbol: string }> }> };
   dip_status?: Record<string, { companion_text?: string; ammo?: { remaining_usd?: number; account_gate?: { allowed_usd?: number } } }>;
+}
+
+export interface QuantSleeveMetric {
+  usd?: number;
+  pct?: number;
+  zone?: 'empty' | 'under' | 'on_target' | 'borrowing' | 'over_hard_cap' | string;
+  over_hard_cap_usd?: number;
+  lent_pp?: number;
+  available_target_pct?: number;
+}
+
+export interface QuantSleeveStatus {
+  baseline_pct?: number;
+  hard_cap_pct?: number | null;
+  borrowed_pp?: number;
+  borrow_room_pp?: number;
+  lent_pp?: number;
+  available_target_pct?: number;
+  block_new_buy?: boolean;
+  note?: string;
+  effective?: QuantSleeveMetric;
+  cash?: QuantSleeveMetric;
+  /** Backward-compatible fields from pre dual-metric exports. */
+  pct?: number;
+  target_pct?: number;
+  deviation_pp?: number;
 }
 
 export interface QuantAnalysisSnapshot {

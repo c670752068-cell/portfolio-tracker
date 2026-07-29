@@ -27,12 +27,18 @@ describe('Summary cards', () => {
     const snapshot = {
       source: 'futu-assistant', generated_at: '2026-07-28T12:00:00Z', rule_version: 'test', disclaimer: 'test', context: {}, symbols: {},
       ammo_overview: {
+        exposure: { effective_usd: 281_365, effective_pct: 200.84 },
+        cash_exposure: { invested_usd: 95_050, invested_pct: 67.85, available_usd: 28_708, basis: 'cash' },
         buying_power: { by_underlying_usd: 0, by_2x_usd: 0, by_3x_usd: 0, binding_constraint: 'exposure_cap', headline: '按当前敞口上限，暂无新增买入空间（有钱但没额度——杠杆已占满敞口）' },
         top_consumers: [{ symbol: 'TQQQ', effective_usd: 59_286, pct_of_nav: 42.3 }],
       },
       max_loss: { total_usd: 43_000, pct_of_nav: 30.7 },
       option_exposure: { premium_usd: 13_519, premium_pct_of_nav: 9.6, premium_cap_pct: 5, over_limit: true, delta_exposure_usd: 71_000, items: [{ symbol: 'MSFT', delta: 0.5, delta_source: 'estimated', delta_notional_usd: 20_000, days_to_expiry: 18, status: 'critical' }] },
-      sleeve_status: { tech: { pct: 87.1, target_pct: 65, deviation_pp: 22.1 }, options: { pct: 9.6, target_pct: 5, deviation_pp: 4.6 }, broad_dow: { pct: 0.6, target_pct: 30, deviation_pp: -29.4 } },
+      sleeve_status: {
+        tech: { baseline_pct: 65, hard_cap_pct: 75, borrowed_pp: 10, borrow_room_pp: 0, block_new_buy: true, effective: { pct: 91.22, zone: 'over_hard_cap', over_hard_cap_usd: 22_724 }, cash: { pct: 54.03, zone: 'under' } },
+        options: { baseline_pct: 5, hard_cap_pct: 5, block_new_buy: true, effective: { pct: 104.92, zone: 'over_hard_cap' }, cash: { pct: 9.58, zone: 'over_hard_cap' } },
+        broad_dow: { baseline_pct: 25, lent_pp: 10, available_target_pct: 15, effective: { pct: 0.71, zone: 'empty' }, cash: { pct: 0.24, zone: 'empty' } },
+      },
       allocation_plan: { total_available_usd: 0, by_sleeve: [{ sleeve: 'broad_dow', priority: 1, suggested_usd: 0, candidates: [{ symbol: 'UPRO' }] }] },
       dip_status: { SOXL: { companion_text: '不必猜最低点。还有 2 批。', ammo: { remaining_usd: 8_400, account_gate: { allowed_usd: 0 } } } },
     } as unknown as QuantAnalysisSnapshot;
@@ -45,9 +51,13 @@ describe('Summary cards', () => {
       />,
     );
     expect(html).toContain('等效敞口');
+    expect(html).toContain('实付现金');
     expect(html).toContain('最大可损');
     expect(html).toContain('有钱但没额度——杠杆已占满敞口');
-    expect(html).toContain('65/5/30');
+    expect(html).toContain('65/5/25/5');
+    expect(html).toContain('等效 91.22%');
+    expect(html).toContain('现金 54.03%');
+    expect(html).toContain('已被科技借走 10.00pp');
     expect(html).toContain('期权风险专区');
     expect(html).toContain('不必猜最低点');
     expect(html).not.toContain('可以买入');
