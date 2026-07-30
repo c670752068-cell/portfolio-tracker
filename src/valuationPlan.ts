@@ -105,11 +105,16 @@ export function evaluateLocalBuyPlan(
   const cnn = finite(snapshot.valuation_tab?.cnn.current_score);
   const lowZone = snapshot.symbols[plan.symbol]?.gates?.low_zone;
   const drawdown = finite(lowZone?.current_drawdown_pct);
+  // For a leveraged symbol the server judges its 1x benchmark, so this number
+  // is not the symbol's own drawdown.  Name whose it is (二十七期 B-2).
+  const drawdownLabel = lowZone?.drawdown_basis === 'benchmark' && lowZone?.benchmark
+    ? `回撤（基准 ${lowZone.benchmark}）`
+    : '回撤';
   const vix = vixContext(snapshot);
   const conditions: QuantBuyPlanCondition[] = [
     condition('ndx_pe_below', 'NDX PE', plan.ndxPeBelow, dailyPe, ''),
     condition('cnn_score_below', 'CNN', plan.cnnScoreBelow, cnn, ' 点'),
-    condition('drawdown_below_pct', '回撤', plan.drawdownBelowPct, drawdown, '%'),
+    condition('drawdown_below_pct', drawdownLabel, plan.drawdownBelowPct, drawdown, '%'),
   ];
   const vixAbove = finite(plan.vixAbove);
   const vixPercentileAbove = finite(plan.vixPercentileAbove);

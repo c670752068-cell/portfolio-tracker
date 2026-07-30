@@ -205,3 +205,48 @@ describe('valuation plan helpers', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('drawdown condition basis', () => {
+  it('labels a benchmark-based drawdown so it is not read as the symbol own', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30', rule_version: '2.7',
+      disclaimer: '', context: {},
+      symbols: {
+        SOXL: {
+          gates: {
+            low_zone: {
+              passed: false, applicable: false, drawdown_basis: 'benchmark',
+              benchmark: 'SOXX', current_drawdown_pct: -29.01, threshold_pct: -40,
+            },
+          },
+        },
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const plan = evaluateLocalBuyPlan(
+      { id: 'p', symbol: 'SOXL', label: '第一枪', ndxPeBelow: 30, cnnScoreBelow: 25, drawdownBelowPct: -45, buyPctOfNav: 3, enabled: true },
+      snapshot,
+    );
+    const drawdown = plan.conditions.find((item) => item.key === 'drawdown_below_pct')!;
+
+    expect(drawdown.name).toBe('回撤（基准 SOXX） < -45%');
+    expect(drawdown.current).toBe(-29.01);
+  });
+
+  it('keeps the plain label when the drawdown is the symbol own', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30', rule_version: '2.7',
+      disclaimer: '', context: {},
+      symbols: {
+        AVGO: { gates: { low_zone: { passed: true, applicable: true, drawdown_basis: 'self', current_drawdown_pct: -21.92, threshold_pct: -16.24 } } },
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const plan = evaluateLocalBuyPlan(
+      { id: 'p', symbol: 'AVGO', label: '第一枪', ndxPeBelow: 30, cnnScoreBelow: 25, drawdownBelowPct: -45, buyPctOfNav: 3, enabled: true },
+      snapshot,
+    );
+
+    expect(plan.conditions.find((item) => item.key === 'drawdown_below_pct')!.name).toBe('回撤 < -45%');
+  });
+});
