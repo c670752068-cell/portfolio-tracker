@@ -1,5 +1,6 @@
 import { finalVerdictFreshness, finalVerdictSymbols } from '../quantAnalysis';
 import { dateText, formatMoney } from '../format';
+import { dedupeVerdictSentence, layerRequirements, nearestVerdict } from '../silenceBroadcast';
 import type { QuantAnalysisFreshness, QuantAnalysisSnapshot, QuantFinalVerdict } from '../types';
 
 /**
@@ -9,16 +10,17 @@ import type { QuantAnalysisFreshness, QuantAnalysisSnapshot, QuantFinalVerdict }
 export function DecisionStatusBar({ snapshot }: { snapshot: QuantAnalysisSnapshot }) {
   const verdicts = Object.values(finalVerdictSymbols(snapshot));
   const headline = verdictHeadline(verdicts);
-  const staleVerdict = verdicts.find((item) => item.data_stale);
+  const staleVerdict = verdicts.find((item) => item.data_stale || (item.data_stale_days ?? 0) > 0);
   const verdictFreshness = finalVerdictFreshness(snapshot);
   const freshness = snapshot.freshness;
+  // `max_stale_days` is the server's configured tolerance, not an age — it must
+  // never make fresh data look stale, nor stand in for the age itself.
   const isStale = Boolean(
     staleVerdict
     || verdictFreshness?.data_stale
     || freshness?.data_stale
     || (verdictFreshness?.stale_days ?? 0) > 0
-    || (freshness?.stale_days ?? 0) > 0
-    || (freshness?.max_stale_days ?? 0) > 0,
+    || (freshness?.stale_days ?? 0) > 0,
   );
   const stale = isStale
     ? {
@@ -26,11 +28,21 @@ export function DecisionStatusBar({ snapshot }: { snapshot: QuantAnalysisSnapsho
         staleDays: staleVerdict?.data_stale_days
           ?? verdictFreshness?.stale_days
           ?? freshness?.stale_days
-          ?? freshness?.max_stale_days
           ?? null,
       }
     : null;
   const funding = fundingFacts(snapshot);
+  const nearest = nearestVerdict(verdicts);
+  const nearestRequirements = nearest
+    ? layerRequirements(verdicts.find((item) => item.symbol === nearest.symbol)!)
+    : [];
+  const fallbackRequirements = nearestRequirements.length > 0
+    ? nearestRequirements
+    : verdicts.flatMap(layerRequirements).slice(0, 1);
+  const isSilenceByRule = verdicts.some((verdict) => verdict.is_silence_by_rule);
+  // When the server rendered today's statement, show that exact text so the
+  // site and the phone push can never drift apart (二十七期 T4).
+  const broadcastBody = snapshot.silence_broadcast?.body?.trim() || '';
 
   return (
     <section className="elev-3 rounded-2xl border border-neutral/40 bg-surface-raised p-3" aria-label="量化系统最终裁决">
@@ -39,21 +51,44 @@ export function DecisionStatusBar({ snapshot }: { snapshot: QuantAnalysisSnapsho
         {verdicts.length === 0 ? (
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">等待下一份量化快照生成最终裁决；页面不会自行拼接买入结论。</p>
         ) : (
-          <details className="mt-2 text-xs">
-            <summary className="cursor-pointer text-ink-secondary">查看 {verdicts.length} 个标的明细</summary>
-            <div className="mt-2 space-y-1">
-              {verdicts.map((verdict) => (
-                <p key={verdict.symbol} className="text-xs leading-relaxed tabular-nums text-ink-secondary">
-                  <span className="mr-1 font-semibold text-ink-primary">{verdict.symbol}</span>
-                  {verdict.single_sentence ?? '后端未提供结论说明。'}
-                  {verdict.is_silence_by_rule && <span className="ml-1 text-ink-muted">不是系统故障，是规则暂不放行。</span>}
-                </p>
-              ))}
-            </div>
-          </details>
+          <>
+            {nearest && (
+              <p className="mt-1 text-xs leading-relaxed text-ink-secondary">
+                最接近的是 <span className="font-semibold text-ink-primary">{nearest.symbol}</span>
+                {` —— ${nearest.totalCount} 层已过 ${nearest.passedCount} 层，仅差 ${nearest.blockingLabels.join('、')}`}
+              </p>
+            )}
+            {fallbackRequirements.map((requirement) => (
+              <p key={requirement} className="mt-1 text-xs leading-relaxed tabular-nums text-ink-secondary">{requirement}</p>
+            ))}
+            <details className="mt-2 text-xs">
+              <summary className="cursor-pointer text-ink-secondary">查看 {verdicts.length} 个标的明细</summary>
+              <div className="mt-2 space-y-1">
+                {verdicts.map((verdict) => (
+                  <div key={verdict.symbol}>
+                    <p className="text-xs leading-relaxed tabular-nums text-ink-secondary">
+                      <span className="mr-1 font-semibold text-ink-primary">{verdict.symbol}</span>
+                      {verdict.single_sentence ? dedupeVerdictSentence(verdict.single_sentence) : '后端未提供结论说明。'}
+                    </p>
+                    {layerRequirements(verdict).map((requirement) => (
+                      <p key={requirement} className="pl-4 text-xs leading-relaxed tabular-nums text-ink-muted">{requirement}</p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </details>
+          </>
         )}
         {stale && <p className="mt-2 text-xs tabular-nums text-trim">数据 {stale.dataAsOf ?? '暂无'}{typeof stale.staleDays === 'number' ? `（落后 ${stale.staleDays} 天）` : ''}</p>}
         {funding && <p className="mt-2 text-xs font-medium tabular-nums text-ink-primary">可用资金 {formatMoney(funding.availableUsd)} · 闸门放行 {formatMoney(funding.gateAllowedUsd)}</p>}
+        {broadcastBody
+          ? (
+            <details className="mt-2 text-xs">
+              <summary className="cursor-pointer text-ink-secondary">今日播报（与手机推送同一份）</summary>
+              <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-ink-secondary">{broadcastBody}</pre>
+            </details>
+          )
+          : isSilenceByRule && <p className="mt-2 text-xs leading-relaxed text-ink-muted">今日不买是规则的结论，不是系统故障。</p>}
       </div>
       <FreshnessBadges freshness={freshness} />
     </section>

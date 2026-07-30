@@ -970,6 +970,15 @@ export interface QuantAnalysisSnapshot {
   invested_cash_total_usd?: number;
   cash_basis?: string;
   final_verdict?: QuantFinalVerdictPayload;
+  /** The server-rendered daily statement, identical to the phone push (T4). */
+  silence_broadcast?: QuantSilenceBroadcast;
+}
+
+/** One statement the backend renders once and both surfaces read verbatim. */
+export interface QuantSilenceBroadcast {
+  title?: string;
+  body?: string;
+  is_silence_by_rule?: boolean;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */

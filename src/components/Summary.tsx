@@ -323,9 +323,11 @@ function selectSleevePresentation(row: QuantSleeveStatus, displayBasis: SleeveDi
     : displayBasis === 'effective'
       ? [['effective', row.effective]]
       : [['cash', row.cash]];
+  // A basis-specific note always wins.  Only when the server omits one does the
+  // row-level conclusion stand in, so switching basis never drops the verdict.
   const note = displayBasis === 'both'
     ? row.note
-    : visibleMetrics[0]?.[1]?.note;
+    : visibleMetrics[0]?.[1]?.note ?? row.note;
   return { visibleMetrics, note };
 }
 
@@ -378,11 +380,15 @@ export function SleeveBar({ name, row, displayBasis }: { name: string; row: Quan
   const isDualBasis = displayBasis === 'both';
   const selectedBasis = isDualBasis ? null : visibleMetrics[0]?.[0];
   const selectedMetric = isDualBasis ? undefined : visibleMetrics[0]?.[1];
+  // 65/5/25/5 is a share-of-portfolio baseline, so it applies to whichever basis
+  // is on screen.  Showing it beats "目标暂无" when the server sent no
+  // basis-specific target for this sleeve.
+  const sharedGuide = `${target === undefined ? '基准暂无' : `基准 ${target.toFixed(2)}%`}${hardCap !== null ? ` · 硬顶 ${hardCap.toFixed(2)}%` : ''}`;
   const headerGuide = isDualBasis
-    ? `${target === undefined ? '基准暂无' : `基准 ${target.toFixed(2)}%`}${hardCap !== null ? ` · 硬顶 ${hardCap.toFixed(2)}%` : ''}`
+    ? sharedGuide
     : selectedBasis && selectedMetric?.available_target_pct !== undefined
       ? `${metricName(selectedBasis)}目标 ${selectedMetric.available_target_pct.toFixed(2)}%`
-      : `${selectedBasis ? metricName(selectedBasis) : '本口径'}目标暂无`;
+      : sharedGuide;
   const sharedTargetMarker = isDualBasis && target !== undefined
     ? <span className="absolute inset-y-0 w-px bg-ink-primary/70" style={{ left: progressWidth(target) }} title={`基准 ${target.toFixed(2)}%`} />
     : null;

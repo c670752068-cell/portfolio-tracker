@@ -197,6 +197,38 @@ describe('DecisionStatusBar', () => {
     expect(html).toContain('数据 2026-07-28（落后 2 天）');
   });
 
+  it('shows the server-rendered silence broadcast verbatim so it matches the push', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7', disclaimer: '', context: {}, symbols: {},
+      final_verdict: { symbols: { SOXL: { symbol: 'SOXL', verdict: 'NO_BUY' } } },
+      silence_broadcast: {
+        title: '📋 今日结论：不买（不是漏报，是规则说不买）',
+        body: '📋 今日结论：不买（不是漏报，是规则说不买）\nSOXL 🛑 未达 -40%\n      → 需要：SOXX 跌到 $393.01\n\n今日不买是规则的结论，不是系统故障。',
+        is_silence_by_rule: true,
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain('今日播报（与手机推送同一份）');
+    expect(html).toContain('需要：SOXX 跌到 $393.01');
+    expect(html).toContain('今日不买是规则的结论，不是系统故障。');
+  });
+
+  it('treats max_stale_days as a tolerance, not as an age', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7', disclaimer: '', context: {}, symbols: {},
+      final_verdict: { symbols: { SOXL: { symbol: 'SOXL', verdict: 'NO_BUY' } } },
+      freshness: { data_stale: false, stale_days: 0, max_stale_days: 2, data_as_of: '2026-07-30' },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).not.toContain('落后');
+  });
+
   it('shows funding facts with two-decimal money precision', () => {
     const snapshot = {
       source: 'futu-assistant', generated_at: '2026-07-30', rule_version: '2.7',
@@ -210,6 +242,102 @@ describe('DecisionStatusBar', () => {
     const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
 
     expect(html).toContain('可用资金 $28,717.47 · 闸门放行 $12.30');
+  });
+
+  it('names the nearest symbol with its blocking layers and the price it waits for', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7', disclaimer: '', context: {}, symbols: {},
+      final_verdict: {
+        symbols: {
+          SOXL: {
+            symbol: 'SOXL', verdict: 'NO_BUY',
+            layers: [
+              { layer: 'gates_six', state: 'failed' },
+              { layer: 'entry_gate_1x', state: 'failed', benchmark: 'SOXX', gap_pp: 10.99128, trigger_price: 393.006 },
+              { layer: 'sleeve_borrow', state: 'failed' },
+              { layer: 'buy_plan_conditions', state: 'failed' },
+              { layer: 'panic_window', state: 'failed' },
+            ],
+          },
+          AAPL: {
+            symbol: 'AAPL', verdict: 'NO_BUY',
+            layers: [
+              { layer: 'gates_six', state: 'failed', reason: '六关未通过：低位、形态' },
+              { layer: 'entry_gate_1x', state: 'not_applicable' },
+              { layer: 'sleeve_borrow', state: 'passed' },
+              { layer: 'buy_plan_conditions', state: 'not_applicable' },
+              { layer: 'panic_window', state: 'not_applicable' },
+            ],
+          },
+        },
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain('最接近的是 ');
+    expect(html.replace(/<[^>]*>/g, '')).toContain('最接近的是 AAPL —— 5 层已过 4 层，仅差 六关');
+    expect(html).toContain('需要：SOXX 跌到 $393.01（还差 10.99pp）');
+  });
+
+  it('gives every listed symbol its own price-denominated requirement', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7', disclaimer: '', context: {}, symbols: {},
+      final_verdict: {
+        symbols: {
+          SOXL: {
+            symbol: 'SOXL', verdict: 'NO_BUY', single_sentence: '不买',
+            layers: [{ layer: 'entry_gate_1x', state: 'failed', benchmark: 'SOXX', gap_pp: 10.99128, trigger_price: 393.006 }],
+          },
+          TECL: {
+            symbol: 'TECL', verdict: 'NO_BUY', single_sentence: '不买',
+            layers: [{ layer: 'entry_gate_1x', state: 'failed', benchmark: 'XLK', gap_pp: 0, trigger_price: 176.19687 }],
+          },
+        },
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain('需要：SOXX 跌到 $393.01（还差 10.99pp）');
+    expect(html).toContain('需要：XLK 跌到 $176.20（还差 0.00pp）');
+  });
+
+  it('states the rule-silence reassurance once instead of once per symbol', () => {
+    const silent = (symbol: string) => ({ symbol, verdict: 'NO_BUY', single_sentence: '不买', is_silence_by_rule: true, layers: [] });
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7', disclaimer: '', context: {}, symbols: {},
+      final_verdict: { symbols: { AAPL: silent('AAPL'), SOXL: silent('SOXL'), TQQQ: silent('TQQQ') } },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html.split('不是系统故障').length - 1).toBe(1);
+    expect(html).toContain('今日不买是规则的结论，不是系统故障。');
+  });
+
+  it('drops the duplicated 另有 clause the backend repeats in single_sentence', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7', disclaimer: '', context: {}, symbols: {},
+      final_verdict: {
+        symbols: {
+          AAPL: {
+            symbol: 'AAPL', verdict: 'NO_BUY',
+            single_sentence: '不买：六关未通过：低位、形态；另有六关未通过：低位、形态',
+            layers: [],
+          },
+        },
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain('不买：六关未通过：低位、形态');
+    expect(html).not.toContain('另有六关未通过');
   });
 
   it('uses calm neutral copy when no server-owned final verdict is available', () => {

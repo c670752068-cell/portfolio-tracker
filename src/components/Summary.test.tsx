@@ -106,6 +106,37 @@ describe('Summary cards', () => {
     expect(html).not.toContain('等效 104.94%');
   });
 
+  it('keeps the sleeve conclusion visible after switching to a single basis', () => {
+    const row = {
+      baseline_pct: 65,
+      hard_cap_pct: 75,
+      note: '已用满 10.0pp 借额（上限 75%），仍超硬顶 $24,187，不建议新增科技',
+      effective: { pct: 93.04, zone: 'over_hard_cap', block_new_buy: true },
+      cash: { pct: 79.91, zone: 'over_hard_cap', block_new_buy: true },
+    };
+
+    expect(renderToStaticMarkup(<SleeveBar name="tech" displayBasis="cash" row={row} />)).toContain('不建议新增科技');
+    expect(renderToStaticMarkup(<SleeveBar name="tech" displayBasis="effective" row={row} />)).toContain('不建议新增科技');
+  });
+
+  it('falls back to the shared baseline when a basis has no target of its own', () => {
+    const html = renderToStaticMarkup(
+      <SleeveBar
+        name="tech"
+        displayBasis="cash"
+        row={{
+          baseline_pct: 65,
+          hard_cap_pct: 75,
+          effective: { pct: 93.04, zone: 'over_hard_cap' },
+          cash: { pct: 79.91, zone: 'over_hard_cap' },
+        }}
+      />,
+    );
+
+    expect(html).toContain('基准 65.00% · 硬顶 75.00%');
+    expect(html).not.toContain('目标暂无');
+  });
+
   it('renders only the selected metric target and marker in a single-basis sleeve card', () => {
     const row = {
       baseline_pct: 25,
