@@ -560,14 +560,9 @@ export default function App() {
           </nav>
         </div>
       </header>
-      {quantAnalysis && (
-        <div className="mb-5">
-          <DecisionStatusBar snapshot={quantAnalysis} />
-        </div>
-      )}
-
       {tab === 'dashboard' && (
         <section className="ui-enter space-y-5">
+          {quantAnalysis && <DecisionStatusBar snapshot={quantAnalysis} />}
           {latestAlert && (
             <div className="rounded-2xl border border-trim/40 border-l-4 border-l-trim bg-trim/10 p-4 text-sm leading-relaxed text-ink-primary">
               <strong><span className="font-mono tabular-nums">{latestAlert.symbol}</span> 目标提醒已触发</strong> · <span className="font-mono tabular-nums">{latestAlert.last_reminder_at}</span>。只提醒不下单，请在券商 App 手动执行。

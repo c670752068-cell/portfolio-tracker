@@ -4,6 +4,60 @@ import type { QuantAnalysisSnapshot } from '../types';
 import { DecisionStatusBar } from './DecisionStatusBar';
 
 describe('DecisionStatusBar', () => {
+  it.each([
+    {
+      name: 'all NO_BUY',
+      verdicts: ['NO_BUY', 'NO_BUY'],
+      expected: '今日结论：不买 2',
+    },
+    {
+      name: 'NO_BUY plus UNDECIDABLE',
+      verdicts: [...Array(24).fill('NO_BUY'), ...Array(4).fill('UNDECIDABLE')],
+      expected: '今日结论：不买 24 · 无法判定 4',
+    },
+    {
+      name: 'BUY plus NO_BUY',
+      verdicts: ['BUY', 'NO_BUY', 'NO_BUY'],
+      expected: '今日结论：条件完整 1 · 不买 2',
+    },
+    {
+      name: 'empty',
+      verdicts: [],
+      expected: '今日结论：数据不足，无法判定',
+    },
+  ])('summarises $name verdicts without erasing known decisions', ({ verdicts, expected }) => {
+    const finalVerdict = Object.fromEntries(verdicts.map((verdict, index) => [
+      `S${index}`,
+      { symbol: `S${index}`, verdict, single_sentence: String(verdict), layers: [] },
+    ]));
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7', disclaimer: 'display only', context: {}, symbols: {},
+      final_verdict: finalVerdict,
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain(expected);
+  });
+
+  it('keeps the per-symbol verdict list collapsed by default on the dashboard', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7', disclaimer: 'display only', context: {}, symbols: {},
+      final_verdict: {
+        AAPL: { symbol: 'AAPL', verdict: 'NO_BUY', single_sentence: '不买', layers: [] },
+        SOXL: { symbol: 'SOXL', verdict: 'NO_BUY', single_sentence: '不买', layers: [] },
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain('<details');
+    expect(html).toContain('查看 2 个标的明细');
+    expect(html).not.toContain('<details open="">');
+  });
+
   it('renders the backend final verdict as the only top-level conclusion and surfaces stale data', () => {
     const snapshot = {
       source: 'futu-assistant',
@@ -118,6 +172,29 @@ describe('DecisionStatusBar', () => {
     expect(html).toContain('今日结论：不买');
     expect(html).toContain('数据 2026-07-26（落后 4 天）');
     expect(html).toContain('后端未提供结论说明。');
+  });
+
+  it('surfaces positive stale days even when the server stale boolean is false', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7', disclaimer: 'display only', context: {}, symbols: {},
+      final_verdict: {
+        symbols: { SOXL: { symbol: 'SOXL', verdict: 'NO_BUY' } },
+        data_stale: false,
+        stale_days: 2,
+        data_as_of: '2026-07-28',
+      },
+      freshness: {
+        data_stale: false,
+        stale_days: 2,
+        max_stale_days: 2,
+        data_as_of: '2026-07-28',
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain('数据 2026-07-28（落后 2 天）');
   });
 
   it('uses calm neutral copy when no server-owned final verdict is available', () => {

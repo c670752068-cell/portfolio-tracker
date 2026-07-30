@@ -8,4 +8,15 @@ describe('server-owned final verdict integration', () => {
     expect(source).not.toContain('<FearComfortBanner context={quantAnalysis?.context}');
     expect(source).not.toContain('fetchQuantAnalysis(getServerQuantAnalysisUrl());');
   });
+
+  it('renders the full final-verdict strip only inside the dashboard tab', () => {
+    const dashboardStart = source.indexOf("{tab === 'dashboard' && (");
+    const statusBar = source.indexOf('<DecisionStatusBar snapshot={quantAnalysis}');
+    const holdingsStart = source.indexOf("{tab === 'holdings' && (");
+
+    expect(dashboardStart).toBeGreaterThan(-1);
+    expect(statusBar).toBeGreaterThan(dashboardStart);
+    expect(statusBar).toBeLessThan(holdingsStart);
+    expect(source.match(/<DecisionStatusBar snapshot=\{quantAnalysis\}/g)).toHaveLength(1);
+  });
 });
