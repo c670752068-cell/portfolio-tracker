@@ -98,7 +98,7 @@ function formatNewYorkTime(value: string | null | undefined): string | null {
   }).format(date);
 }
 
-export function formatAlertCurrentPrice(rule: AlertRule, _now = new Date()): string {
+export function formatAlertCurrentPrice(rule: AlertRule): string {
   if (rule.current_price == null) return '当前价 待盘中检查';
   const checkedAt = formatNewYorkTime(rule.prices_at ?? rule.last_checked_at);
   const label = rule.price_session === 'pre'

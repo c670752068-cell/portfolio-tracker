@@ -168,9 +168,9 @@ describe('alert cost and callback policy', () => {
   it('labels the quote timestamp and the directional distance without making the user infer it', () => {
     const checked = { ...targetRule, last_checked_at: '2026-07-15T15:10:00.000Z' };
 
-    expect(formatAlertCurrentPrice(checked, new Date('2026-07-15T15:20:00.000Z')))
+    expect(formatAlertCurrentPrice(checked))
       .toBe('休市 $38.00 @ 11:10 ET');
-    expect(formatAlertCurrentPrice(checked, new Date('2026-07-15T21:00:00.000Z')))
+    expect(formatAlertCurrentPrice(checked))
       .toBe('休市 $38.00 @ 11:10 ET');
     expect(formatAlertDistance(checked)).toBe('还需上涨 5.00%');
     expect(formatAlertDistance({
