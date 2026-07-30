@@ -343,14 +343,69 @@ function ObservationBadge({ visible }: { visible: boolean }) {
   return visible ? <span className="ml-1 text-trim">（观察期，未正式生效）</span> : null;
 }
 
-function PanicWindowStatus({ status, analysis, presentation, quotePrice, quote }: { status: QuantPanicSymbolStatus; analysis: QuantSymbolAnalysis; presentation: QuantDepthPresentation | undefined; quotePrice: number | null; quote: ReturnType<typeof depthQuoteSnapshot> }) {
+function nullableUsdPrice(value: number | null): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `$${value.toFixed(2)}` : '暂无';
+}
+
+function OneXEntryGate({ status }: { status: QuantPanicSymbolStatus }) {
+  const gate = status.entry_gate;
+  if (!gate) {
+    return <div className="mt-3 rounded-lg border border-neutral/40 bg-surface-overlay/40 p-3 text-xs text-ink-muted">1× 基准判定待下一次量化快照生成。</div>;
+  }
+  const stateClass = gate.available && gate.passed ? 'border-gain/50 bg-gain/10 text-gain' : 'border-trim/50 bg-trim/10 text-trim';
+  const decisionLabel = gate.price_basis === 'close' ? '闭市价' : '判定价';
+  const referenceLabel = gate.reference_session ? priceSessionLabel(gate.reference_session) : '扩展时段';
   return (
-    <div className="mb-4 min-w-0 overflow-hidden rounded-lg border border-loss/40 bg-loss/10 p-3 text-sm">
+    <div className="mt-3 rounded-lg border border-neutral/40 bg-surface-overlay/50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong>1× 基准判定</strong>
+        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${stateClass}`}>
+          {!gate.available ? '不可判定' : gate.passed ? '条件已满足' : '条件未满足'}
+        </span>
+      </div>
+      {!gate.available ? <p className="mt-2 text-xs text-ink-muted">{gate.reason}</p> : <>
+        <div className="mt-3 grid gap-2 font-mono text-xs tabular-nums sm:grid-cols-2">
+          <div><span className="text-ink-muted">判定基准</span> {gate.benchmark} {decisionLabel} {nullableUsdPrice(gate.decision_close)}</div>
+          <div><span className="text-ink-muted">自高点回撤</span> {numberText(gate.drawdown.current_pct, '%')}{gate.drawdown.required_pct === null ? '（不适用）' : ` / 阈值 ${numberText(gate.drawdown.required_pct, '%')}`}</div>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {gate.moving_averages.map((movingAverage) => <span key={movingAverage.period} className={`rounded-md px-2 py-1 font-mono text-xs tabular-nums ${movingAverage.touched ? 'bg-gain/10 text-gain' : 'bg-surface-base text-ink-secondary'}`}>
+            MA{movingAverage.period} {movingAverage.touched ? '已触及' : `还差 ${movingAverage.gap_pct.toFixed(2)}%`}
+          </span>)}
+        </div>
+        {gate.reference_price !== null && <div className="mt-2 text-xs text-ink-muted">{referenceLabel}价 {nullableUsdPrice(gate.reference_price)}（仅展示，不改变条件）</div>}
+        <p className="mt-2 text-xs text-ink-muted">{gate.reason}</p>
+      </>}
+    </div>
+  );
+}
+
+function ReviewCheckpointStrip({ snapshot }: { snapshot: QuantAnalysisSnapshot }) {
+  const checkpoint = snapshot.review_checkpoint;
+  if (!checkpoint) return null;
+  return (
+    <div className={`rounded-xl border p-3 text-sm ${checkpoint.stale ? 'border-trim/40 bg-trim/10' : 'border-neutral/40 bg-surface-raised'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong>定时审查：{checkpoint.label}</strong>
+        <span className="font-mono text-xs tabular-nums text-ink-muted">美股交易日 {checkpoint.us_trading_day}</span>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs tabular-nums text-ink-secondary">
+        <span>{checkpoint.stale ? '刷新未完成，保留上一份快照' : `本次已通知 ${checkpoint.notifications_sent} 条`}</span>
+        <span>下一检查点 {checkpoint.next_at}</span>
+        {checkpoint.error && <span className="text-trim">{checkpoint.error}</span>}
+      </div>
+    </div>
+  );
+}
+
+function PanicWindowStatus({ status }: { status: QuantPanicSymbolStatus }) {
+  return (
+    <div className="mb-4 min-w-0 overflow-hidden rounded-lg border border-neutral/40 bg-surface-overlay/40 p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong>{status.display.title}</strong>
-        <span className="rounded-full bg-loss/15 px-2 py-1 text-xs font-semibold text-loss">{status.display.state_label}</span>
+        <span className="rounded-full bg-neutral/20 px-2 py-1 text-xs font-semibold text-ink-secondary">{status.display.state_label}</span>
       </div>
-      <div className="mt-3"><DepthHighlight analysis={analysis} presentation={presentation} title="3 倍标的深度位" quotePrice={quotePrice} quote={quote} /></div>
+      <OneXEntryGate status={status} />
       <div className={`mt-3 rounded-lg border p-3 ${status.panic.open ? 'border-loss/60 bg-loss/15' : 'border-neutral/40 bg-surface-overlay/50'}`}>
         <span className={`rounded-full px-3 py-1 text-xs font-bold ${status.panic.open ? 'bg-loss text-surface-base' : 'bg-neutral/30 text-ink-secondary'}`}>
           恐慌位 {status.panic.open ? '✓ 已触发' : '✗ 未触发'}
@@ -588,6 +643,7 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
   return (
     <section className="space-y-4">
       {snapshot && <OpportunityOverview snapshot={snapshot} onSelect={selectOpportunity} />}
+      {snapshot && <ReviewCheckpointStrip snapshot={snapshot} />}
       <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -620,7 +676,7 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
         <>
           <div id="buy-condition-detail" className="scroll-mt-4 rounded-xl border border-neutral/40 bg-surface-raised p-4">
             {panicStatus?.applicable
-              ? <PanicWindowStatus status={panicStatus} analysis={result.analysis} presentation={depthPresentation} quotePrice={selectedDepthQuotePrice} quote={selectedDepthQuote} />
+              ? <PanicWindowStatus status={panicStatus} />
               : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} quote={selectedDepthQuote} />}
             <ValuationCard
               symbol={result.symbol}

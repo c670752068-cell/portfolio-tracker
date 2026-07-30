@@ -102,7 +102,7 @@ function validatePanicWindow(value: unknown): void {
       || typeof status.applicable !== 'boolean'
       || typeof status.state !== 'string'
       || !isRecord(status.depth)
-      || typeof status.depth.open !== 'boolean'
+      || (typeof status.depth.open !== 'boolean' && status.depth.open !== null)
       || !isRecord(status.panic)
       || typeof status.panic.open !== 'boolean'
       || !isRecord(status.target)
@@ -114,7 +114,26 @@ function validatePanicWindow(value: unknown): void {
       || typeof status.display.progress_text !== 'string') {
       throw new Error('恐慌抢买窗口格式无效');
     }
+    if (status.entry_gate !== undefined && !isEntryGate(status.entry_gate)) {
+      throw new Error('恐慌抢买窗口格式无效');
+    }
   }
+}
+
+function isEntryGate(value: unknown): boolean {
+  if (!isRecord(value)
+    || typeof value.available !== 'boolean'
+    || (typeof value.passed !== 'boolean' && value.passed !== null)
+    || typeof value.benchmark !== 'string'
+    || typeof value.price_basis !== 'string'
+    || !isRecord(value.drawdown)
+    || !Array.isArray(value.moving_averages)
+    || typeof value.reason !== 'string') return false;
+  return value.moving_averages.every((item) => isRecord(item)
+    && typeof item.period === 'number'
+    && typeof item.value === 'number'
+    && typeof item.touched === 'boolean'
+    && typeof item.gap_pct === 'number');
 }
 
 function validateOpportunitySummary(value: unknown): void {

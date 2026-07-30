@@ -259,11 +259,35 @@ export interface QuantPanicSymbolStatus {
   state_label: string;
   stop_reason: string | null;
   depth: {
-    open: boolean;
-    current_pct: number;
-    threshold_pct: number;
+    open: boolean | null;
+    current_pct: number | null;
+    threshold_pct: number | null;
     label: string;
     explanation: string;
+  };
+  /** Server-authored 1× benchmark gate. Extended prices are display-only. */
+  entry_gate?: {
+    available: boolean;
+    passed: boolean | null;
+    benchmark: string;
+    price_basis: string;
+    decision_close: number | null;
+    high_close: number | null;
+    drawdown: {
+      current_pct: number | null;
+      required_pct: number | null;
+      passed: boolean | null;
+    };
+    moving_averages: ReadonlyArray<{
+      period: number;
+      value: number;
+      touched: boolean;
+      gap_pct: number;
+    }>;
+    ma_touch_passed: boolean | null;
+    reference_price: number | null;
+    reference_session: string | null;
+    reason: string;
   };
   panic: {
     open: boolean;
@@ -829,6 +853,17 @@ export interface QuantAnalysisSnapshot {
   symbols: Record<string, QuantSymbolAnalysis>;
   holding_costs?: Record<string, QuantHoldingCost>;
   panic_window?: QuantPanicWindowSnapshot;
+  review_checkpoint?: {
+    label: string;
+    at: string;
+    checked_at: string;
+    us_trading_day: string;
+    notify: boolean;
+    next_at: string;
+    stale: boolean;
+    notifications_sent: number;
+    error?: string;
+  };
   sell?: QuantSellSnapshot;
   summary?: QuantOpportunitySummary;
   pe_history?: PeHistoryPayload;

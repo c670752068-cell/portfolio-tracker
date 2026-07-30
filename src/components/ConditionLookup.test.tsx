@@ -78,10 +78,24 @@ describe('ConditionLookup', () => {
 
     expect(html.indexOf('恐慌抢买窗口')).toBeLessThan(html.indexOf('SOXL 买入条件'));
     expect(html).toContain('疯狂提醒中');
-    expect(html).toContain('深度位 ✓');
+    expect(html).toContain('1× 基准判定');
+    expect(html).toContain('SOXX 闭市价 $465.00');
+    expect(html).toContain('MA120 还差 2.53%');
+    expect(html).toContain('夜盘价 $469.25（仅展示，不改变条件）');
     expect(html).toContain('恐慌位 ✓');
     expect(html).toContain('目标 20% / 当前 3.2%');
     expect(html).toContain('value="16"');
+  });
+
+  it('shows the Shanghai checkpoint status without inventing a notification result', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+    );
+
+    expect(html).toContain('定时审查：夜盘审查');
+    expect(html).toContain('美股交易日 2026-07-17');
+    expect(html).toContain('下一检查点 11:00');
+    expect(html).toContain('本次已通知 1 条');
   });
 
   it('does not render a panic status for a symbol absent from the backend block', () => {
