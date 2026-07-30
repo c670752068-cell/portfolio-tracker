@@ -49,6 +49,14 @@ function holding(symbol: string, overrides: Partial<Holding> = {}): Holding {
 }
 
 describe('alert holding market-value labels', () => {
+  it('formats five-digit market values with thousands separators', () => {
+    const [option] = buildAlertHoldingOptions([
+      holding('TQQQ', { marketValueOverride: 20_412.63 }),
+    ]);
+
+    expect(option.label).toContain('市值 $20,412.63');
+  });
+
   it('returns the broker-aggregated value as structured data and labels it as market value', () => {
     const options = buildAlertHoldingOptions([
       holding('NKE', { marketValueOverride: 200, broker: 'IBKR' }),
@@ -79,7 +87,7 @@ describe('alert holding market-value labels', () => {
     ]);
 
     expect(option.marketValue).toBe(3660);
-    expect(option.label).toBe('IGV · 市值 $3660.00 · FUTU');
+    expect(option.label).toBe('IGV · 市值 $3,660.00 · FUTU');
   });
 });
 

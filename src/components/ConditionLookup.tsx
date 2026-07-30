@@ -4,6 +4,7 @@ import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
 import { buildDepthPriceView } from '../depthPrice';
 import { depthQuotePrice, depthQuoteSnapshot, type DepthQuote } from '../depthQuotePrice';
 import { formatDisplayMoney } from '../displayCurrency';
+import { formatMoney } from '../format';
 import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
 import { finalVerdictSymbols, isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import { findSellFamily, resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
@@ -448,7 +449,7 @@ function ObservationBadge({ visible }: { visible: boolean }) {
 }
 
 function nullableUsdPrice(value: number | null): string {
-  return typeof value === 'number' && Number.isFinite(value) ? `$${value.toFixed(2)}` : '暂无';
+  return typeof value === 'number' && Number.isFinite(value) ? formatMoney(value) : '暂无';
 }
 
 function OneXEntryGate({ status }: { status: QuantPanicSymbolStatus }) {

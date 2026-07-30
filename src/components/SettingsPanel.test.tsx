@@ -68,10 +68,23 @@ describe('SettingsPanel cost coverage', () => {
     expect(html).toContain('已有成本 0 / 共 3 个持仓');
     expect(html).toContain('NVDA · FUTU');
     expect(html).toContain('期权成本量化系统未提供，请在「持仓 → 补充期权详情」上传期权详情页截图');
-    expect(html).toContain('MSFT · IBKR · coverage=partial');
+    expect(html).toContain('MSFT · IBKR · 成本不完整');
     expect(html).toContain('量化系统对该标的的成本覆盖不完整');
     expect(html).toContain('AAPL · LONGPORT');
     expect(html).toContain('请在持仓表补填买入价');
+  });
+
+  it('translates cost coverage machine codes for display', () => {
+    const holdings = [holding({ id: 'quant', symbol: 'MSFT', broker: 'IBKR' })];
+    const holdingCosts: Record<string, QuantHoldingCost> = {
+      MSFT: { weighted_average_cost: 300, currency: 'USD', coverage: 'partial', auto_fill_allowed: false },
+    };
+    const html = renderToStaticMarkup(
+      <SettingsPanel settings={settings} holdings={holdings} holdingCosts={holdingCosts} onSave={() => undefined} />,
+    );
+
+    expect(html).toContain('MSFT · IBKR · 成本不完整');
+    expect(html).not.toContain('coverage=');
   });
 
   it('reports that every holding has cost data when coverage is complete', () => {

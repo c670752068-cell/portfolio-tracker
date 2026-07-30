@@ -92,7 +92,7 @@ describe('ConditionLookup', () => {
 
     expect(html).toContain('⚪ SOXL · 等待最终裁决');
     expect(html).toContain('⚪ AMZN · 等待最终裁决');
-    expect(html).toContain('⚪ MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
+    expect(html).toContain('⚪ MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
     expect(html).not.toContain('🟠 MSFT');
     expect(html).toContain('⚪ AAPL · 等待最终裁决');
   });
@@ -632,8 +632,8 @@ describe('ConditionLookup', () => {
       <ConditionLookup snapshot={snapshot} holdings={holdings} initialSymbol="MSFT" />,
     );
 
-    expect(html).toContain('🟠 MSFT · 市值 $4000.00 · IBKR · 卖出窗口开启</option>');
-    expect(html).not.toContain('MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
+    expect(html).toContain('🟠 MSFT · 市值 $4,000.00 · IBKR · 卖出窗口开启</option>');
+    expect(html).not.toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
   });
 
   it('explains module-level observation and never labels its signals as open windows', () => {
@@ -650,7 +650,7 @@ describe('ConditionLookup', () => {
 
     expect(html).toContain('量化卖出模块当前为观察期，全部信号均未正式生效');
     expect(html).not.toContain('卖出窗口开启');
-    expect(html).toContain('MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
+    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
   });
 
   it('shows an explicit fallback when the quant playbook has no label', () => {

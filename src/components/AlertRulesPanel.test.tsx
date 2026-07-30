@@ -142,6 +142,24 @@ describe('AlertRulesPanel forms', () => {
 });
 
 describe('AlertRulesPanel rule list', () => {
+  it('formats five-digit saved-rule amounts with thousands separators', () => {
+    const html = renderPanel({
+      rules: [{
+        id: 'nvda-target',
+        symbol: 'NVDA',
+        type: 'target_price',
+        direction: 'above',
+        target_price: 20_412.63,
+        approach_pct: 5,
+        reduce_to_pct: 5,
+        enabled: true,
+      }],
+    });
+
+    expect(html).toContain('目标价 $20,412.63');
+    expect(html).not.toContain('$20412.63');
+  });
+
   it('shows current price, distance, last reminder, and edit/delete controls', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-15T15:10:00.000Z'));

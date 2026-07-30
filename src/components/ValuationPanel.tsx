@@ -4,6 +4,8 @@ import type {
   QuantValuationTab,
   QuantVixContext,
 } from '../types';
+import { staleDaysFrom } from '../staleDays';
+import { dateText } from '../format';
 import { buildValuationSummary } from '../valuationPlan';
 import { BuyPlanSection } from './BuyPlanSection';
 import { RegimeSection } from './RegimeSection';
@@ -60,6 +62,7 @@ function CurrentIndicators({
   valuation: QuantValuationTab;
   vix: QuantVixContext | null;
 }) {
+  const ndxStaleDays = staleDaysFrom(valuation.ndx.as_of) ?? valuation.ndx.stale_days ?? 0;
   return (
     <div className="grid gap-4 md:grid-cols-3">
       <IndicatorCard
@@ -92,7 +95,7 @@ function CurrentIndicators({
           `5年分位 ${percentText(valuation.ndx.pe_percentile_5y)} · ${valuation.ndx.zone ?? '区间暂无'}`,
           `PB ${numberText(valuation.ndx.current_pb)}`,
         ]}
-        timestamp={`丹居 · ${valuation.ndx.as_of ?? valuation.generated_at}`}
+        timestamp={`丹居 · ${dateText(valuation.ndx.as_of ?? valuation.generated_at)}`}
       >
         {valuation.ndx.realtime_estimate && (
           <div className="mt-3 rounded-xl bg-buy/8 p-3 text-xs leading-relaxed text-ink-secondary">
@@ -103,7 +106,7 @@ function CurrentIndicators({
         )}
         {valuation.ndx.stale && (
           <p className="mt-3 rounded-lg border border-trim/40 bg-trim/10 px-3 py-2 text-xs leading-relaxed text-ink-secondary">
-            ⚠ 数据停留在 {valuation.ndx.as_of ?? '未知日期'}（{valuation.ndx.stale_days ?? 0} 天前）
+            ⚠ 数据停留在 {valuation.ndx.as_of ?? '未知日期'}（{ndxStaleDays} 天前）
             {valuation.ndx.gate_available === false ? '；估值闸门当前不可判定' : ''}
           </p>
         )}
@@ -114,7 +117,7 @@ function CurrentIndicators({
         valuePrefix="CNN "
         tone={sentimentTone(valuation.cnn.current_score)}
         details={[ratingText(valuation.cnn.rating)]}
-        timestamp={`CNN · ${valuation.cnn.as_of ?? valuation.generated_at}`}
+        timestamp={`CNN · ${dateText(valuation.cnn.as_of ?? valuation.generated_at)}`}
       />
     </div>
   );
@@ -159,7 +162,7 @@ function DistanceSection({ valuation }: { valuation: QuantValuationTab }) {
     <section className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-base font-semibold">还差多少</h3>
-        <span className="font-mono text-[11px] tabular-nums text-ink-muted">OpenD 最新价 · {valuation.generated_at}</span>
+        <span className="font-mono text-[11px] tabular-nums text-ink-muted">OpenD 最新价 · {dateText(valuation.generated_at)}</span>
       </div>
       {valuation.distance_to_anchors.length === 0 ? (
         <div className="mt-4 rounded-xl bg-surface-overlay/40 p-6 text-center text-sm text-ink-muted">锚点距离数据准备中</div>

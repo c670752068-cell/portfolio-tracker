@@ -1,7 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QuantAnalysisSnapshot, QuantBuyPlan } from '../types';
 import { ValuationPanel } from './ValuationPanel';
+
+afterEach(() => vi.useRealTimers());
 
 const snapshot = {
   source: 'futu-assistant',
@@ -292,6 +294,22 @@ const snapshot = {
 } satisfies QuantAnalysisSnapshot;
 
 describe('ValuationPanel', () => {
+  it('calculates stale age from the valuation date and shows the warning only once', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-30T08:49:00-04:00'));
+    const staleSnapshot = structuredClone(snapshot);
+    staleSnapshot.valuation_tab!.ndx.as_of = '2026-07-28';
+    staleSnapshot.valuation_tab!.ndx.stale = true;
+    staleSnapshot.valuation_tab!.ndx.stale_days = 4;
+
+    const html = renderToStaticMarkup(
+      <ValuationPanel snapshot={staleSnapshot} onDirtyChange={() => undefined} />,
+    );
+
+    expect(html).toContain('数据停留在 2026-07-28（2 天前）');
+    expect(html.match(/数据停留在/g)).toHaveLength(1);
+  });
+
   it('renders all five evidence sections, estimates, progress and timestamps', () => {
     const html = renderToStaticMarkup(
       <ValuationPanel snapshot={snapshot} onDirtyChange={() => undefined} />,
@@ -361,6 +379,60 @@ describe('ValuationPanel', () => {
     expect(html).toContain('数据准备中');
     expect(html).not.toContain('NaN');
     expect(html).not.toContain('undefined');
+  });
+
+  it('never exposes raw ISO timestamps with microseconds', () => {
+    const rawTimestamp = '2026-07-30T08:49:24.092951-04:00';
+    const html = renderToStaticMarkup(
+      <ValuationPanel
+        snapshot={{
+          ...snapshot,
+          generated_at: rawTimestamp,
+          valuation_tab: { ...snapshot.valuation_tab!, generated_at: rawTimestamp },
+          buy_plan_status: { ...snapshot.buy_plan_status!, evaluated_at: rawTimestamp },
+          regime_status: {
+            ...snapshot.regime_status!,
+            current_cell: { ...snapshot.regime_status!.current_cell!, as_of: rawTimestamp },
+          },
+        }}
+        onDirtyChange={() => undefined}
+      />,
+    );
+
+    expect(html).not.toMatch(/\d{2}:\d{2}:\d{2}\.\d{6}/);
+    expect(html).toContain('2026-07-30 08:49');
+  });
+
+  it('rounds long decimals embedded in backend plan-link sentences', () => {
+    const verdict = snapshot.regime_status!.verdict_card!;
+    const html = renderToStaticMarkup(
+      <ValuationPanel
+        snapshot={{
+          ...snapshot,
+          regime_status: {
+            ...snapshot.regime_status!,
+            verdict_card: {
+              ...verdict,
+              plan_link: {
+                ...verdict.plan_link,
+                nearest: {
+                  label: '第一枪',
+                  missing: [
+                    'CNN < 25（当前 34.4857142857143）',
+                    '回撤 < -45%（当前 -29.00871742416146）',
+                  ],
+                },
+              },
+            },
+          },
+        }}
+        onDirtyChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('当前 34.49');
+    expect(html).toContain('当前 -29.01');
+    expect(html).not.toContain('34.4857');
   });
 
   it('labels proxy VIX data and suppresses all insufficient research statistics', () => {

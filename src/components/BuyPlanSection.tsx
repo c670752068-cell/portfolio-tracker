@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { dateText } from '../format';
 import type { QuantAnalysisSnapshot, QuantBuyPlan } from '../types';
 import {
   BUY_PLAN_TEMPLATES,
@@ -152,7 +153,7 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">在冷静时写下条件，恐慌时就不用临时决定。</p>
         </div>
         <span className="font-mono text-[11px] tabular-nums text-ink-muted">
-          量化快照 {snapshot.buy_plan_status?.evaluated_at ?? '数据准备中'}
+          量化快照 {dateText(snapshot.buy_plan_status?.evaluated_at) === '暂无' ? '数据准备中' : dateText(snapshot.buy_plan_status?.evaluated_at)}
         </span>
       </div>
 

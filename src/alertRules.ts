@@ -1,6 +1,7 @@
 import { isCashEquivalent } from './assetClass';
 import { isRegularSession } from './marketSession';
 import type { Holding, QuantHoldingCost } from './types';
+import { formatMoney } from './format';
 
 export const ALERT_RULES_REFRESH_MS = 35 * 60 * 1000;
 
@@ -38,7 +39,7 @@ export function buildAlertHoldingOptions(holdings: Holding[]): AlertHoldingOptio
         symbol,
         marketValue: item.marketValue,
         brokers,
-        label: `${symbol} · 市值 $${item.marketValue.toFixed(2)} · ${brokers.join(' / ')}`,
+        label: `${symbol} · 市值 ${formatMoney(item.marketValue)} · ${brokers.join(' / ')}`,
       };
     });
 }
@@ -100,7 +101,7 @@ export function formatAlertCurrentPrice(rule: AlertRule, now = new Date()): stri
   if (rule.current_price == null) return '当前价 待盘中检查';
   const label = isRegularSession(now) ? '当前价' : '上一交易日收盘';
   const checkedAt = formatNewYorkTime(rule.last_checked_at);
-  return `${label} $${rule.current_price.toFixed(2)}${checkedAt ? ` @ ${checkedAt} ET` : ''}`;
+  return `${label} ${formatMoney(rule.current_price)}${checkedAt ? ` @ ${checkedAt} ET` : ''}`;
 }
 
 export function formatAlertDistance(rule: AlertRule): string {

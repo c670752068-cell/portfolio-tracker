@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { buildAlertHoldingOptions, dispatchAlertRuleMutation, formatAlertCurrentPrice, formatAlertDistance, resolveHoldingCostSuggestion, type AlertRule, type AlertRuleDraft, type AlertRuleType } from '../alertRules';
+import { formatMoney } from '../format';
 import type { Holding, QuantHoldingCost } from '../types';
 
 interface AlertRulesPanelProps {
@@ -185,11 +186,11 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
           ) : (
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="text-sm"><span className="mb-1 block font-medium">成本价（USD）</span><div className={`${inputClass} cursor-not-allowed bg-surface-overlay/30 dark:bg-surface-base`}>{suggestion.automaticValue == null ? '成本不可用' : `$${suggestion.automaticValue.toFixed(2)}（券商加权）`}</div></div>
+                <div className="text-sm"><span className="mb-1 block font-medium">成本价（USD）</span><div className={`${inputClass} cursor-not-allowed bg-surface-overlay/30 dark:bg-surface-base`}>{suggestion.automaticValue == null ? '成本不可用' : `${formatMoney(suggestion.automaticValue)}（券商加权）`}</div></div>
                 <label className="text-sm"><span className="mb-1 block font-medium">涨幅阈值</span><select value={form.gainPct} onChange={(event) => setForm((current) => ({ ...current, gainPct: Number(event.target.value) }))} className={inputClass}><option value={20}>+20%</option><option value={30}>+30%</option></select></label>
               </div>
               {suggestion.coverage === 'complete' && <p className="text-xs text-gain dark:text-gain">成本来自三券商持仓，已按股数加权。</p>}
-              {suggestion.coverage !== 'complete' && <p className="text-xs text-trim dark:text-trim">成本不可用{suggestion.referenceValue == null ? '' : `（部分账户参考 $${suggestion.referenceValue.toFixed(2)}）`}；券商未提供完整成本，仅可用目标价规则。</p>}
+              {suggestion.coverage !== 'complete' && <p className="text-xs text-trim dark:text-trim">成本不可用{suggestion.referenceValue == null ? '' : `（部分账户参考 ${formatMoney(suggestion.referenceValue)}）`}；券商未提供完整成本，仅可用目标价规则。</p>}
               <p className="text-xs text-ink-muted">到达后提醒：卖出 50% 仓位，留 50% 博弈。</p>
             </div>
           )}
@@ -210,7 +211,7 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
                 <div key={rule.id} className="py-3 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="font-mono font-semibold tabular-nums">{rule.symbol} · {rule.type === 'target_price' ? `目标价 $${target?.toFixed(2)}` : `成本 $${rule.cost_basis?.toFixed(2)} +${Number(rule.gain_pct).toFixed(2)}%`}</div>
+                      <div className="font-mono font-semibold tabular-nums">{rule.symbol} · {rule.type === 'target_price' ? `目标价 ${target == null ? '暂无' : formatMoney(target)}` : `成本 ${rule.cost_basis == null ? '暂无' : formatMoney(rule.cost_basis)} +${Number(rule.gain_pct).toFixed(2)}%`}</div>
                       <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">{formatAlertCurrentPrice(rule)} · {formatAlertDistance(rule)}</div>
                       <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">最近提醒 {rule.last_reminder_at || '尚未触发'}</div>
                     </div>

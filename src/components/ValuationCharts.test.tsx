@@ -53,11 +53,11 @@ const forward: QuantForwardPeHistory = {
 };
 
 describe('ValuationCharts', () => {
-  it('uses the actual TTM span and marks stale valuation data', () => {
+  it('uses the actual TTM span without duplicating the page-level stale warning', () => {
     const html = renderToStaticMarkup(<ValuationCharts valuation={valuation} forwardHistory={forward} />);
 
     expect(html).toContain('5 年 PE 走势');
-    expect(html).toContain('⚠ 数据停留在 2026-07-29（5 天前）');
+    expect(html).not.toContain('数据停留在');
     expect(html).toContain('TTM');
     expect(html).toContain('远期');
   });

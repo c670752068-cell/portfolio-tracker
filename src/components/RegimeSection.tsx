@@ -1,4 +1,5 @@
 import type { QuantRegimeGridCell, QuantRegimeStatus, QuantRegimeVerdictCard } from '../types';
+import { dateText } from '../format';
 
 export function RegimeSection({ regime }: { regime: QuantRegimeStatus | undefined }) {
   if (!regime?.available || !regime.current_cell || !regime.verdict_card) {
@@ -11,7 +12,7 @@ function VerdictCard({ verdict, asOf }: { verdict: QuantRegimeVerdictCard; asOf:
   const tqqq = verdict.leveraged['60'];
   const worstCase = verdict.caveats.find((item) => item.startsWith('最差情形'))?.replace(/^最差情形\s*/, '') ?? '暂无';
   return <article className="rounded-2xl border border-buy/35 bg-gradient-to-br from-buy/12 via-surface-raised to-surface-raised p-4 sm:p-6">
-    <div className="flex items-center justify-between gap-3"><h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-buy">当前状态</h3><span className="font-mono text-[11px] tabular-nums text-ink-muted">{asOf}</span></div>
+    <div className="flex items-center justify-between gap-3"><h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-buy">当前状态</h3><span className="font-mono text-[11px] tabular-nums text-ink-muted">{dateText(asOf)}</span></div>
     <h4 className="mt-3 text-xl font-semibold tracking-tight sm:text-2xl">{verdict.headline}</h4><p className="mt-1 text-sm text-ink-secondary">{verdict.cell_label}</p>
     {verdict.sample_sufficient ? <>
       <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">{[20, 60, 120].map((days) => <Horizon key={days} days={days} item={verdict.horizons[String(days)]} emphasis={days === 60} />)}</div>
@@ -20,7 +21,7 @@ function VerdictCard({ verdict, asOf }: { verdict: QuantRegimeVerdictCard; asOf:
       <p className="mt-3 rounded-xl border border-trim/35 bg-trim/10 px-3 py-2 font-mono text-sm font-semibold tabular-nums text-ink-primary">⚠ 最差情形：{worstCase}</p>
     </> : <p className="mt-4 rounded-xl bg-surface-overlay/50 p-4 text-sm text-ink-muted">{verdict.sample_context}，无统计结论。</p>}
     <p className="mt-3 text-xs leading-relaxed text-ink-muted">{verdict.overlay_note}</p><p className="mt-2 text-xs text-ink-muted">{verdict.action_hint}</p>
-    <p className="mt-3 border-t border-neutral/25 pt-3 text-xs text-ink-secondary">你的计划：{verdict.plan_link.ready_count}/{verdict.plan_link.total_count} 条满足{verdict.plan_link.nearest ? ` · 最近「${verdict.plan_link.nearest.label ?? '计划'}」还差 ${verdict.plan_link.nearest.missing.join('、') || '暂无'}` : ''}</p>
+    <p className="mt-3 border-t border-neutral/25 pt-3 text-xs text-ink-secondary">你的计划：{verdict.plan_link.ready_count}/{verdict.plan_link.total_count} 条满足{verdict.plan_link.nearest ? ` · 最近「${verdict.plan_link.nearest.label ?? '计划'}」还差 ${verdict.plan_link.nearest.missing.map(roundEmbeddedDecimals).join('、') || '暂无'}` : ''}</p>
   </article>;
 }
 
@@ -42,3 +43,4 @@ function Metric({ label, value }: { label: string; value: string }) { return <di
 function labels(cells: readonly QuantRegimeGridCell[], index: 'row_bucket_index' | 'col_bucket_index', name: 'row_bucket' | 'col_bucket') { const values = new Map<number, string>(); cells.forEach((cell) => values.set(cell[index], cell[name])); return [...values].sort(([a], [b]) => a - b).map(([index, label]) => ({ index, label })); }
 function percent(value: number | null | undefined) { return typeof value === 'number' ? `${value.toFixed(2)}%` : '暂无'; }
 function signed(value: number | null | undefined) { return typeof value === 'number' ? `${value >= 0 ? '+' : ''}${value.toFixed(2)}%` : '暂无'; }
+function roundEmbeddedDecimals(value: string) { return value.replace(/-?\d+\.\d{3,}/g, (match) => Number(match).toFixed(2)); }

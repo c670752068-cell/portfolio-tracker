@@ -92,12 +92,6 @@ function PeHistoryChart({
           <SegmentButton active={index === 'SOX'} onClick={() => setIndex('SOX')}>SOX</SegmentButton>
         </div>
       </div>
-      {!isForward && index === 'NDX' && valuation.ndx.stale && (
-        <p className="mb-4 rounded-lg border border-trim/40 bg-trim/10 px-3 py-2 text-xs text-ink-secondary">
-          ⚠ 数据停留在 {valuation.ndx.as_of ?? '未知日期'}（{valuation.ndx.stale_days ?? 0} 天前）
-          {valuation.ndx.gate_available === false ? '；估值闸门当前不可判定' : ''}
-        </p>
-      )}
       {isForward && (
         <div className="mb-4 space-y-2 rounded-lg border border-neutral/40 bg-surface-overlay/35 p-3 text-xs leading-relaxed text-ink-secondary">
           <div className="font-mono tabular-nums">

@@ -25,6 +25,12 @@ const COST_GAP_GUIDANCE: Record<CostGapReason, string> = {
   manual_missing: '请在持仓表补填买入价',
 };
 
+const COVERAGE_LABELS: Record<string, string> = {
+  unavailable: '券商未提供成本',
+  partial: '成本不完整',
+  missing: '无成本记录',
+};
+
 const VALUATION_INDEX_KEYS: readonly ValuationIndexKey[] = ['NDX', 'SOX', 'SPX', 'DJI', 'FANGPLUS'];
 
 function CostCoverageCard({
@@ -52,7 +58,7 @@ function CostCoverageCard({
               {rows.map((row, index) => {
                 const quantCost = holdingCosts[row.symbol];
                 const coverage = reason === 'quant_coverage_incomplete'
-                  ? ` · coverage=${quantCost?.coverage ?? 'missing'}`
+                  ? ` · ${COVERAGE_LABELS[quantCost?.coverage ?? 'missing']}`
                   : '';
                 return <li key={`${row.symbol}-${row.assetType}-${row.broker ?? ''}-${index}`}>{row.symbol}{row.broker ? ` · ${row.broker}` : ''}{coverage}</li>;
               })}

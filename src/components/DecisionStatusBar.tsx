@@ -1,4 +1,5 @@
 import { finalVerdictFreshness, finalVerdictSymbols } from '../quantAnalysis';
+import { dateText } from '../format';
 import type { QuantAnalysisFreshness, QuantAnalysisSnapshot, QuantFinalVerdict } from '../types';
 
 /**
@@ -107,11 +108,4 @@ function FreshnessBadges({ freshness }: { freshness: QuantAnalysisFreshness | un
       ))}
     </div>
   );
-}
-
-function dateText(value: string | null): string {
-  if (!value) return '暂无';
-  const date = value.slice(0, 10);
-  const time = value.length > 10 ? value.slice(11, 16) : '';
-  return time ? `${date} ${time}` : date;
 }
