@@ -69,7 +69,7 @@ describe('ConditionLookup', () => {
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
-    expect(html).toContain('盘中每 5 分钟、其他时段每 25 分钟自动更新');
+    expect(html).toContain('盘中每 5 分钟；其他时段每 25 分钟自动更新');
   });
 
   it('uses a locked snapshot-symbol select and filters cash equivalents', () => {
@@ -95,6 +95,27 @@ describe('ConditionLookup', () => {
     expect(html).toContain('⚪ MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
     expect(html).not.toContain('🟠 MSFT');
     expect(html).toContain('⚪ AAPL · 等待最终裁决');
+  });
+
+  it('renders touch-accessible disclosure controls for sell-rule explanations', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('aria-label="说明：修复期口径"');
+    expect(html).toContain('aria-label="说明：止盈阶梯适用条件"');
+    expect(html).toContain('min-h-11');
+    expect(html).not.toContain('title="这是市场维度');
+    expect(html).not.toContain('title="只在浮盈达到最低档后适用');
+  });
+
+  it('omits an empty sell-status suffix instead of appending dot-none', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="AAPL" />,
+    );
+
+    expect(html).not.toContain('· 无</option>');
+    expect(html).toContain('TQQQ · 市值 $600.00 · LONGPORT</option>');
   });
 
   it('shows successful refresh feedback with the snapshot timestamp and minute age', () => {

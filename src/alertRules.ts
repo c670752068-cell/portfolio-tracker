@@ -1,6 +1,5 @@
 import { isCashEquivalent } from './assetClass';
-import { isRegularSession } from './marketSession';
-import type { Holding, QuantHoldingCost } from './types';
+import type { Holding, PriceSession, QuantHoldingCost } from './types';
 import { formatMoney } from './format';
 
 export const ALERT_RULES_REFRESH_MS = 35 * 60 * 1000;
@@ -64,6 +63,8 @@ export interface AlertRule extends AlertRuleDraft {
   last_reminder_at?: string | null;
   last_alert_type?: 'approach' | 'reached' | null;
   last_checked_at?: string | null;
+  prices_at?: string | null;
+  price_session?: PriceSession;
   created_at?: string;
   updated_at?: string;
 }
@@ -97,10 +98,20 @@ function formatNewYorkTime(value: string | null | undefined): string | null {
   }).format(date);
 }
 
-export function formatAlertCurrentPrice(rule: AlertRule, now = new Date()): string {
+export function formatAlertCurrentPrice(rule: AlertRule, _now = new Date()): string {
   if (rule.current_price == null) return '当前价 待盘中检查';
-  const label = isRegularSession(now) ? '当前价' : '上一交易日收盘';
-  const checkedAt = formatNewYorkTime(rule.last_checked_at);
+  const checkedAt = formatNewYorkTime(rule.prices_at ?? rule.last_checked_at);
+  const label = rule.price_session === 'pre'
+    ? '盘前'
+    : rule.price_session === 'regular'
+      ? '盘中'
+      : rule.price_session === 'post'
+        ? '盘后'
+        : rule.price_session === 'overnight'
+          ? '夜盘'
+          : rule.price_session === 'closed' && checkedAt === '16:00'
+            ? '收盘'
+            : '休市';
   return `${label} ${formatMoney(rule.current_price)}${checkedAt ? ` @ ${checkedAt} ET` : ''}`;
 }
 

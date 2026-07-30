@@ -435,6 +435,98 @@ describe('ValuationPanel', () => {
     expect(html).not.toContain('34.4857');
   });
 
+  it('does not label a numeric valuation percentile as missing data', () => {
+    const html = renderToStaticMarkup(
+      <ValuationPanel
+        snapshot={{
+          ...snapshot,
+          valuation_tab: {
+            ...snapshot.valuation_tab!,
+            ndx: {
+              ...snapshot.valuation_tab!.ndx,
+              pe_percentile_5y: 20.16,
+              zone: '数据缺失',
+            },
+          },
+        }}
+        onDirtyChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('5年分位 20.16%');
+    expect(html).not.toContain('5年分位 20.16% · 数据缺失');
+  });
+
+  it('describes an upward anchor as an already-below reference instead of a target to reach', () => {
+    const html = renderToStaticMarkup(
+      <ValuationPanel
+        snapshot={{
+          ...snapshot,
+          valuation_tab: {
+            ...snapshot.valuation_tab!,
+            distance_to_anchors: [{
+              label: 'PE 30分位线',
+              target_pe: 32.47,
+              current_pe: 29.4,
+              pe_gap_pct: 9.45,
+              implied_qqq_price: 742.9,
+              current_qqq_price: 672.79,
+              price_gap_pct: 9.45,
+              estimate_note: '按当前盈利基数估算',
+            }],
+          },
+        }}
+        onDirtyChange={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('当前已低于 PE 30分位线（分位线对应 PE 32.47）');
+    expect(html).not.toContain('29.40 → 32.47');
+    expect(html).not.toContain('已到达');
+  });
+
+  it('renders repeated account and estimate context only once above their card groups', () => {
+    const basePlan = snapshot.buy_plan_status!.plans[0];
+    const buySizing = {
+      suggested_usd: 0,
+      gate: { passed: false, reason: '科技已超硬顶，不建议新增' },
+      risk_context: {
+        total_effective_pct: 209.94,
+        total_cash_pct: 100,
+        sleeve: {
+          name: '科技', effective_pct: 93.06, cash_pct: 79.91,
+          hard_cap_pct: 75, over_hard_cap_usd: 24_906,
+        },
+      },
+    };
+    const distances = [1, 2, 3].map((index) => ({
+      ...snapshot.valuation_tab!.distance_to_anchors[0],
+      label: `锚点 ${index}`,
+    }));
+    const html = renderToStaticMarkup(
+      <ValuationPanel
+        snapshot={{
+          ...snapshot,
+          valuation_tab: { ...snapshot.valuation_tab!, distance_to_anchors: distances },
+          buy_plan_status: {
+            ...snapshot.buy_plan_status!,
+            plans: [1, 2, 3].map((index) => ({
+              ...basePlan,
+              id: `plan-${index}`,
+              label: `计划 ${index}`,
+              buy_sizing: buySizing,
+            })),
+          },
+        }}
+        onDirtyChange={() => undefined}
+      />,
+    );
+
+    expect(html.match(/等效敞口 209.94%/g)).toHaveLength(1);
+    expect(html.match(/科技已超硬顶，不建议新增/g)).toHaveLength(1);
+    expect(html.match(/按当前盈利基数估算/g)).toHaveLength(1);
+  });
+
   it('labels proxy VIX data and suppresses all insufficient research statistics', () => {
     const html = renderToStaticMarkup(
       <ValuationPanel

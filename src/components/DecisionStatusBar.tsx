@@ -1,5 +1,5 @@
 import { finalVerdictFreshness, finalVerdictSymbols } from '../quantAnalysis';
-import { dateText } from '../format';
+import { dateText, formatMoney } from '../format';
 import type { QuantAnalysisFreshness, QuantAnalysisSnapshot, QuantFinalVerdict } from '../types';
 
 /**
@@ -53,7 +53,7 @@ export function DecisionStatusBar({ snapshot }: { snapshot: QuantAnalysisSnapsho
           </details>
         )}
         {stale && <p className="mt-2 font-mono text-xs tabular-nums text-trim">数据 {stale.dataAsOf ?? '暂无'}{typeof stale.staleDays === 'number' ? `（落后 ${stale.staleDays} 天）` : ''}</p>}
-        {funding && <p className="mt-2 font-mono text-xs font-medium tabular-nums text-ink-primary">可用资金 {formatUsd(funding.availableUsd)} · 闸门放行 {formatUsd(funding.gateAllowedUsd)}</p>}
+        {funding && <p className="mt-2 font-mono text-xs font-medium tabular-nums text-ink-primary">可用资金 {formatMoney(funding.availableUsd)} · 闸门放行 {formatMoney(funding.gateAllowedUsd)}</p>}
       </div>
       <FreshnessBadges freshness={freshness} />
     </section>
@@ -67,10 +67,6 @@ function fundingFacts(snapshot: QuantAnalysisSnapshot): { availableUsd: number; 
   if (typeof availableUsd !== 'number' || typeof gateAllowedUsd !== 'number') return null;
   if (!Number.isFinite(availableUsd) || !Number.isFinite(gateAllowedUsd)) return null;
   return { availableUsd, gateAllowedUsd };
-}
-
-function formatUsd(value: number): string {
-  return `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
 
 function verdictHeadline(verdicts: QuantFinalVerdict[]): string {

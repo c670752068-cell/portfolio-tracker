@@ -5,6 +5,7 @@ import { KimiError, activeAiEndpoint, activeAiProviderLabel, testAiConnection } 
 import { getServerAiProxyUrl, getServerQuoteProxyUrl, hasServerGateway, serverGatewayLabel } from '../runtimeConfig';
 import type { AiProvider, AppSettings, Holding, QuantHoldingCost, QuoteProvider, ValuationIndexKey } from '../types';
 import { VALUATION_ANCHOR_POLICY_TEXT } from '../valuationAnchorPolicy';
+import { REFRESH_CADENCE } from '../refreshCadence';
 
 interface SettingsPanelProps {
   settings: AppSettings;
@@ -15,12 +16,14 @@ interface SettingsPanelProps {
 
 const COST_GAP_LABELS: Record<CostGapReason, string> = {
   option_no_source: '期权成本无量化来源',
+  equity_no_source: '正股及 ETF 成本无来源',
   quant_coverage_incomplete: '量化成本覆盖不完整',
   manual_missing: '手动成本缺失',
 };
 
 const COST_GAP_GUIDANCE: Record<CostGapReason, string> = {
   option_no_source: '期权成本量化系统未提供，请在「持仓 → 补充期权详情」上传期权详情页截图',
+  equity_no_source: '请在持仓表手动补填买入价',
   quant_coverage_incomplete: '量化系统对该标的的成本覆盖不完整，请在持仓表手动补填买入价，或联系量化侧确认该券商是否提供成本',
   manual_missing: '请在持仓表补填买入价',
 };
@@ -41,10 +44,10 @@ function CostCoverageCard({
   holdingCosts: Readonly<Record<string, QuantHoldingCost>>;
 }) {
   const analysis = analyzeCostCoverage(holdings, holdingCosts);
-  const reasons: CostGapReason[] = ['option_no_source', 'quant_coverage_incomplete', 'manual_missing'];
+  const reasons: CostGapReason[] = ['option_no_source', 'equity_no_source', 'quant_coverage_incomplete', 'manual_missing'];
   return (
     <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
-      <h4 className="text-sm font-semibold">成本数据覆盖</h4>
+      <h3 className="text-sm font-semibold">成本数据覆盖</h3>
       <p className="mt-1 text-sm">已有成本 {analysis.costed} / 共 {analysis.total} 个持仓</p>
       {analysis.gaps.length === 0 ? (
         <p className="mt-2 text-sm font-medium text-gain dark:text-gain">全部持仓成本齐全</p>
@@ -73,12 +76,16 @@ function CostCoverageCard({
 
 export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSave }: SettingsPanelProps) {
   const [draft, setDraft] = useState<AppSettings>(settings);
+  const [savedSettings, setSavedSettings] = useState<AppSettings>(settings);
   const [saved, setSaved] = useState(false);
   const [testingAi, setTestingAi] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string; hint?: string } | null>(null);
   const aiLabel = activeAiProviderLabel(draft);
   const serverGatewayEnabled = hasServerGateway();
+  const dirtyCount = Object.keys(draft).filter((key) => (
+    JSON.stringify(draft[key as keyof AppSettings]) !== JSON.stringify(savedSettings[key as keyof AppSettings])
+  )).length;
 
   function updateManualAnchor(index: ValuationIndexKey, rawValue: string) {
     const next = { ...draft.valuationManualAnchors };
@@ -100,7 +107,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
       return;
     }
     setSaveError('');
-    onSave({
+    const nextSettings = {
       ...draft,
       proxyUrl: sanitizeEndpointUrl(draft.proxyUrl),
       zhipuProxyUrl: sanitizeEndpointUrl(draft.zhipuProxyUrl),
@@ -108,7 +115,10 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
       exposureTargetPct: draft.exposureTargetPct >= 50 && draft.exposureTargetPct <= 300
         ? draft.exposureTargetPct
         : 100,
-    });
+    };
+    onSave(nextSettings);
+    setDraft(nextSettings);
+    setSavedSettings(nextSettings);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
@@ -129,10 +139,10 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
 
   return (
     <div className="space-y-3 rounded-xl border border-neutral/40 bg-surface-raised p-3 dark:border-neutral/60 dark:bg-surface-raised">
-      <h3 className="text-sm font-semibold">设置</h3>
+      <h2 className="text-sm font-semibold">设置</h2>
       {serverGatewayEnabled && (
         <div className="rounded-md border border-gain/40 bg-gain/10 p-2 text-xs text-gain dark:border-gain/30 dark:bg-gain/20 dark:text-gain">
-          已启用 {serverGatewayLabel()}：截图和行情请求先经过服务器（{serverGatewayLabel()}），手机不再直接连接 AI 接口。
+          已启用 {serverGatewayLabel()}：截图和行情请求先经过服务器，手机不再直接连接 AI 接口。
         </div>
       )}
       <Field label="AI 识别服务">
@@ -145,7 +155,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           <option value="kimi">Kimi / Moonshot（备用）</option>
         </select>
         <p className="mt-1 text-xs text-ink-muted">
-          当前默认切到智谱。你手机上的 Kimi 已经表现为 90 秒超时，说明不是图片压缩问题，优先用智谱更稳。
+          默认使用智谱（更稳定）。Kimi 作为备用，网络不佳时可能超时。
         </p>
       </Field>
       {draft.aiProvider === 'zhipu' ? (
@@ -168,11 +178,11 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
               onChange={(e) => setDraft({ ...draft, zhipuModel: e.target.value })}
               className={inputCls}
             >
-              <option value="glm-4.6v-flash">glm-4.6v-flash（推荐：免费/较快）</option>
-              <option value="glm-4v-flash">glm-4v-flash（轻量免费）</option>
-              <option value="glm-5v-turbo">glm-5v-turbo（更强，可能更贵）</option>
-              <option value="glm-4.6v">glm-4.6v（更强）</option>
-              <option value="glm-4.1v-thinking-flash">glm-4.1v-thinking-flash</option>
+              <option value="glm-4.6v-flash">glm-4.6v-flash（免费/快）</option>
+              <option value="glm-4v-flash">glm-4v-flash（免费/轻量）</option>
+              <option value="glm-5v-turbo">glm-5v-turbo（更强/更贵）</option>
+              <option value="glm-4.6v">glm-4.6v（更强/免费额度低）</option>
+              <option value="glm-4.1v-thinking-flash">glm-4.1v-thinking-flash（思维链/最慢）</option>
             </select>
           </Field>
           <Field label="智谱代理 URL（可选）">
@@ -184,7 +194,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
             />
             <p className="mt-1 text-xs text-ink-muted">
               {serverGatewayEnabled
-                ? `当前会自动使用服务器转发（${getServerAiProxyUrl('zhipu')}），无需填写。只有要换其他代理时才填。填写后会覆盖服务器转发，通常应留空。`
+                ? '已自动使用服务器转发，无需填写。只有要换其他代理时才填。填写后会覆盖服务器转发，通常应留空。'
                 : '直连智谱失败时再填。README 里的 Worker 模板已支持 /zhipu/chat/completions。填写后会覆盖服务器转发，通常应留空。'}
             </p>
           </Field>
@@ -225,7 +235,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
             />
             <p className="mt-1 text-xs text-ink-muted">
               {serverGatewayEnabled
-                ? `当前会自动使用服务器转发（${getServerAiProxyUrl('kimi')}），无需填写。填写后会覆盖服务器转发，通常应留空。`
+                ? '已自动使用服务器转发，无需填写。填写后会覆盖服务器转发，通常应留空。'
                 : '浏览器直连 Moonshot 可能超时。如仍出现 Load failed，部署 README 中的 Worker 代理并填入此处。填写后会覆盖服务器转发，通常应留空。'}
             </p>
           </Field>
@@ -246,7 +256,17 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           </span>
         )}
       </div>
-      <p className="text-xs text-ink-muted">当前生效接口：{activeAiEndpoint(draft)}</p>
+      <p className="text-xs text-ink-muted">当前生效接口：{serverGatewayEnabled ? '已自动使用服务器转发' : activeAiEndpoint(draft)}</p>
+      {serverGatewayEnabled && (
+        <details className="rounded-md border border-neutral/40 p-2 text-xs text-ink-muted">
+          <summary className="cursor-pointer">完整转发地址（仅排障时查看）</summary>
+          <ul className="mt-2 space-y-1 break-all font-mono tabular-nums">
+            <li>智谱：{getServerAiProxyUrl('zhipu')}</li>
+            <li>Kimi：{getServerAiProxyUrl('kimi')}</li>
+            <li>行情：{getServerQuoteProxyUrl()}</li>
+          </ul>
+        </details>
+      )}
       {aiTestResult?.hint && <p className="text-xs text-trim dark:text-trim">{aiTestResult.hint}</p>}
       <Field label="等效仓位目标 %">
         <input
@@ -259,20 +279,20 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           className={inputCls}
         />
         <p className="mt-1 text-xs text-ink-muted">
-          等效仓位 = 正股 + 杠杆 ETF×倍数 + 期权 Delta 折算后的总敞口 ÷ 总资产。留现金子弹但用杠杆/期权把等效顶到目标，是本设置的用途。
+          等效仓位 =（正股 + 杠杆 ETF × 倍数 + 期权 Delta 折算）÷ 总资产。留现金子弹但用杠杆/期权把等效顶到目标，是本设置的用途。
         </p>
       </Field>
       <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
-        <h4 className="mb-2 text-sm font-semibold">量化系统同步</h4>
+        <h3 className="mb-2 text-sm font-semibold">量化系统同步</h3>
         <p className="text-xs text-ink-muted">
           {serverGatewayEnabled
-            ? '已启用跨设备自动同步：Mac 量化系统每 45 分钟汇总 IBKR、长桥和富途后推送到 VPS；手机和电脑打开本网址会自动读取同一份持仓，不再需要分别填 Token。'
+            ? `已启用跨设备自动同步：Mac 量化系统${REFRESH_CADENCE.brokers.interval}汇总 IBKR、长桥和富途后推送到 VPS；手机和电脑打开本网址会自动读取同一份持仓，不再需要分别填 Token。`
             : '请使用 VPS 入口打开网站，GitHub Pages 无法跨设备读取服务器持仓。'}
         </p>
       </div>
       <CostCoverageCard holdings={holdings} holdingCosts={holdingCosts} />
       <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
-        <h4 className="mb-2 text-sm font-semibold">估值数据补充</h4>
+        <h3 className="mb-2 text-sm font-semibold">估值数据补充</h3>
         <Field label="Alpha Vantage PE API Key">
           <input
             type="password"
@@ -287,9 +307,10 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
         </Field>
       </div>
       <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
-        <h4 className="mb-2 text-sm font-semibold">估值基准</h4>
-        <p className="mb-3 text-xs text-ink-muted">
-          {VALUATION_ANCHOR_POLICY_TEXT} 手动锚点仅在对应指数填写后覆盖自动值。阈值表示当前 PE 高于锚点的距离分区，不改变量化系统的任何开窗结论。
+        <h3 className="mb-2 text-sm font-semibold">估值基准</h3>
+        <p className="text-xs text-ink-muted">{VALUATION_ANCHOR_POLICY_TEXT}</p>
+        <p className="mb-3 mt-1 text-xs text-ink-muted">
+          手动锚点仅在对应指数填写后覆盖自动值。阈值表示当前 PE 高于锚点的距离分区，不改变量化系统的任何开窗结论。
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="锚点窗口开始">
@@ -348,7 +369,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
         </div>
       </div>
       <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
-        <h4 className="mb-2 text-sm font-semibold">每日行情同步</h4>
+        <h3 className="mb-2 text-sm font-semibold">每日行情同步</h3>
         <div className="space-y-3">
           <Field label="行情源">
             <select
@@ -373,7 +394,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
                 className={inputCls}
               />
               <p className="mt-1 text-xs text-ink-muted">
-                仅保存在本机浏览器。用于每天北京时间 7 点后刷新股票/ETF 价格、涨跌和组合占比；不会进入 GitHub 仓库。
+                仅保存在本机浏览器。用于{REFRESH_CADENCE.dailyFallback.interval}刷新股票/ETF 价格、涨跌和组合占比；不会进入 GitHub 仓库。
               </p>
             </Field>
           )}
@@ -387,7 +408,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
               />
             <p className="mt-1 text-xs text-ink-muted">
                 {serverGatewayEnabled
-                  ? `本部署可直接使用服务器免费行情地址（${getServerQuoteProxyUrl()}）。`
+                  ? '本部署已自动使用服务器免费行情转发。'
                   : '使用 README 中的 Cloudflare Worker 模板可代理 Yahoo/NASDAQ 免费报价，URL 填到 /quotes。'}
               </p>
             </Field>
@@ -399,20 +420,48 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
               onChange={(e) => setDraft({ ...draft, autoRefreshQuotes: e.target.checked })}
               className="h-4 w-4 rounded border-neutral/60"
             />
-            北京时间每天 7 点后自动刷新一次（同一天不重复刷）
+            {REFRESH_CADENCE.dailyFallback.interval}自动刷新（同一天不重复刷）
           </label>
           <p className="text-xs text-ink-muted">
             不是实时盯盘；适合每天看一次组合占比和当日涨跌。需要立刻更新时，可在「总览」手动刷新。
           </p>
         </div>
       </div>
-      <button
-        onClick={save}
-        className="rounded-md bg-buy px-3 py-1.5 text-sm font-medium text-surface-base hover:bg-buy"
-      >
-        {saved ? '已保存 ✓' : '保存设置'}
-      </button>
+      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
+        <h3 className="mb-2 text-sm font-semibold">刷新节奏</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-left text-xs">
+            <thead className="text-ink-muted"><tr><th className="pb-2">项目</th><th className="pb-2">节奏</th><th className="pb-2">范围</th></tr></thead>
+            <tbody>
+              {Object.values(REFRESH_CADENCE).map((item) => (
+                <tr key={item.label}>
+                  <td className="border-t border-neutral/20 py-2">{item.label}</td>
+                  <td className="border-t border-neutral/20 py-2 tabular-nums">{item.interval}</td>
+                  <td className="border-t border-neutral/20 py-2 text-ink-secondary">{item.scope}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
       {saveError && <p className="text-xs text-loss dark:text-loss">{saveError}</p>}
+      {dirtyCount > 0 && <SettingsSaveBar dirtyCount={dirtyCount} onSave={save} />}
+      {saved && dirtyCount === 0 && <p className="text-xs font-medium text-gain">已保存 ✓</p>}
+    </div>
+  );
+}
+
+export function SettingsSaveBar({ dirtyCount, onSave }: { dirtyCount: number; onSave: () => void }) {
+  return (
+    <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 rounded-xl border border-neutral/40 bg-surface-raised/90 p-3 shadow-lg backdrop-blur-xl">
+      <span className="text-sm font-medium text-ink-primary">{dirtyCount} 项未保存</span>
+      <button
+        type="button"
+        onClick={onSave}
+        className="min-h-11 rounded-xl bg-buy px-4 py-2 text-sm font-semibold text-surface-base hover:bg-buy/85"
+      >
+        保存设置
+      </button>
     </div>
   );
 }

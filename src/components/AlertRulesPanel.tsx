@@ -1,12 +1,15 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { buildAlertHoldingOptions, dispatchAlertRuleMutation, formatAlertCurrentPrice, formatAlertDistance, resolveHoldingCostSuggestion, type AlertRule, type AlertRuleDraft, type AlertRuleType } from '../alertRules';
 import { formatMoney } from '../format';
+import { REFRESH_CADENCE } from '../refreshCadence';
+import { depthQuoteSnapshot, type DepthQuote } from '../depthQuotePrice';
 import type { Holding, QuantHoldingCost } from '../types';
 
 interface AlertRulesPanelProps {
   rules: AlertRule[];
   holdings: Holding[];
   holdingCosts: Record<string, QuantHoldingCost>;
+  monitoredQuotes?: ReadonlyMap<string, DepthQuote>;
   initialRuleType?: AlertRuleType;
   initialSymbol?: string;
   loading: boolean;
@@ -158,7 +161,7 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
 
       <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4 dark:border-neutral/60 dark:bg-surface-raised">
         <h2 className="text-base font-semibold">目标提醒</h2>
-        <p className="mt-1 text-xs text-ink-muted">规则保存在服务器，电脑与手机共用；盘中每 35 分钟检查一次，接近与到达各提醒一次。</p>
+        <p className="mt-1 text-xs text-ink-muted">规则保存在服务器，电脑与手机共用；{REFRESH_CADENCE.alerts.interval}检查一次，接近与到达各提醒一次。</p>
         <form onSubmit={submit} className="mt-4 space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
@@ -206,13 +209,24 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
         {props.rules.length === 0 ? <p className="mt-2 text-sm text-ink-muted">暂无提醒规则。</p> : (
           <div className="mt-2 divide-y divide-neutral/30 dark:divide-neutral/50">
             {props.rules.map((rule) => {
+              const quote = depthQuoteSnapshot(props.holdings, props.monitoredQuotes ?? new Map(), rule.symbol);
               const target = ruleTarget(rule);
+              const displayRule = quote
+                ? {
+                    ...rule,
+                    current_price: quote.price,
+                    last_checked_at: quote.timestamp,
+                    prices_at: quote.timestamp,
+                    price_session: quote.session,
+                    distance_pct: target == null ? null : Math.abs(quote.price - target) / target * 100,
+                  }
+                : rule;
               return (
                 <div key={rule.id} className="py-3 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="font-mono font-semibold tabular-nums">{rule.symbol} · {rule.type === 'target_price' ? `目标价 ${target == null ? '暂无' : formatMoney(target)}` : `成本 ${rule.cost_basis == null ? '暂无' : formatMoney(rule.cost_basis)} +${Number(rule.gain_pct).toFixed(2)}%`}</div>
-                      <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">{formatAlertCurrentPrice(rule)} · {formatAlertDistance(rule)}</div>
+                      <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">{formatAlertCurrentPrice(displayRule)} · {formatAlertDistance(displayRule)}</div>
                       <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">最近提醒 {rule.last_reminder_at || '尚未触发'}</div>
                     </div>
                     <div className="flex gap-2"><button type="button" onClick={() => editRule(rule)} className={smallButtonClass}>编辑</button><button type="button" onClick={() => void props.onDelete(rule.id)} className={smallButtonClass}>删除</button></div>

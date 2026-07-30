@@ -58,6 +58,7 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
     [localPlans, serverPlans, snapshot],
   );
   const yaml = useMemo(() => planToYaml(basePlans), [basePlans]);
+  const accountPlan = evaluated.find((plan) => plan.buy_sizing?.risk_context);
   const symbols = useMemo(
     () => Object.entries(snapshot.symbols)
       .filter(([, analysis]) => analysis.available)
@@ -157,6 +158,8 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
         </span>
       </div>
 
+      {accountPlan?.buy_sizing && <PlanAccountContext plan={accountPlan} />}
+
       {evaluated.length === 0 ? (
         <EmptyPlans onUseTemplate={() => beginCreate(0)} />
       ) : (
@@ -228,6 +231,23 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
   );
 }
 
+function PlanAccountContext({ plan }: { plan: QuantBuyPlan }) {
+  const sizing = plan.buy_sizing!;
+  const risk = sizing.risk_context!;
+  const isHardCapBlocked = risk.sleeve.over_hard_cap_usd > 0;
+  return (
+    <div className="mt-4 rounded-xl border border-neutral/30 bg-surface-overlay/45 p-3 text-xs text-ink-secondary">
+      <div className="tabular-nums">当前仓位门额度：${sizing.suggested_usd.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+      <div className="mt-1 tabular-nums">等效敞口 {risk.total_effective_pct.toFixed(2)}% · 实付现金 {risk.total_cash_pct.toFixed(2)}%</div>
+      <div className="mt-1 tabular-nums">{risk.sleeve.name}：等效 {risk.sleeve.effective_pct.toFixed(2)}% · 现金 {risk.sleeve.cash_pct.toFixed(2)}%</div>
+      <div className={`mt-2 rounded-lg px-3 py-2 ${sizing.gate.passed ? 'bg-buy/10 text-buy' : 'bg-trim/10 text-trim'}`}>
+        {isHardCapBlocked ? '本轮不建议新增：' : sizing.gate.passed ? '仓位门通过：' : '仓位门未过：'}{sizing.gate.reason}
+        {isHardCapBlocked && <span className="ml-1 tabular-nums">（{risk.sleeve.name}超硬顶 {risk.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
+      </div>
+    </div>
+  );
+}
+
 function PlanCard({
   plan,
   onEdit,
@@ -273,25 +293,17 @@ function PlanCard({
           </div>
         ))}
       </div>
-      <div className="mt-4 border-t border-neutral/30 pt-3 text-xs">
+      {!risk && <div className="mt-4 border-t border-neutral/30 pt-3 text-xs">
         <div className="font-mono tabular-nums text-ink-secondary">
           {proposedAmount === null
             ? `${plan.action_text} · 金额待量化同步`
-            : sizing
-              ? `当前仓位门额度：$${proposedAmount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
             : `触发时：$${proposedAmount.toLocaleString('en-US', { maximumFractionDigits: 2 })}（账户 ${plan.buy_pct_of_nav}%）`}
         </div>
-        {risk && (
-          <div className="mt-2 rounded-lg border border-neutral/30 bg-surface-overlay/45 px-3 py-2 font-mono tabular-nums text-ink-secondary">
-            <div>等效敞口 {risk.total_effective_pct.toFixed(2)}% · 实付现金 {risk.total_cash_pct.toFixed(2)}%</div>
-            <div className="mt-1">{risk.sleeve.name}：等效 {risk.sleeve.effective_pct.toFixed(2)}% · 现金 {risk.sleeve.cash_pct.toFixed(2)}%</div>
-          </div>
-        )}
         <div className={`mt-2 rounded-lg px-3 py-2 ${gatePassed ? 'bg-buy/10 text-buy' : 'bg-trim/10 text-trim'}`}>
           {isHardCapBlocked ? '本轮不建议新增：' : gatePassed ? '仓位门通过：' : '仓位门未过：'}{gateNote}
           {isHardCapBlocked && <span className="ml-1 font-mono tabular-nums">（{risk!.sleeve.name}超硬顶 {risk!.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
         </div>
-      </div>
+      </div>}
     </article>
   );
 }

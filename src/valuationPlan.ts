@@ -75,8 +75,7 @@ export function alignValuationHistoryAsOf(
 export function buildValuationSummary(snapshot: QuantAnalysisSnapshot): string {
   const valuation = snapshot.valuation_tab;
   if (!valuation?.available) return '估值与情绪数据准备中，先按原计划耐心等待。';
-  const pe = finite(valuation.ndx.realtime_estimate?.pe)
-    ?? finite(valuation.ndx.current_pe);
+  const pe = finite(valuation.ndx.current_pe);
   const p30 = finite(valuation.ndx.percentile_lines.p30);
   const cnn = finite(valuation.cnn.current_score);
   const readyPlan = snapshot.buy_plan_status?.plans.find((plan) => plan.ready);
@@ -101,14 +100,13 @@ export function evaluateLocalBuyPlan(
   snapshot: QuantAnalysisSnapshot,
   positionGate?: QuantBuyPlan['position_gate'],
 ): QuantBuyPlan {
-  const realtimePe = finite(snapshot.valuation_tab?.ndx.realtime_estimate?.pe);
   const dailyPe = finite(snapshot.valuation_tab?.ndx.current_pe);
   const cnn = finite(snapshot.valuation_tab?.cnn.current_score);
   const lowZone = snapshot.symbols[plan.symbol]?.gates?.low_zone;
   const drawdown = finite(lowZone?.current_drawdown_pct);
   const vix = vixContext(snapshot);
   const conditions: QuantBuyPlanCondition[] = [
-    condition('ndx_pe_below', 'NDX PE', plan.ndxPeBelow, realtimePe ?? dailyPe, ''),
+    condition('ndx_pe_below', 'NDX PE', plan.ndxPeBelow, dailyPe, ''),
     condition('cnn_score_below', 'CNN', plan.cnnScoreBelow, cnn, ' 点'),
     condition('drawdown_below_pct', '回撤', plan.drawdownBelowPct, drawdown, '%'),
   ];
@@ -258,7 +256,7 @@ function condition(
         ? `还差 ${(target - current).toFixed(1)}${suffix}`
       : key === 'ndx_pe_below'
         ? `还差 ${((current / target) - 1) * 100 < 0.05 ? '0.0' : (((current / target) - 1) * 100).toFixed(1)}%`
-        : `还差 ${(current - target).toFixed(1)}${suffix}`;
+        : `还差 ${(current - target).toFixed(1)}${key === 'drawdown_below_pct' ? 'pp' : suffix}`;
   return {
     key,
     name: `${label} ${direction === 'above' ? '>' : '<'} ${target}${key === 'drawdown_below_pct' || key === 'vix_percentile_above' ? suffix : ''}`,

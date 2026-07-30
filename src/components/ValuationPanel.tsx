@@ -92,7 +92,7 @@ function CurrentIndicators({
         valuePrefix="PE "
         tone={valuationTone(valuation.ndx.pe_percentile_5y)}
         details={[
-          `5年分位 ${percentText(valuation.ndx.pe_percentile_5y)} · ${valuation.ndx.zone ?? '区间暂无'}`,
+          `5年分位 ${percentText(valuation.ndx.pe_percentile_5y)}${valuation.ndx.zone && valuation.ndx.zone !== '数据缺失' ? ` · ${valuation.ndx.zone}` : ''}`,
           `PB ${numberText(valuation.ndx.current_pb)}`,
         ]}
         timestamp={`丹居 · ${dateText(valuation.ndx.as_of ?? valuation.generated_at)}`}
@@ -101,7 +101,7 @@ function CurrentIndicators({
           <div className="mt-3 rounded-xl bg-buy/8 p-3 text-xs leading-relaxed text-ink-secondary">
             实时估算 <strong className="font-mono text-buy tabular-nums">{valuation.ndx.realtime_estimate.pe.toFixed(2)}</strong>
             {' '}（QQQ {sessionText(valuation.ndx.realtime_estimate.price_session)}价；盈利基数按季更新）
-            <div className="mt-1 text-ink-muted">{valuation.ndx.realtime_estimate.note}</div>
+            <div className="mt-1 text-ink-muted">{valuation.ndx.realtime_estimate.note}；估算值不参与判定</div>
           </div>
         )}
         {valuation.ndx.stale && (
@@ -158,6 +158,7 @@ function IndicatorCard({
 }
 
 function DistanceSection({ valuation }: { valuation: QuantValuationTab }) {
+  const estimateNotes = [...new Set(valuation.distance_to_anchors.map((distance) => distance.estimate_note || '按当前盈利基数估算'))];
   return (
     <section className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -167,9 +168,12 @@ function DistanceSection({ valuation }: { valuation: QuantValuationTab }) {
       {valuation.distance_to_anchors.length === 0 ? (
         <div className="mt-4 rounded-xl bg-surface-overlay/40 p-6 text-center text-sm text-ink-muted">锚点距离数据准备中</div>
       ) : (
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          {valuation.distance_to_anchors.map((distance) => <DistanceCard key={distance.label} distance={distance} />)}
-        </div>
+        <>
+          <p className="mt-3 text-xs text-ink-muted">ⓘ {estimateNotes.join('；')}</p>
+          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            {valuation.distance_to_anchors.map((distance) => <DistanceCard key={distance.label} distance={distance} />)}
+          </div>
+        </>
       )}
     </section>
   );
@@ -177,6 +181,17 @@ function DistanceSection({ valuation }: { valuation: QuantValuationTab }) {
 
 function DistanceCard({ distance }: { distance: QuantValuationDistance }) {
   const reached = distance.pe_gap_pct >= 0;
+  const upwardReference = distance.target_pe > distance.current_pe;
+  if (upwardReference) {
+    return (
+      <article className="rounded-xl border border-buy/60 bg-buy/10 p-4">
+        <h4 className="font-semibold">已在区间内</h4>
+        <p className="mt-3 text-sm tabular-nums text-ink-secondary">
+          当前已低于 {distance.label}（分位线对应 PE {distance.target_pe.toFixed(2)}）
+        </p>
+      </article>
+    );
+  }
   return (
     <article className={`rounded-xl border p-4 ${reached ? 'border-buy/60 bg-buy/10' : 'border-neutral/40 bg-surface-overlay/35'}`}>
       <div className="flex items-start justify-between gap-2">
@@ -190,7 +205,6 @@ function DistanceCard({ distance }: { distance: QuantValuationDistance }) {
           <span className={reached ? 'text-buy' : 'text-ink-secondary'}>（{gapText(distance.price_gap_pct)}）</span>
         </div>
       </div>
-      <p className="mt-3 text-xs text-ink-muted">ⓘ {distance.estimate_note || '按当前盈利基数估算'}</p>
     </article>
   );
 }

@@ -9,6 +9,7 @@ import { HoldingsTable } from './components/HoldingsTable';
 import { ImageImportPanel } from './components/ImageImportPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ScenarioCalculator } from './components/ScenarioCalculator';
+import { SnapshotStamp } from './components/SnapshotStamp';
 import { Summary } from './components/Summary';
 import { ThemeControl } from './components/ThemeControl';
 import { ValuationPanel } from './components/ValuationPanel';
@@ -543,6 +544,7 @@ export default function App() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">我的投资组合</h1>
           <p className="mt-1 text-xs leading-relaxed text-ink-secondary">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</p>
+          {quantAnalysis && <SnapshotStamp snapshot={quantAnalysis} />}
         </div>
         <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
           <ThemeControl />
@@ -594,7 +596,7 @@ export default function App() {
           <BehaviorMirrorCard mirror={quantAnalysis?.behavior_mirror} />
           {lastImport && <ImportResultNotice result={lastImport} onClose={() => setLastImport(null)} onUndo={undoLastImport} />}
           <div className="rounded-xl border border-neutral/40 bg-surface-raised p-3">
-            <h3 className="mb-2 text-sm font-semibold">资产占比</h3>
+            <h2 className="mb-2 text-sm font-semibold">资产占比</h2>
             <AllocationChart metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
           </div>
         </section>
@@ -634,11 +636,12 @@ export default function App() {
 
       {tab === 'calculator' && (
         <section className="ui-enter space-y-4">
-          <ScenarioCalculator metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} />
+          <ScenarioCalculator metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} monitoredQuotes={monitoredQuotes} />
           <AlertRulesPanel
             rules={alertRules}
             holdings={portfolio.holdings}
             holdingCosts={quantAnalysis?.holding_costs || {}}
+            monitoredQuotes={monitoredQuotes}
             loading={alertRulesStatus.loading}
             error={alertRulesStatus.error}
             onCreate={upsertAlertRule}
@@ -768,7 +771,7 @@ function DataActions({ onExport, onImport, onClear }: DataActionsProps) {
   }
   return (
     <div className="space-y-2 rounded-xl border border-neutral/40 bg-surface-raised p-3">
-      <h3 className="text-sm font-semibold">数据导入 / 导出</h3>
+      <h2 className="text-sm font-semibold">数据导入 / 导出</h2>
       <div className="flex flex-wrap gap-2">
         <button onClick={onExport} className="rounded-md bg-surface-overlay px-3 py-1.5 text-sm text-ink-secondary hover:text-ink-primary">
           导出 JSON

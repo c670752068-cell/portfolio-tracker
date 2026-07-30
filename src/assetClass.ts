@@ -16,3 +16,7 @@ export function isCashEquivalent(holding: Holding): boolean {
   return holding.cashEquivalent === true
     || CASH_EQUIVALENT_SYMBOLS.has(holding.symbol.trim().toUpperCase());
 }
+
+export function isOption(holding: Holding): boolean {
+  return holding.assetType === 'option';
+}

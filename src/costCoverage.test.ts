@@ -46,7 +46,7 @@ describe('analyzeCostCoverage', () => {
     expect(analyzeCostCoverage(holdings, holdingCosts)).toEqual({ total: 2, costed: 2, gaps: [] });
   });
 
-  it('reports missing and disabled quant coverage instead of treating it as a manual cost', () => {
+  it('separates absent equity sources from disabled automatic coverage', () => {
     const holdings = [
       holding({ id: 'missing', symbol: 'MSFT' }),
       holding({ id: 'disabled', symbol: 'NVDA' }),
@@ -56,7 +56,7 @@ describe('analyzeCostCoverage', () => {
     };
 
     expect(analyzeCostCoverage(holdings, holdingCosts).gaps.map((gap) => gap.reason)).toEqual([
-      'quant_coverage_incomplete',
+      'equity_no_source',
       'quant_coverage_incomplete',
     ]);
   });

@@ -6,6 +6,7 @@ import { Line, LineChart, ResponsiveContainer } from 'recharts';
 import type { ValuePoint } from '../valueHistory';
 import type { OneTapRefreshState } from '../oneTapRefresh';
 import { useState } from 'react';
+import { REFRESH_CADENCE } from '../refreshCadence';
 
 interface SummaryProps {
   metrics: PortfolioMetrics;
@@ -117,7 +118,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
       <div className="rounded-2xl border border-neutral/50 border-l-4 border-l-buy bg-surface-raised p-4 md:col-span-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-ink-primary">一键刷新全部</div>
+            <div className="text-sm font-semibold text-ink-primary">刷新</div>
             <div className="mt-1 text-xs leading-relaxed text-ink-secondary">
               {oneTapUnavailableReason || oneTapRefreshState.message || '重新读取行情、持仓和分析，并请求量化系统立即重算。'}
             </div>
@@ -140,7 +141,11 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
           刷新会让量化系统重新检查一次，若有符合条件的标的会照常推送到手机
         </div>
       </div>
-      <Card label={`持仓市值（${displayCurrency}）`} value={formatDisplayMoney(metrics.equityValue, displayCurrency, rates)} sub={`${formatPct(1 - metrics.cashWeight)}`} />
+      <Card
+        label={`持仓市值（${displayCurrency}）`}
+        value={formatDisplayMoney(metrics.equityValue, displayCurrency, rates)}
+        sub={`${formatPct(1 - metrics.cashWeight)}（含现金类 ETF ${formatDisplayMoney(metrics.cashEquivalentValue, displayCurrency, rates)}）`}
+      />
       <Card
         label={`现金及等价物（${displayCurrency}）`}
         value={formatDisplayMoney(metrics.liquidityValue, displayCurrency, rates)}
@@ -158,7 +163,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
           <div className="mt-1 font-mono text-[11px] leading-relaxed tabular-nums text-ink-secondary">
             正股 {formatDisplayMoney(metrics.plainEquityExposure, displayCurrency, rates)} · 杠杆折算 {formatDisplayMoney(metrics.leveragedEtfExposure, displayCurrency, rates)} · 期权Δ {formatDisplayMoney(metrics.optionDeltaExposure, displayCurrency, rates)}
           </div>
-          <div className="mt-1 text-[11px] text-ink-secondary">网站口径：期权按 Delta 折算</div>
+          <div className="mt-1 text-[11px] text-ink-secondary">网站口径：仅真实 Delta；缺失项未计入，见下方期权风险专区的 0.5 假设口径</div>
           {metrics.uncomputableOptions > 0 && (
             <div className="mt-1 font-mono text-[11px] tabular-nums text-trim">
               ⚠ {metrics.uncomputableOptions} 个期权缺 Delta/标的价未计入（用「补充期权详情」导入）
@@ -189,7 +194,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
         <div>
           <span className="font-medium text-ink-primary">行情同步：</span>
           <span className="font-mono tabular-nums text-ink-secondary">
-            {quoteStatus.loading ? '正在刷新…' : quoteStatus.summary || (canRefreshQuotes ? '美股盘中每 35 分钟自动刷新' : '未配置行情源')}
+            {quoteStatus.loading ? '正在刷新…' : quoteStatus.summary || (canRefreshQuotes ? `${REFRESH_CADENCE.quotes.interval}自动刷新` : '未配置行情源')}
           </span>
           {quoteStatus.lastSyncedAt && <span className="ml-2 font-mono tabular-nums text-ink-muted">{new Date(quoteStatus.lastSyncedAt).toLocaleString()}</span>}
           {quoteStatus.error && <span className="ml-2 text-trim">{quoteStatus.error}</span>}
@@ -256,10 +261,10 @@ function RiskOverview({ snapshot, displayCurrency, rates }: { snapshot?: QuantAn
         <div className="text-sm font-semibold text-ink-primary">风险总览</div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <RiskMetric label="等效敞口" value={moneyOrUnavailable(ammo?.exposure?.effective_usd, displayCurrency, rates, estimatedDelta)} sub={effectivePct !== undefined ? `${estimatedDelta ? '≈' : ''}${effectivePct.toFixed(2)}% 净值` : '暂无'} />
-          <RiskMetric label="实付现金" value={moneyOrUnavailable(ammo?.cash_exposure?.invested_usd, displayCurrency, rates)} sub={cashDenominator !== undefined ? `现金分母：已投现金合计 ${formatDisplayMoney(cashDenominator, displayCurrency, rates)}${ammo?.cash_exposure?.invested_pct !== undefined ? ` · ${ammo.cash_exposure.invested_pct.toFixed(2)}%` : ''}${ammo?.cash_exposure?.available_usd !== undefined ? ` · 可动用 ${formatDisplayMoney(ammo.cash_exposure.available_usd, displayCurrency, rates)}` : ''}` : '暂无'} />
+          <RiskMetric label="实付现金" value={moneyOrUnavailable(ammo?.cash_exposure?.invested_usd, displayCurrency, rates)} sub={cashDenominator !== undefined ? `现金分母：已投现金合计 ${formatDisplayMoney(cashDenominator, displayCurrency, rates)}${ammo?.cash_exposure?.available_usd !== undefined ? ` · 可动用 ${formatDisplayMoney(ammo.cash_exposure.available_usd, displayCurrency, rates)}` : ''}` : '暂无'} />
           <RiskMetric label="最大可损" value={moneyOrUnavailable(maxLoss?.total_usd, displayCurrency, rates)} sub={maxLoss?.pct_of_nav !== undefined ? `${maxLoss.pct_of_nav.toFixed(2)}% 净值` : '暂无'} tone="trim" />
         </div>
-        {estimatedDelta && <p className="mt-2 text-xs text-ink-muted">Delta 为统一假设 0.5，非真实 Delta</p>}
+        {estimatedDelta && <p className="mt-2 text-xs text-ink-muted">Delta 为统一假设 0.5，不是网站真实 Delta 口径</p>}
         <div className="mt-3 rounded-xl border border-neutral/35 bg-surface-overlay/60 p-3">
           <div className="text-xs font-medium text-ink-primary">弹药总览</div>
           <div className="mt-2 grid grid-cols-3 gap-2 font-mono text-xs tabular-nums text-ink-secondary">
@@ -286,7 +291,7 @@ function RiskOverview({ snapshot, displayCurrency, rates }: { snapshot?: QuantAn
         </div>
         <AllocationPlan allocation={allocation} displayCurrency={displayCurrency} rates={rates} />
       </div>
-      {options && <details className="rounded-2xl border border-neutral/50 bg-surface-raised p-4 lg:col-span-2"><summary className="cursor-pointer text-sm font-semibold text-ink-primary">期权风险专区 · Delta 敞口 {moneyOrUnavailable(options.delta_exposure_usd, displayCurrency, rates, estimatedDelta)}</summary>{estimatedDelta && <p className="mt-2 text-xs text-ink-muted">Delta 为统一假设 0.5，非真实 Delta</p>}<div className="mt-3 grid gap-3 sm:grid-cols-3"><RiskMetric label="权利金" value={moneyOrUnavailable(options.premium_usd, displayCurrency, rates)} sub={options.premium_pct_of_nav !== undefined && options.premium_cap_pct !== undefined ? `${options.premium_pct_of_nav.toFixed(2)}% / 上限 ${options.premium_cap_pct.toFixed(2)}%` : '暂无'} tone={options.over_limit ? 'trim' : undefined} />{options.items?.map((item, index) => <RiskMetric key={`${item.symbol}-${index}`} label={`${item.symbol} · ${item.delta_source === 'broker' ? '券商 Delta' : '估算 Delta'}`} value={moneyOrUnavailable(item.delta_notional_usd, displayCurrency, rates, item.delta_source !== 'broker')} sub={item.days_to_expiry === null || item.days_to_expiry === undefined ? '到期日暂无' : `距到期 ${item.days_to_expiry} 天`} tone={item.status === 'critical' ? 'trim' : undefined} />)}</div></details>}
+      {options && <details className="rounded-2xl border border-neutral/50 bg-surface-raised p-4 lg:col-span-2"><summary className="cursor-pointer text-sm font-semibold text-ink-primary">期权风险专区 · Delta 敞口 {moneyOrUnavailable(options.delta_exposure_usd, displayCurrency, rates, estimatedDelta)}</summary>{estimatedDelta && <p className="mt-2 text-xs text-ink-muted">Delta 为统一假设 0.5，不是网站真实 Delta 口径</p>}<div className="mt-3 grid gap-3 sm:grid-cols-3"><RiskMetric label="权利金" value={moneyOrUnavailable(options.premium_usd, displayCurrency, rates)} sub={options.premium_pct_of_nav !== undefined && options.premium_cap_pct !== undefined ? `${options.premium_pct_of_nav.toFixed(2)}% / 上限 ${options.premium_cap_pct.toFixed(2)}%` : '暂无'} tone={options.over_limit ? 'trim' : undefined} />{options.items?.map((item, index) => <RiskMetric key={`${item.symbol}-${index}`} label={`${item.symbol} · ${item.delta_source === 'broker' ? '券商 Delta' : '估算 Delta'}`} value={moneyOrUnavailable(item.delta_notional_usd, displayCurrency, rates, item.delta_source !== 'broker')} sub={item.days_to_expiry === null || item.days_to_expiry === undefined ? '到期日暂无' : `距到期 ${item.days_to_expiry} 天`} tone={item.status === 'critical' ? 'trim' : undefined} />)}</div></details>}
       {dips && Object.entries(dips).map(([symbol, status]) => <div key={symbol} className="rounded-2xl border border-neutral/40 bg-surface-overlay/35 p-4 text-sm leading-relaxed text-ink-primary lg:col-span-2"><span className="font-mono font-semibold tabular-nums">{symbol}</span> · {status.companion_text || '暂无分批进度'}<div className="mt-1 font-mono text-xs tabular-nums text-ink-secondary">计划剩余 {formatDisplayMoney(status.ammo?.remaining_usd ?? 0, displayCurrency, rates)} · 账户可动用 {formatDisplayMoney(status.ammo?.account_gate?.allowed_usd ?? 0, displayCurrency, rates)}</div></div>)}
     </section>
   );

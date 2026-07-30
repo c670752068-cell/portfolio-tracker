@@ -81,7 +81,7 @@ describe('valuation plan helpers', () => {
     ]);
   });
 
-  it('evaluates all configured conditions as AND and uses the realtime PE estimate', () => {
+  it('evaluates all configured conditions as AND using the backend daily PE', () => {
     const plan = {
       id: 'tqqq-stage-1',
       symbol: 'TQQQ',
@@ -95,8 +95,8 @@ describe('valuation plan helpers', () => {
 
     const result = evaluateLocalBuyPlan(plan, snapshot);
 
-    expect(result.conditions.map((item) => item.met)).toEqual([true, false, true]);
-    expect(result.met_count).toBe(2);
+    expect(result.conditions.map((item) => item.met)).toEqual([false, false, true]);
+    expect(result.met_count).toBe(1);
     expect(result.conditions_ready).toBe(false);
     expect(result.ready).toBe(false);
   });
@@ -111,6 +111,34 @@ describe('valuation plan helpers', () => {
         cnn: { ...snapshot.valuation_tab!.cnn, current_score: 20 },
       },
     })).toContain('这正是你计划里要开枪的时候');
+  });
+
+  it('uses the backend daily PE for both the summary and local gate checks', () => {
+    const plan = {
+      id: 'daily-pe', symbol: 'TQQQ', label: '日更口径',
+      ndxPeBelow: 30, cnnScoreBelow: 50, drawdownBelowPct: -20,
+      buyPctOfNav: 3, enabled: true,
+    };
+
+    expect(buildValuationSummary(snapshot)).toContain('PE 30.11');
+    expect(buildValuationSummary(snapshot)).not.toContain('PE 29.80');
+    expect(evaluateLocalBuyPlan(plan, snapshot).conditions[0]).toMatchObject({
+      current: 30.1128,
+      met: false,
+    });
+  });
+
+  it('uses percentage points for an absolute drawdown-threshold gap', () => {
+    const plan = {
+      id: 'drawdown-unit', symbol: 'TQQQ', label: '回撤单位',
+      ndxPeBelow: 40, cnnScoreBelow: 50, drawdownBelowPct: -35,
+      buyPctOfNav: 3, enabled: true,
+    };
+
+    const drawdown = evaluateLocalBuyPlan(plan, snapshot).conditions.find((item) => item.key === 'drawdown_below_pct');
+
+    expect(drawdown?.gap_text).toBe('还差 7.8pp');
+    expect(drawdown?.name).toContain('-35%');
   });
 
   it('provides the three approved templates and validates the 20% position ceiling', () => {

@@ -105,7 +105,7 @@ describe('DecisionStatusBar', () => {
     expect(html).toContain('今日结论：不买');
     expect(html).toContain('不是系统故障');
     expect(html).toContain('数据 2026-07-27（落后 3 天）');
-    expect(html).toContain('可用资金 $28,708 · 闸门放行 $0');
+    expect(html).toContain('可用资金 $28,708.00 · 闸门放行 $0.00');
     expect(html).toContain('SOXL');
     expect(html).not.toContain('当前 0 个标的达到买入条件');
   });
@@ -195,6 +195,21 @@ describe('DecisionStatusBar', () => {
     const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
 
     expect(html).toContain('数据 2026-07-28（落后 2 天）');
+  });
+
+  it('shows funding facts with two-decimal money precision', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30', rule_version: '2.7',
+      disclaimer: '', context: {}, symbols: {},
+      ammo_overview: {
+        cash_exposure: { available_usd: 28_717.47 },
+        buying_power: { by_3x_usd: 12.3 },
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain('可用资金 $28,717.47 · 闸门放行 $12.30');
   });
 
   it('uses calm neutral copy when no server-owned final verdict is available', () => {

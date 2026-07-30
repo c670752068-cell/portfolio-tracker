@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { depthQuotePrice, type DepthQuote } from '../depthQuotePrice';
 import { formatDisplayMoney } from '../displayCurrency';
 import { formatSignedPct } from '../format';
 import { listScenarioFamilies, simulateScenario, type ScenarioKind } from '../scenario';
@@ -8,13 +9,20 @@ interface ScenarioCalculatorProps {
   metrics: PortfolioMetrics;
   displayCurrency: DisplayCurrency;
   rates: ExchangeRates;
+  monitoredQuotes?: ReadonlyMap<string, DepthQuote>;
 }
 
 const PRICE_STEPS = [-0.2, -0.1, 0.1, 0.2, 0.3];
 const DAY_STEPS = [10, 15, 30];
 
-export function ScenarioCalculator({ metrics, displayCurrency, rates }: ScenarioCalculatorProps) {
-  const families = useMemo(() => listScenarioFamilies(metrics.holdingsMetrics), [metrics.holdingsMetrics]);
+export function ScenarioCalculator({ metrics, displayCurrency, rates, monitoredQuotes = new Map() }: ScenarioCalculatorProps) {
+  const families = useMemo(() => {
+    const holdings = metrics.holdingsMetrics.map((metric) => metric.holding);
+    return listScenarioFamilies(metrics.holdingsMetrics).map((item) => ({
+      ...item,
+      spot: depthQuotePrice(holdings, monitoredQuotes, item.symbol) ?? item.spot,
+    }));
+  }, [metrics.holdingsMetrics, monitoredQuotes]);
   const [family, setFamily] = useState('');
   const [target, setTarget] = useState({ key: '', value: 0 });
   const [days, setDays] = useState(0);

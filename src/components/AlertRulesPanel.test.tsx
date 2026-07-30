@@ -181,7 +181,7 @@ describe('AlertRulesPanel rule list', () => {
     });
 
     expect(html).toContain('FNGU');
-    expect(html).toContain('当前价');
+    expect(html).toContain('休市');
     expect(html).toContain('38');
     expect(html).toContain('@ 11:10 ET');
     expect(html).toContain('还需上涨 5.00%');

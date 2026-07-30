@@ -25,7 +25,7 @@ export function CashEditor({ cash, rates, onChange }: CashEditorProps) {
   return (
     <div className="space-y-2 rounded-xl border border-neutral/40 bg-surface-raised p-3 dark:border-neutral/60 dark:bg-surface-raised">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">现金持仓</h3>
+        <h2 className="text-sm font-semibold">现金持仓</h2>
         <button onClick={add} className="text-xs text-buy hover:underline">
           + 添加现金条目
         </button>

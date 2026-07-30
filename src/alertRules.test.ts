@@ -169,9 +169,9 @@ describe('alert cost and callback policy', () => {
     const checked = { ...targetRule, last_checked_at: '2026-07-15T15:10:00.000Z' };
 
     expect(formatAlertCurrentPrice(checked, new Date('2026-07-15T15:20:00.000Z')))
-      .toBe('当前价 $38.00 @ 11:10 ET');
+      .toBe('休市 $38.00 @ 11:10 ET');
     expect(formatAlertCurrentPrice(checked, new Date('2026-07-15T21:00:00.000Z')))
-      .toBe('上一交易日收盘 $38.00 @ 11:10 ET');
+      .toBe('休市 $38.00 @ 11:10 ET');
     expect(formatAlertDistance(checked)).toBe('还需上涨 5.00%');
     expect(formatAlertDistance({
       ...checked,
@@ -179,6 +179,25 @@ describe('alert cost and callback policy', () => {
       target_price: 36,
       distance_pct: 5.56,
     })).toBe('还需下跌 5.56%');
+  });
+
+  it('drives price wording from price_session and never calls a 15:28 quote a close', () => {
+    const pre = {
+      ...targetRule,
+      current_price: 24.16,
+      price_session: 'pre' as const,
+      prices_at: '2026-07-30T08:49:24-04:00',
+    };
+    const regular = {
+      ...targetRule,
+      current_price: 24.16,
+      price_session: 'regular' as const,
+      prices_at: '2026-07-30T15:28:00-04:00',
+    };
+
+    expect(formatAlertCurrentPrice(pre)).toBe('盘前 $24.16 @ 08:49 ET');
+    expect(formatAlertCurrentPrice(regular)).toBe('盘中 $24.16 @ 15:28 ET');
+    expect(formatAlertCurrentPrice(regular)).not.toContain('收盘');
   });
 
   it('auto-fills only a complete broker-weighted cost', () => {

@@ -5,6 +5,7 @@ import { buildDepthPriceView } from '../depthPrice';
 import { depthQuotePrice, depthQuoteSnapshot, type DepthQuote } from '../depthQuotePrice';
 import { formatDisplayMoney } from '../displayCurrency';
 import { formatMoney } from '../format';
+import { REFRESH_CADENCE } from '../refreshCadence';
 import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
 import { finalVerdictSymbols, isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import { findSellFamily, resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
@@ -531,6 +532,25 @@ function signedPct(value: number): string {
   return `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(2)}%`;
 }
 
+function InfoDisclosure({ label, children }: { label: string; children: string }) {
+  return (
+    <details className="relative ml-1 inline-block align-middle">
+      <summary
+        aria-label={label}
+        className="inline-flex min-h-11 min-w-11 cursor-pointer list-none items-center justify-center rounded-full text-ink-muted hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-buy"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="2">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 10v6M12 7h.01" />
+        </svg>
+      </summary>
+      <div className="absolute right-0 z-20 w-64 rounded-xl border border-neutral/40 bg-surface-raised p-3 text-xs font-normal leading-relaxed text-ink-secondary shadow-lg">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 function SellWindow({
   item,
   status,
@@ -618,10 +638,7 @@ function SellWindow({
       >
         <div className="font-semibold">
           修复期
-          <span
-            className="ml-1 text-xs text-ink-muted"
-            title="这是市场维度（相对 QQQ 强弱），与你的买入成本无关"
-          >ⓘ</span>
+          <InfoDisclosure label="说明：修复期口径">这是市场维度（相对 QQQ 强弱），与你的买入成本无关</InfoDisclosure>
         </div>
         <p className="mt-1">{repairText}</p>
         <p className="mt-2 text-xs text-ink-muted">这是市场维度（相对 QQQ 强弱），与你的买入成本无关。</p>
@@ -645,7 +662,7 @@ function SellWindow({
       <div className="rounded-lg border border-neutral/40 p-3">
         <div className="font-semibold">
           止盈阶梯参考 · 剧本：{item.playbook.label || '未标注'}
-          <span className="ml-1 text-xs text-ink-muted" title="只在浮盈达到最低档后适用">ⓘ</span>
+          <InfoDisclosure label="说明：止盈阶梯适用条件">只在浮盈达到最低档后适用</InfoDisclosure>
         </div>
         {firstStep && <p className="mt-1 text-xs text-ink-muted">只在浮盈达到最低档 +{firstStep.gain_min_pct.toFixed(2)}% 后适用。</p>}
         {isCompleteLoss && firstStep && <p className="mt-2 rounded-lg bg-loss/10 p-3 font-mono font-medium tabular-nums text-loss">当前为浮亏 {signedPct(pnl.pnlPct!)}，止盈阶梯（最低档 +{firstStep.gain_min_pct.toFixed(2)}%）尚未适用。下方阶梯仅作参考，不构成减仓提示。</p>}
@@ -726,7 +743,7 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
     const status = resolveSellStatus(snapshot, optionSymbol);
     if (status.state === 'window_open') return `🟠 ${fallbackLabel} · 卖出窗口开启`;
     if (status.state === 'observation') return `⚪ ${fallbackLabel} · 观察期`;
-    return `⚪ ${fallbackLabel} · 无`;
+    return `⚪ ${fallbackLabel}`;
   };
   useEffect(() => {
     if (!initialSide) return;
@@ -747,7 +764,7 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
           </div>
           {onRefresh && <button type="button" onClick={onRefresh} disabled={loading} className="rounded-md bg-neutral/30 px-3 py-2 text-sm">{loading ? '读取中…' : '刷新快照'}</button>}
         </div>
-        {snapshot && <p className="mt-2 font-mono text-xs tabular-nums text-ink-muted">{quantAnalysisFreshnessText(snapshot.generated_at)} · 盘中每 5 分钟、其他时段每 25 分钟自动更新</p>}
+        {snapshot && <p className="mt-2 font-mono text-xs tabular-nums text-ink-muted">{quantAnalysisFreshnessText(snapshot.generated_at)} · {REFRESH_CADENCE.quantAnalysis.interval}自动更新</p>}
         <select aria-label="量化监控标的" value={selectedSymbol} onChange={(event) => setSymbol(event.target.value)} className="mt-4 w-full rounded-md border border-neutral bg-transparent px-3 py-2">
           {monitoredSymbols.map((item) => <option key={item} value={item}>{finalVerdictStatusLabel(snapshot, item)}</option>)}
         </select>

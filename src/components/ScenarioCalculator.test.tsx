@@ -10,6 +10,28 @@ const rates: ExchangeRates = {
 };
 
 describe('ScenarioCalculator position identity', () => {
+  it('uses the shared monitored quote snapshot instead of a stale holding price', () => {
+    const state: PortfolioState = {
+      holdings: [{
+        id: 'fngu', symbol: 'FNGU', name: 'FNGU', shares: 10, buyPrice: 20,
+        currentPrice: 23.44, sector: '科技', currency: 'USD', assetType: 'leveraged_etf',
+      }],
+      cash: [], updatedAt: '2026-07-30',
+    };
+
+    const html = renderToStaticMarkup(
+      <ScenarioCalculator
+        metrics={computeMetrics(state, rates)}
+        displayCurrency="USD"
+        rates={rates}
+        monitoredQuotes={new Map([['FNGU', 24.16]])}
+      />,
+    );
+
+    expect(html).toContain('FNGU · 现价 24.16');
+    expect(html).not.toContain('FNGU · 现价 23.44');
+  });
+
   it('distinguishes an IGV ETF at Longport from an IGV option at Futu', () => {
     const state: PortfolioState = {
       holdings: [

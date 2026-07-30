@@ -14,6 +14,7 @@ export function formatPct(n: number): string {
 
 export function formatSignedPct(n: number): string {
   const v = (n * 100).toFixed(2);
+  if (n === 0) return `${v}%`;
   return n >= 0 ? `+${v}%` : `${v}%`;
 }
 

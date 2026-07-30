@@ -22,6 +22,27 @@ const quantProps = {
 };
 
 describe('Summary cards', () => {
+  it('explains that equity value includes cash-equivalent ETFs', () => {
+    const metrics = computeMetrics({
+      holdings: [{
+        id: 'sgov', symbol: 'SGOV', name: 'SGOV', shares: 100, buyPrice: 100,
+        currentPrice: 100, sector: '现金', currency: 'USD', assetType: 'etf', cashEquivalent: true,
+      }],
+      cash: [{ id: 'cash', currency: 'USD', amount: 5_000 }],
+      updatedAt: '2026-07-30',
+    }, rates);
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        {...quantProps}
+      />,
+    );
+
+    expect(html).toContain('含现金类 ETF $10,000.00');
+  });
+
   it('keeps a single-basis sleeve card strictly on that server-provided basis', () => {
     const html = renderToStaticMarkup(
       <SleeveBar
@@ -188,7 +209,7 @@ describe('Summary cards', () => {
     expect(html).toContain('待补：宽基+道指（低配 24.29pp；总额度为 0，并非不应补）');
     expect(html).toContain('已超目标配比，新增弹药不投向科技');
     expect(html).toContain('不投：其他 —— 后端闸门未放行');
-    expect(html).toContain('Delta 为统一假设 0.5，非真实 Delta');
+    expect(html).toContain('Delta 为统一假设 0.5，不是网站真实 Delta 口径');
     expect(html).not.toContain('优先 99');
     expect(html).not.toContain('缺口 $0');
   });
@@ -253,8 +274,72 @@ describe('Summary cards', () => {
     expect(html).toContain('正股');
     expect(html).toContain('杠杆折算');
     expect(html).toContain('期权Δ');
-    expect(html).toContain('网站口径：期权按 Delta 折算');
+    expect(html).toContain('网站口径：仅真实 Delta');
     expect(html).toContain('1 个期权缺 Delta/标的价未计入');
+  });
+
+  it('labels the real-Delta and assumed-Delta exposures as different bases', () => {
+    const metrics = computeMetrics({
+      holdings: [{
+        id: 'igv', symbol: 'IGV', name: 'IGV CALL', shares: 1, buyPrice: 10, currentPrice: 10,
+        sector: '科技', currency: 'USD', assetType: 'option',
+        option: { underlying: 'IGV', optionType: 'call', strike: 80, expiration: '2027-01-15', contractMultiplier: 100, delta: null, theta: null, gamma: null, vega: null, impliedVolatility: null, underlyingPrice: 95 },
+      }],
+      cash: [], updatedAt: 'old',
+    }, rates);
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30', rule_version: 'test', disclaimer: '', context: {}, symbols: {},
+      option_exposure: { delta_exposure_usd: 15_000, items: [{ symbol: 'IGV', delta: 0.5, delta_source: 'estimated', delta_notional_usd: 15_000 }] },
+    } as unknown as QuantAnalysisSnapshot;
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        analysisSnapshot={snapshot} {...quantProps}
+      />,
+    );
+
+    expect(html).toContain('仅真实 Delta');
+    expect(html).toContain('下方期权风险专区的 0.5 假设口径');
+    expect(html).toContain('统一假设 0.5，不是网站真实 Delta 口径');
+  });
+
+  it('omits the tautological invested-cash percentage from its denominator label', () => {
+    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30', rule_version: 'test',
+      disclaimer: '', context: {}, symbols: {},
+      ammo_overview: {
+        cash_exposure: { invested_usd: 93_827.72, invested_pct: 100, denominator_usd: 93_827.72 },
+      },
+    } as unknown as QuantAnalysisSnapshot;
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        analysisSnapshot={snapshot} {...quantProps}
+      />,
+    );
+
+    expect(html).toContain('现金分母：已投现金合计 $93,827.72');
+    expect(html).not.toContain('$93,827.72 · 100.00%');
+  });
+
+  it('does not repeat the one-tap refresh button label as the card title', () => {
+    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        {...quantProps}
+      />,
+    );
+
+    expect(html.match(/一键刷新全部/g)).toHaveLength(1);
+    expect(html).toContain('>刷新<');
   });
 
   it('explains the Pages limitation and renders stale quant timestamps without hiding prior data', () => {
@@ -306,7 +391,7 @@ describe('Summary cards', () => {
       />,
     );
 
-    expect(html).toContain('一键刷新全部');
+    expect(html).toContain('>刷新<');
     expect(html).toContain('正在计算（约 1 分钟）…');
     expect(html).toContain('42 秒后可再次刷新');
     expect(html).toContain('刷新会让量化系统重新检查一次，若有符合条件的标的会照常推送到手机');
