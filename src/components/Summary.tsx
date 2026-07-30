@@ -186,7 +186,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
             ))}
           </select>
         </label>
-        <span className="ml-3 tabular-nums text-ink-secondary">1 USD ≈ {rates.CNY.toFixed(4)} CNY</span>
+        <span className="ml-3 tabular-nums text-ink-secondary">1 USD ≈ {rates.CNY.toFixed(3)} CNY</span>
         <span className="ml-2 tabular-nums text-ink-muted">{rates.source === 'live' ? `实时数据 ${rates.updatedAt ?? ''}` : rates.source === 'cache' ? `缓存数据 ${rates.updatedAt ?? ''}` : '近似兜底值'}</span>
         {rateError && <span className="ml-2 text-trim">{rateError}</span>}
       </div>

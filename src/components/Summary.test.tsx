@@ -22,6 +22,21 @@ const quantProps = {
 };
 
 describe('Summary cards', () => {
+  it('limits the rendered exchange rate to three decimal places', () => {
+    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: '2026-07-30' }, rates);
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        {...quantProps}
+      />,
+    );
+
+    expect(html).toContain('1 USD ≈ 6.778 CNY');
+    expect(html).not.toMatch(/\d\.\d{4,}/);
+  });
+
   it('explains that equity value includes cash-equivalent ETFs', () => {
     const metrics = computeMetrics({
       holdings: [{
