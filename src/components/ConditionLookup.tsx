@@ -5,8 +5,7 @@ import { buildDepthPriceView } from '../depthPrice';
 import { depthQuotePrice, depthQuoteSnapshot, type DepthQuote } from '../depthQuotePrice';
 import { formatDisplayMoney } from '../displayCurrency';
 import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
-import { opportunityStatusLabel } from '../opportunityPresentation';
-import { isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
+import { finalVerdictSymbols, isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import { findSellFamily, resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
 import {
   closedQuoteText,
@@ -14,9 +13,10 @@ import {
   priceSessionLabel,
   quoteSessionMismatchText,
 } from '../quoteSession';
-import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
-import { OpportunityOverview, type OpportunitySide } from './OpportunityOverview';
+import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantFinalVerdict, QuantFinalVerdictLayer, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 import { ValuationCard, type ValuationSettings } from './ValuationCard';
+
+type OpportunitySide = 'buy' | 'sell';
 
 interface ConditionLookupProps {
   snapshot: QuantAnalysisSnapshot | null;
@@ -130,6 +130,107 @@ function DepthStat({ stat }: { stat: NonNullable<QuantSymbolAnalysis['depth_stat
 
 function usdPrice(value: number): string {
   return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const FINAL_LAYER_LABELS: Record<string, string> = {
+  gates_six: '六关',
+  entry_gate_1x: '1x 入场门',
+  sleeve_borrow: '板块额度',
+  buy_plan_conditions: '计划条件',
+  panic_window: '恐慌窗口',
+};
+const FINAL_LAYER_ORDER = Object.keys(FINAL_LAYER_LABELS);
+
+/**
+ * This deliberately performs no gate calculation. It only turns the backend's
+ * explicit pass/block/unknown lists into the five fixed presentation rows so
+ * older snapshots remain explainable while the exported detailed layer list
+ * is rolling out.
+ */
+function finalVerdictLayers(verdict: QuantFinalVerdict): QuantFinalVerdictLayer[] {
+  const detailed = new Map((verdict.layers ?? []).map((layer) => [layer.layer, layer]));
+  const blockers = new Map((verdict.blocking_layers ?? []).map((layer) => [layer.layer, layer.reason]));
+  const passes = new Set(verdict.passing_layers ?? []);
+  const unknowns = new Set(verdict.unknown_layers ?? []);
+
+  return FINAL_LAYER_ORDER.map((layer) => {
+    const detail = detailed.get(layer);
+    if (detail) return { ...detail, label: detail.label || FINAL_LAYER_LABELS[layer] };
+    const reason = blockers.get(layer);
+    if (reason) return { layer, label: FINAL_LAYER_LABELS[layer], state: 'failed', passed: false, reason };
+    if (passes.has(layer)) return { layer, label: FINAL_LAYER_LABELS[layer], state: 'passed', passed: true, reason: '后端标记为已通过。' };
+    return {
+      layer,
+      label: FINAL_LAYER_LABELS[layer],
+      state: 'unknown',
+      passed: null,
+      reason: unknowns.has(layer) ? '后端标记为待判定。' : '后端未提供该层明细。',
+    };
+  });
+}
+
+function finalVerdictStatusLabel(snapshot: QuantAnalysisSnapshot | null, symbol: string): string {
+  const verdict = snapshot ? finalVerdictSymbols(snapshot)[symbol] : undefined;
+  if (!verdict) return `⚪ ${symbol} · 等待最终裁决`;
+  if (verdict.verdict === 'BUY') return `🟣 ${symbol} · 条件完整`;
+  if (verdict.verdict === 'NO_BUY') return `⚪ ${symbol} · 不买`;
+  return `⚪ ${symbol} · 无法判定`;
+}
+
+function FinalVerdictPanel({ verdict }: { verdict: QuantFinalVerdict | undefined }) {
+  if (!verdict) {
+    return <div className="mb-4 rounded-xl border border-neutral/40 bg-surface-overlay/35 p-3 text-sm text-ink-muted">最终裁决待下一份量化快照生成；页面不会自行把单个门槛拼成结论。</div>;
+  }
+  const title = verdict.verdict === 'NO_BUY'
+    ? '最终结论：不买'
+    : verdict.verdict === 'BUY'
+      ? '最终结论：条件完整'
+      : '最终结论：数据不足，无法判定';
+  const layers = finalVerdictLayers(verdict);
+  return (
+    <section className="mb-4 rounded-xl border border-neutral/40 bg-surface-overlay/35 p-3" aria-label="最终裁决（后端唯一结论）">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="font-semibold text-ink-primary">最终裁决（后端唯一结论）</h3>
+          <p className="mt-1 text-sm font-semibold text-ink-primary">{title}</p>
+        </div>
+        <span className="rounded-full bg-neutral/25 px-2 py-1 font-mono text-[11px] tabular-nums text-ink-secondary">{verdict.symbol}</span>
+      </div>
+      <p className="mt-2 text-sm leading-relaxed text-ink-secondary">{verdict.single_sentence ?? '后端未提供结论说明。'}</p>
+      <p className="mt-2 text-xs text-ink-muted">任何一层否决 = 不买</p>
+      {verdict.is_silence_by_rule && <p className="mt-1 text-xs text-ink-muted">这是规则的结论，不是系统故障。</p>}
+      {verdict.data_stale && <p className="mt-1 font-mono text-xs tabular-nums text-trim">数据 {verdict.data_as_of ?? '暂无'}（落后 {verdict.data_stale_days} 天）</p>}
+      <div className="mt-3 space-y-2">
+        {layers.map((layer) => <FinalVerdictLayerCard key={layer.layer} layer={layer} />)}
+      </div>
+      {verdict.symbol === 'SOXL' && <p className="mt-3 text-xs leading-relaxed text-ink-muted">约每 5 年一次，长期静默正常。</p>}
+    </section>
+  );
+}
+
+function FinalVerdictLayerCard({ layer }: { layer: QuantFinalVerdictLayer }) {
+  const state = layer.state ?? (layer.passed === true ? 'passed' : layer.passed === false ? 'failed' : 'unknown');
+  const stateText = state === 'passed' ? '通过' : state === 'failed' ? '未通过' : state === 'not_applicable' ? '不适用' : '待判定';
+  const stateClass = state === 'passed'
+    ? 'border-gain/40 bg-gain/10 text-gain'
+    : state === 'failed'
+      ? 'border-loss/40 bg-loss/10 text-loss'
+      : 'border-neutral/40 bg-surface-base text-ink-secondary';
+  const label = layer.label || FINAL_LAYER_LABELS[layer.layer] || layer.layer;
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${stateClass}`}>
+      <div className="grid gap-2 sm:grid-cols-[8.5rem_minmax(0,1fr)_auto] sm:items-center">
+        <div className="flex items-center justify-between gap-2 sm:block">
+          <span className="font-medium">{label}</span>
+          <span className="ml-2 text-xs font-semibold">{stateText}</span>
+        </div>
+        <p className="min-w-0 text-xs leading-relaxed text-ink-secondary">{layer.reason || '后端未提供细节。'}</p>
+        <div className="font-mono text-[11px] tabular-nums text-ink-primary">
+          {layer.benchmark && typeof layer.trigger_price === 'number' ? `${layer.benchmark} → ${usdPrice(layer.trigger_price)}` : typeof layer.gap_pp === 'number' ? `还差 ${layer.gap_pp.toFixed(2)} 点` : '—'}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const DEPTH_STYLE = {
@@ -311,22 +412,24 @@ function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
   const marketPassed = marketGates.filter((item) => item.gate.passed).length;
   const lowZone = gates.low_zone;
   return (
-    <div className="mt-3 space-y-3">
-      {marketGates.length > 0 && <div className="flex items-center justify-between gap-3">
+    <details className="mt-3 rounded-lg border border-neutral/40 p-3">
+      <summary className="cursor-pointer font-semibold">六关原始证据（仅作证据，不单独构成结论）</summary>
+      <div className="mt-3 space-y-3">
+        {marketGates.length > 0 && <div className="flex items-center justify-between gap-3">
         <strong className="font-mono tabular-nums">市场条件满足 {marketPassed}/{marketGates.length}</strong>
         <span className="text-xs text-ink-muted">市场判断</span>
-      </div>}
-      {marketGates.length > 0 && <div className="grid gap-2 sm:grid-cols-2">
+        </div>}
+        {marketGates.length > 0 && <div className="grid gap-2 sm:grid-cols-2">
         {marketGates.map((item) => <GateCard key={item.key} gateKey={item.key} label={item.label} gate={item.gate} />)}
-      </div>}
-      {lowZone && !isApplicable(lowZone) && !analysis.depth_window?.applicable && (
+        </div>}
+        {lowZone && !isApplicable(lowZone) && !analysis.depth_window?.applicable && (
         <div className="rounded-lg border border-neutral/40 p-3 text-sm text-ink-secondary">
           <div className="font-semibold">价格回撤参考</div>
           <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">距最近 250 个交易日高点回撤 {numberText(lowZone.current_drawdown_pct, '%')}，不参与个股市场条件计数。</div>
         </div>
-      )}
-      <ReferenceInfo gate={gates.valuation} />
-      <details className="rounded-lg border border-neutral/40 p-3">
+        )}
+        <ReferenceInfo gate={gates.valuation} />
+        <details className="rounded-lg border border-neutral/40 p-3">
         <summary className="cursor-pointer font-semibold">纪律闸门（决定允许买多少），不是行情判断</summary>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {DISCIPLINE_GATES.map(([key, label]) => {
@@ -334,8 +437,9 @@ function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
             return isApplicable(gate) ? <GateCard key={key} gateKey={key} label={label} gate={gate} /> : null;
           })}
         </div>
-      </details>
-    </div>
+        </details>
+      </div>
+    </details>
   );
 }
 
@@ -623,15 +727,6 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
     if (status.state === 'observation') return `⚪ ${fallbackLabel} · 观察期`;
     return `⚪ ${fallbackLabel} · 无`;
   };
-  const selectOpportunity = (nextSymbol: string, side: OpportunitySide) => {
-    if (side === 'buy') setSymbol(nextSymbol);
-    else setSellSymbol(nextSymbol);
-    window.requestAnimationFrame(() => {
-      document.getElementById(side === 'buy' ? 'buy-condition-detail' : 'sell-window-detail')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  };
-
   useEffect(() => {
     if (!initialSide) return;
     window.requestAnimationFrame(() => {
@@ -642,7 +737,6 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
 
   return (
     <section className="space-y-4">
-      {snapshot && <OpportunityOverview snapshot={snapshot} onSelect={selectOpportunity} />}
       {snapshot && <ReviewCheckpointStrip snapshot={snapshot} />}
       <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -654,7 +748,7 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
         </div>
         {snapshot && <p className="mt-2 font-mono text-xs tabular-nums text-ink-muted">{quantAnalysisFreshnessText(snapshot.generated_at)} · 盘中每 5 分钟、其他时段每 25 分钟自动更新</p>}
         <select aria-label="量化监控标的" value={selectedSymbol} onChange={(event) => setSymbol(event.target.value)} className="mt-4 w-full rounded-md border border-neutral bg-transparent px-3 py-2">
-          {monitoredSymbols.map((item) => <option key={item} value={item}>{opportunityStatusLabel(snapshot?.summary, item)}</option>)}
+          {monitoredSymbols.map((item) => <option key={item} value={item}>{finalVerdictStatusLabel(snapshot, item)}</option>)}
         </select>
       </div>
 
@@ -675,9 +769,15 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
       {snapshot && result?.found && (
         <>
           <div id="buy-condition-detail" className="scroll-mt-4 rounded-xl border border-neutral/40 bg-surface-raised p-4">
-            {panicStatus?.applicable
-              ? <PanicWindowStatus status={panicStatus} />
-              : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} quote={selectedDepthQuote} />}
+            <FinalVerdictPanel verdict={finalVerdictSymbols(snapshot)[result.symbol]} />
+            <details className="mb-4 rounded-lg border border-neutral/40 bg-surface-overlay/25 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-ink-primary">量化原始证据（不单独构成结论）</summary>
+              <div className="mt-3">
+                {panicStatus?.applicable
+                  ? <PanicWindowStatus status={panicStatus} />
+                  : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} quote={selectedDepthQuote} />}
+              </div>
+            </details>
             <ValuationCard
               symbol={result.symbol}
               history={snapshot.pe_history ?? null}
@@ -687,7 +787,7 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
               displayCurrency={displayCurrency}
               rates={rates}
             />
-            <h3 className="text-lg font-semibold">{result.symbol} 买入条件</h3>
+            <h3 className="text-lg font-semibold">{result.symbol} 原始条件证据</h3>
             {!result.analysis.available ? (
               <p className="mt-3 text-trim">当前无可用判定：{result.analysis.error || '数据未生成'}</p>
             ) : <BuyConditions analysis={result.analysis} />}

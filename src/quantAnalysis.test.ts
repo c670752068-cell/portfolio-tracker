@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchQuantAnalysis,
+  finalVerdictFreshness,
+  finalVerdictSymbols,
   isQuantAnalysisStale,
   lookupQuantSymbol,
   parseQuantAnalysis,
@@ -31,6 +33,60 @@ describe('quant analysis contract', () => {
     };
 
     expect(() => parseQuantAnalysis(malformed)).toThrow('恐慌抢买窗口格式无效');
+  });
+
+  it('parses the wrapped server-owned final-verdict record without rebuilding it in the client', () => {
+    const payload = {
+      ...quantAnalysisFixture,
+      final_verdict: {
+        symbols: {
+          SOXL: {
+            symbol: 'SOXL',
+            verdict: 'NO_BUY',
+            single_sentence: '不买：1x 入场门尚未通过。',
+            is_silence_by_rule: true,
+            data_as_of: '2026-07-27',
+            data_stale_days: 3,
+            data_stale: true,
+            blocking_layers: [{ layer: 'entry_gate_1x', reason: 'SOXX 未触及 MA120' }],
+            passing_layers: ['gates_six'],
+            unknown_layers: [],
+            layers: [{ layer: 'entry_gate_1x', state: 'failed', passed: false, reason: 'SOXX 未触及 MA120', benchmark: 'SOXX', trigger_price: 393.01 }],
+          },
+        },
+        data_stale: true,
+        stale_days: 3,
+        data_as_of: '2026-07-27',
+      },
+    };
+
+    const parsed = parseQuantAnalysis(payload);
+
+    expect(finalVerdictSymbols(parsed).SOXL).toMatchObject({
+      verdict: 'NO_BUY',
+      single_sentence: '不买：1x 入场门尚未通过。',
+      data_stale: true,
+    });
+    expect(finalVerdictFreshness(parsed)).toEqual({
+      data_stale: true,
+      stale_days: 3,
+      data_as_of: '2026-07-27',
+    });
+  });
+
+  it('accepts a sparse server verdict but rejects malformed required verdict fields', () => {
+    const sparse = {
+      ...quantAnalysisFixture,
+      final_verdict: { symbols: { SOXL: { symbol: 'SOXL', verdict: 'NO_BUY' } } },
+    };
+    expect(() => parseQuantAnalysis(sparse)).not.toThrow();
+
+    const malformed = {
+      ...quantAnalysisFixture,
+      final_verdict: { symbols: { SOXL: { symbol: 'SOXL', verdict: 0 } } },
+    };
+
+    expect(() => parseQuantAnalysis(malformed)).toThrow('最终裁决格式无效');
   });
 
   it('loads the latest public snapshot with GET semantics', async () => {

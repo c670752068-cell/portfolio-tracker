@@ -125,3 +125,15 @@ a:focus-visible {
     backdrop-filter: none !important;
   }
 }
+
+/* The dark striped tail is only used after a sleeve has crossed its server
+   supplied hard cap.  It keeps the primary loss fill continuous while making
+   the amount beyond the cap unmistakable in both colour themes. */
+.sleeve-over-hard-cap {
+  background-color: rgb(var(--loss));
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(var(--surface-raised) / 0.3) 0 3px,
+    transparent 3px 6px
+  );
+}

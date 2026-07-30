@@ -4,7 +4,59 @@ import type { QuantAnalysisSnapshot } from '../types';
 import { DecisionStatusBar } from './DecisionStatusBar';
 
 describe('DecisionStatusBar', () => {
-  it('counts only backend buy-ready rows and profit-gated ladder-active sell families', () => {
+  it('renders the backend final verdict as the only top-level conclusion and surfaces stale data', () => {
+    const snapshot = {
+      source: 'futu-assistant',
+      generated_at: '2026-07-30T12:00:00-04:00',
+      rule_version: '2.7',
+      disclaimer: 'display only',
+      context: {},
+      symbols: {},
+      final_verdict: {
+        SOXL: {
+          symbol: 'SOXL',
+          verdict: 'NO_BUY',
+          single_sentence: '不买：基准 SOXX 还需再跌 25.4% 到 $393.01，且科技板块已超硬顶 $22,771',
+          is_silence_by_rule: true,
+          data_as_of: '2026-07-27',
+          data_stale_days: 3,
+          data_stale: true,
+          blocking_layers: [],
+          passing_layers: [],
+          unknown_layers: [],
+          layers: [],
+        },
+      },
+      ammo_overview: {
+        cash_exposure: { available_usd: 28_708 },
+        buying_power: { by_3x_usd: 0 },
+      },
+      freshness: {
+        positions_as_of: '2026-07-27',
+        prices_at: '2026-07-30T12:00:00-04:00',
+        price_session: 'regular',
+        valuation_as_of: '2026-07-27',
+        cnn_as_of: '2026-07-27',
+        regime_evaluated_at: '2026-07-30T12:00:00-04:00',
+        sell_evaluated_at: '2026-07-30T12:00:00-04:00',
+        buy_plan_evaluated_at: '2026-07-30T12:00:00-04:00',
+        data_stale: true,
+        stale_days: 3,
+        data_as_of: '2026-07-27',
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain('今日结论：不买');
+    expect(html).toContain('不是系统故障');
+    expect(html).toContain('数据 2026-07-27（落后 3 天）');
+    expect(html).toContain('可用资金 $28,708 · 闸门放行 $0');
+    expect(html).toContain('SOXL');
+    expect(html).not.toContain('当前 0 个标的达到买入条件');
+  });
+
+  it('does not synthesize a top-level verdict from legacy buy or sell summaries', () => {
     const snapshot = {
       source: 'futu-assistant',
       generated_at: '2026-07-26T11:49:37-04:00',
@@ -43,13 +95,32 @@ describe('DecisionStatusBar', () => {
 
     const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
 
-    expect(html).toContain('当前 2 个标的达到买入条件');
-    expect(html).toContain('1 个持仓达到止盈档');
+    expect(html).toContain('今日结论：数据不足，无法判定');
+    expect(html).toContain('等待下一份量化快照生成最终裁决');
+    expect(html).not.toContain('当前 2 个标的达到买入条件');
     expect(html).toContain('持仓 2026-07-23');
     expect(html).toContain('价格 2026-07-26');
   });
 
-  it('uses calm neutral copy when both backend counts are zero', () => {
+  it('uses wrapper-level final-verdict freshness when individual verdicts omit stale fields', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00-04:00', rule_version: '2.7', disclaimer: 'display only', context: {}, symbols: {},
+      final_verdict: {
+        symbols: { SOXL: { symbol: 'SOXL', verdict: 'NO_BUY' } },
+        data_stale: true,
+        stale_days: 4,
+        data_as_of: '2026-07-26',
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
+
+    expect(html).toContain('今日结论：不买');
+    expect(html).toContain('数据 2026-07-26（落后 4 天）');
+    expect(html).toContain('后端未提供结论说明。');
+  });
+
+  it('uses calm neutral copy when no server-owned final verdict is available', () => {
     const snapshot = {
       source: 'futu-assistant',
       generated_at: '2026-07-26T11:49:37-04:00',
@@ -70,7 +141,7 @@ describe('DecisionStatusBar', () => {
     } as unknown as QuantAnalysisSnapshot;
 
     const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
-    expect(html).toContain('当前没有标的达到买入条件');
-    expect(html).toContain('当前没有持仓达到止盈档');
+    expect(html).toContain('今日结论：数据不足，无法判定');
+    expect(html).toContain('页面不会自行拼接买入结论');
   });
 });

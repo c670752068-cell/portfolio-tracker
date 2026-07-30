@@ -15,6 +15,55 @@ const holdings = [
 afterEach(() => vi.useRealTimers());
 
 describe('ConditionLookup', () => {
+  it('renders the five backend verdict layers and their server-authored trigger-price evidence', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot & { final_verdict?: Record<string, unknown> };
+    snapshot.final_verdict = {
+      SOXL: {
+        symbol: 'SOXL', verdict: 'NO_BUY',
+        single_sentence: '不买：SOXX 还需再跌 25.4% 到 $393.01',
+        is_silence_by_rule: true, data_as_of: '2026-07-27', data_stale_days: 0, data_stale: false,
+        blocking_layers: [{ layer: 'entry_gate_1x', reason: '基准 SOXX 回撤 -19.5%，未达 -40%' }],
+        passing_layers: ['gates_six'], unknown_layers: [],
+        layers: [
+          { layer: 'gates_six', label: '六关', state: 'passed', passed: true, applicable: true, reason: '六关 6/6 已通过' },
+          { layer: 'entry_gate_1x', label: '1x 入场门', state: 'failed', passed: false, applicable: true, reason: 'SOXX 未达阈值', benchmark: 'SOXX', gap_pp: 20.5, trigger_price: 393.01 },
+          { layer: 'sleeve_borrow', label: '板块额度', state: 'failed', passed: false, applicable: true, reason: '科技超硬顶' },
+          { layer: 'buy_plan_conditions', label: '计划条件', state: 'failed', passed: false, applicable: true, reason: '计划条件尚未满足' },
+          { layer: 'panic_window', label: '恐慌窗口', state: 'failed', passed: false, applicable: true, reason: '等待双条件' },
+        ],
+      },
+    };
+
+    const html = renderToStaticMarkup(<ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />);
+
+    expect(html).toContain('最终裁决（后端唯一结论）');
+    expect(html).toContain('任何一层否决 = 不买');
+    expect(html).toContain('1x 入场门');
+    expect(html).toContain('SOXX → $393.01');
+    expect(html).toContain('约每 5 年一次，长期静默正常');
+  });
+
+  it('keeps all five server-owned verdict rows visible when an older snapshot only exposes blocker and pass lists', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot & { final_verdict?: Record<string, unknown> };
+    snapshot.final_verdict = {
+      SOXL: {
+        symbol: 'SOXL', verdict: 'NO_BUY', single_sentence: '不买：SOXX 还未到触发价。',
+        blocking_layers: [{ layer: 'entry_gate_1x', reason: '需要：SOXX → $393.01' }],
+        passing_layers: ['gates_six'],
+        unknown_layers: ['sleeve_borrow', 'buy_plan_conditions', 'panic_window'],
+      },
+    };
+
+    const html = renderToStaticMarkup(<ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />);
+
+    expect(html).toContain('六关');
+    expect(html).toContain('1x 入场门');
+    expect(html).toContain('板块额度');
+    expect(html).toContain('计划条件');
+    expect(html).toContain('恐慌窗口');
+    expect(html).toContain('需要：SOXX → $393.01');
+  });
+
   it('states that the loaded snapshot refreshes every 5 minutes in market and 25 otherwise', () => {
     const html = renderToStaticMarkup(
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
@@ -36,16 +85,16 @@ describe('ConditionLookup', () => {
     expect(html).not.toContain('>查询</button>');
   });
 
-  it('adds server-summary status dots to both existing selectors', () => {
+  it('uses final-verdict status dots rather than independently derived opportunity states', () => {
     const html = renderToStaticMarkup(
       <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="SOXL" />,
     );
 
-    expect(html).toContain('🟢 SOXL · 条件满足');
-    expect(html).toContain('🟡 AMZN · 接近');
+    expect(html).toContain('⚪ SOXL · 等待最终裁决');
+    expect(html).toContain('⚪ AMZN · 等待最终裁决');
     expect(html).toContain('⚪ MSFT · 市值 $4000.00 · IBKR · 观察期</option>');
     expect(html).not.toContain('🟠 MSFT');
-    expect(html).toContain('⚪ AAPL · 无');
+    expect(html).toContain('⚪ AAPL · 等待最终裁决');
   });
 
   it('shows successful refresh feedback with the snapshot timestamp and minute age', () => {
@@ -76,7 +125,7 @@ describe('ConditionLookup', () => {
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
-    expect(html.indexOf('恐慌抢买窗口')).toBeLessThan(html.indexOf('SOXL 买入条件'));
+    expect(html.indexOf('恐慌抢买窗口')).toBeLessThan(html.indexOf('SOXL 原始条件证据'));
     expect(html).toContain('疯狂提醒中');
     expect(html).toContain('1× 基准判定');
     expect(html).toContain('SOXX 闭市价 $465.00');
@@ -446,7 +495,7 @@ describe('ConditionLookup', () => {
     expect(far).toContain('未达标');
     expect(far).toContain('value="55.55"');
     expect(far).toContain('dark:');
-    expect(insufficient).toContain('60 日样本不足（n=18）');
+    expect(insufficient).toContain('最终裁决待下一份量化快照生成');
     expect(insufficient).toContain('text-ink-muted');
     expect(insufficient).toContain('min-w-0');
     expect(insufficient).toContain('overflow-hidden');

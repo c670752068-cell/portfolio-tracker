@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local visual QA and agent tooling
+risk23-*.png
+v25-*.png
+output/
+.playwright-cli/
+.agents/skills/prototype/

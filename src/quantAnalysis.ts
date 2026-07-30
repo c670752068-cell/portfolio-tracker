@@ -1,4 +1,11 @@
-import type { QuantAnalysisSnapshot, QuantSignalStatWindow, QuantSymbolAnalysis } from './types';
+import type {
+  QuantAnalysisSnapshot,
+  QuantFinalVerdict,
+  QuantFinalVerdictEnvelope,
+  QuantFinalVerdictLayer,
+  QuantSignalStatWindow,
+  QuantSymbolAnalysis,
+} from './types';
 import { isRegularSession } from './marketSession';
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -154,6 +161,76 @@ function validateOpportunitySummary(value: unknown): void {
   }
 }
 
+function isFinalVerdictLayer(value: unknown): value is QuantFinalVerdictLayer {
+  return isRecord(value)
+    && typeof value.layer === 'string'
+    && (value.label === undefined || typeof value.label === 'string')
+    && (value.state === undefined || typeof value.state === 'string')
+    && (value.passed === undefined || value.passed === null || typeof value.passed === 'boolean')
+    && (value.applicable === undefined || typeof value.applicable === 'boolean')
+    && (value.reason === undefined || typeof value.reason === 'string')
+    && (value.benchmark === undefined || typeof value.benchmark === 'string')
+    && (value.gap_pp === undefined || typeof value.gap_pp === 'number')
+    && (value.trigger_price === undefined || typeof value.trigger_price === 'number');
+}
+
+function isFinalVerdict(value: unknown): value is QuantFinalVerdict {
+  return isRecord(value)
+    && typeof value.symbol === 'string'
+    && typeof value.verdict === 'string'
+    && (value.single_sentence === undefined || typeof value.single_sentence === 'string')
+    && (value.is_silence_by_rule === undefined || typeof value.is_silence_by_rule === 'boolean')
+    && (value.data_as_of === undefined || value.data_as_of === null || typeof value.data_as_of === 'string')
+    && (value.data_stale_days === undefined || typeof value.data_stale_days === 'number')
+    && (value.data_stale === undefined || typeof value.data_stale === 'boolean')
+    && (value.blocking_layers === undefined || (Array.isArray(value.blocking_layers)
+      && value.blocking_layers.every((item) => isRecord(item) && typeof item.layer === 'string' && typeof item.reason === 'string')))
+    && (value.passing_layers === undefined || (Array.isArray(value.passing_layers)
+      && value.passing_layers.every((item) => typeof item === 'string')))
+    && (value.unknown_layers === undefined || (Array.isArray(value.unknown_layers)
+      && value.unknown_layers.every((item) => typeof item === 'string')))
+    && (value.layers === undefined || (Array.isArray(value.layers) && value.layers.every(isFinalVerdictLayer)));
+}
+
+function isFinalVerdictEnvelope(
+  value: QuantAnalysisSnapshot['final_verdict'],
+): value is QuantFinalVerdictEnvelope {
+  return isRecord(value)
+    && isRecord(value.symbols)
+    && Object.values(value.symbols).every(isFinalVerdict);
+}
+
+/**
+ * Supports the current `{ symbols: … }` contract and a short-lived direct-map
+ * payload from older gateway snapshots.  Consumers always receive a map.
+ */
+export function finalVerdictSymbols(snapshot: QuantAnalysisSnapshot): Record<string, QuantFinalVerdict> {
+  const payload = snapshot.final_verdict;
+  if (!payload) return {};
+  if (isFinalVerdictEnvelope(payload)) return payload.symbols;
+  return payload;
+}
+
+/** Server-owned freshness accompanying a wrapped final-verdict payload. */
+export function finalVerdictFreshness(snapshot: QuantAnalysisSnapshot): Pick<QuantFinalVerdictEnvelope, 'data_stale' | 'stale_days' | 'data_as_of'> | undefined {
+  const payload = snapshot.final_verdict;
+  if (!isFinalVerdictEnvelope(payload)) return undefined;
+  return {
+    data_stale: payload.data_stale,
+    stale_days: payload.stale_days,
+    data_as_of: payload.data_as_of,
+  };
+}
+
+function validateFinalVerdicts(value: unknown): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) throw new Error('最终裁决格式无效');
+  const symbols = isRecord(value.symbols) ? value.symbols : value;
+  if (!Object.values(symbols).every(isFinalVerdict)) {
+    throw new Error('最终裁决格式无效');
+  }
+}
+
 export function parseQuantAnalysis(value: unknown): QuantAnalysisSnapshot {
   if (!isRecord(value)
     || value.source !== 'futu-assistant'
@@ -169,6 +246,7 @@ export function parseQuantAnalysis(value: unknown): QuantAnalysisSnapshot {
   }
   validatePanicWindow(value.panic_window);
   validateOpportunitySummary(value.summary);
+  validateFinalVerdicts(value.final_verdict);
   return value as unknown as QuantAnalysisSnapshot;
 }
 

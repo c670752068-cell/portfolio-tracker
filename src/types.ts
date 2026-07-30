@@ -787,12 +787,70 @@ export interface QuantAnalysisFreshness {
   regime_evaluated_at: string | null;
   sell_evaluated_at: string | null;
   buy_plan_evaluated_at: string | null;
+  /** Backend-owned freshness summary for all verdict layers. */
+  data_stale?: boolean;
+  stale_days?: number;
+  max_stale_days?: number;
+  stale_sources?: string[];
+  data_as_of?: string | null;
 }
+
+/**
+ * Final verdicts are calculated once by the quant service.  The web client
+ * deliberately only renders these fields; it must not rebuild the verdict
+ * from individual gates.
+ */
+export interface QuantFinalVerdictLayer {
+  layer: string;
+  label?: string;
+  state?: 'passed' | 'failed' | 'unknown' | 'not_applicable' | string;
+  passed?: boolean | null;
+  applicable?: boolean;
+  reason?: string;
+  benchmark?: string;
+  gap_pp?: number;
+  gap_pct?: number;
+  trigger_price?: number;
+  triggered_session?: string;
+}
+
+export interface QuantFinalVerdict {
+  symbol: string;
+  verdict: 'BUY' | 'NO_BUY' | 'UNDECIDABLE' | string;
+  blocking_layers?: Array<{ layer: string; reason: string }>;
+  passing_layers?: string[];
+  unknown_layers?: string[];
+  layers?: QuantFinalVerdictLayer[];
+  single_sentence?: string;
+  is_silence_by_rule?: boolean;
+  data_as_of?: string | null;
+  data_stale_days?: number;
+  data_stale?: boolean;
+}
+
+export interface QuantFinalVerdictEnvelope {
+  symbols: Record<string, QuantFinalVerdict>;
+  data_stale?: boolean;
+  stale_days?: number;
+  data_as_of?: string | null;
+}
+
+/** Legacy direct-map payloads are accepted while older VPS snapshots expire. */
+export type QuantFinalVerdictPayload = QuantFinalVerdictEnvelope | Record<string, QuantFinalVerdict>;
 
 export interface QuantPortfolioRisk {
   ammo_overview?: {
     exposure?: { effective_usd?: number; effective_pct?: number };
-    cash_exposure?: { invested_usd?: number; invested_pct?: number; available_usd?: number; basis?: string };
+    cash_exposure?: {
+      invested_usd?: number;
+      invested_pct?: number;
+      available_usd?: number;
+      basis?: string;
+      denominator_usd?: number;
+    };
+    funding?: {
+      available_usd?: number;
+    };
     buying_power?: {
       by_underlying_usd?: number;
       by_2x_usd?: number;
@@ -809,10 +867,25 @@ export interface QuantPortfolioRisk {
     premium_cap_pct?: number;
     over_limit?: boolean;
     delta_exposure_usd?: number;
+    delta_assumption?: string;
+    delta_assumption_note?: string;
     items?: Array<{ symbol: string; delta?: number; delta_source?: string; delta_notional_usd?: number; days_to_expiry?: number | null; status?: string }>;
   };
   sleeve_status?: Record<string, QuantSleeveStatus>;
-  allocation_plan?: { total_available_usd?: number; by_sleeve?: Array<{ sleeve: string; priority?: number; suggested_usd?: number; candidates?: Array<{ symbol: string }> }> };
+  allocation_plan?: {
+    total_available_usd?: number;
+    by_sleeve?: Array<{
+      sleeve: string;
+      priority?: number;
+      suggested_usd?: number;
+      suggested_share_pct?: number;
+      underweight_pp?: number;
+      gap_usd?: number;
+      blocked?: boolean;
+      block_reason?: string;
+      candidates?: Array<{ symbol: string }>;
+    }>;
+  };
   dip_status?: Record<string, { companion_text?: string; ammo?: { remaining_usd?: number; account_gate?: { allowed_usd?: number } } }>;
 }
 
@@ -825,12 +898,22 @@ export interface QuantSleeveMetric {
   gap_usd?: number;
   lent_pp?: number;
   available_target_pct?: number;
+  basis?: 'effective' | 'cash' | string;
+  denominator_usd?: number;
+  deviation_pp?: number;
+  underweight?: boolean;
+  overweight?: boolean;
+  block_new_buy?: boolean;
+  /** A basis-specific explanation emitted by the quant service. */
+  note?: string;
+  borrowed_pp?: number;
 }
 
 export interface QuantSleeveStatus {
   baseline_pct?: number;
   hard_cap_pct?: number | null;
   borrowed_pp?: number;
+  cash_borrowed_pp?: number;
   borrow_room_pp?: number;
   lent_pp?: number;
   available_target_pct?: number;
@@ -881,6 +964,12 @@ export interface QuantAnalysisSnapshot {
   sleeve_status?: QuantPortfolioRisk['sleeve_status'];
   allocation_plan?: QuantPortfolioRisk['allocation_plan'];
   dip_status?: QuantPortfolioRisk['dip_status'];
+  /** Dual-basis risk summary emitted by the backend. */
+  total_effective_pct?: number;
+  total_cash_pct?: number;
+  invested_cash_total_usd?: number;
+  cash_basis?: string;
+  final_verdict?: QuantFinalVerdictPayload;
 }
 
 /** Rates are quoted as "how many units of the currency equal one USD". */

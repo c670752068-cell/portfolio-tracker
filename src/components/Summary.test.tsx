@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { computeMetrics } from '../metrics';
 import type { ExchangeRates, QuantAnalysisSnapshot } from '../types';
-import { Summary } from './Summary';
+import { SleeveBar, Summary } from './Summary';
 
 const rates: ExchangeRates = {
   USD: 1, CNY: 6.7776, HKD: 7.8386, JPY: 155, EUR: 0.92, GBP: 0.79,
@@ -22,6 +22,77 @@ const quantProps = {
 };
 
 describe('Summary cards', () => {
+  it('keeps a single-basis sleeve card strictly on that server-provided basis', () => {
+    const html = renderToStaticMarkup(
+      <SleeveBar
+        name="tech"
+        displayBasis="cash"
+        row={{
+          baseline_pct: 65,
+          hard_cap_pct: 75,
+          note: '双口径总说明：等效已超硬顶',
+          effective: { pct: 91.26, zone: 'over_hard_cap', available_target_pct: 75, note: '等效说明：已超硬顶' },
+          cash: { pct: 54.03, zone: 'under', available_target_pct: 65, note: '现金说明：仍在基准内' },
+        }}
+      />,
+    );
+
+    expect(html).toContain('现金 54.03%');
+    expect(html).toContain('现金说明：仍在基准内');
+    expect(html).toContain('现金目标 65%');
+    expect(html).not.toContain('等效 91.26%');
+    expect(html).not.toContain('等效说明：已超硬顶');
+    expect(html).not.toContain('双口径总说明：等效已超硬顶');
+    expect(html).not.toContain('等效目标 75%');
+    expect(html).toContain('flex-col');
+    expect(html).toContain('sm:flex-row');
+    expect(html).toContain('min-w-0');
+  });
+
+  it('renders a solid loss track and a distinct beyond-hard-cap segment for the selected basis', () => {
+    const html = renderToStaticMarkup(
+      <SleeveBar
+        name="options"
+        displayBasis="cash"
+        row={{
+          baseline_pct: 5,
+          hard_cap_pct: 5,
+          cash: { pct: 9.58, zone: 'over_hard_cap', note: '现金超硬顶' },
+          effective: { pct: 104.94, zone: 'over_hard_cap', note: '等效超硬顶' },
+        }}
+      />,
+    );
+
+    expect(html).toContain('现金 9.58%');
+    expect(html).toContain('超硬顶(现金)');
+    expect(html).toContain('bg-loss');
+    expect(html).toContain('sleeve-over-hard-cap');
+    expect(html).not.toContain('等效 104.94%');
+  });
+
+  it('renders only the selected metric target and marker in a single-basis sleeve card', () => {
+    const row = {
+      baseline_pct: 25,
+      hard_cap_pct: 30,
+      effective: { pct: 0.71, zone: 'under', available_target_pct: 15 },
+      cash: { pct: 0.24, zone: 'under', available_target_pct: 25 },
+    };
+    const effectiveHtml = renderToStaticMarkup(<SleeveBar name="broad_dow" displayBasis="effective" row={row} />);
+    const cashHtml = renderToStaticMarkup(<SleeveBar name="broad_dow" displayBasis="cash" row={row} />);
+
+    expect(effectiveHtml).toContain('等效目标 15%');
+    expect(effectiveHtml).toContain('data-sleeve-target="effective"');
+    expect(effectiveHtml).not.toContain('基准 25%');
+    expect(effectiveHtml).not.toContain('硬顶 30%');
+    expect(effectiveHtml).not.toContain('data-sleeve-target="cash"');
+
+    expect(cashHtml).toContain('现金目标 25%');
+    expect(cashHtml).toContain('data-sleeve-target="cash"');
+    expect(cashHtml).not.toContain('基准 25%');
+    expect(cashHtml).not.toContain('硬顶 30%');
+    expect(cashHtml).not.toContain('data-sleeve-target="effective"');
+  });
+
   it('renders server risk, ammunition, sleeve, option, and dip data without inventing a buy amount', () => {
     const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
     const snapshot = {
@@ -62,10 +133,64 @@ describe('Summary cards', () => {
     expect(html).toContain('超基准 $36,758');
     expect(html).toContain('禁区，不可借');
     expect(html).toContain('已被科技借走 10.00pp');
-    expect(html).toContain('现金可用目标 25.00%');
+    expect(html).toContain('现金目标 25%');
     expect(html).toContain('期权风险专区');
     expect(html).toContain('不必猜最低点');
     expect(html).not.toContain('可以买入');
+  });
+
+  it('keeps cash allocation on its server-provided invested-cash denominator and hides allocation sentinel priorities', () => {
+    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-30T12:00:00Z', rule_version: '2.7', disclaimer: 'test', context: {}, symbols: {},
+      ammo_overview: {
+        exposure: { effective_usd: 276_000, effective_pct: 200.91 },
+        cash_exposure: { invested_usd: 95_011, invested_pct: 100, available_usd: 28_708, basis: 'invested_cash', denominator_usd: 95_011 },
+      },
+      option_exposure: { delta_exposure_usd: 146_970.5, items: [{ symbol: 'MSFT', delta: 0.5, delta_source: 'estimated', delta_notional_usd: 20_000 }] },
+      sleeve_status: {
+        tech: {
+          baseline_pct: 65, hard_cap_pct: 75, block_new_buy: true,
+          note: '已用满 10.0pp 借额（上限 75%），仍超硬顶 22,771，不建议新增科技',
+          effective: { pct: 91.26, zone: 'over_hard_cap', over_hard_cap_usd: 22_771, gap_usd: 0, denominator_usd: 137_392 },
+          cash: { pct: 79.63, zone: 'over_hard_cap', over_hard_cap_usd: 4_400, gap_usd: 0, denominator_usd: 95_011 },
+        },
+        options: {
+          baseline_pct: 5, hard_cap_pct: 5, block_new_buy: true,
+          effective: { pct: 104.94, zone: 'over_hard_cap', gap_usd: 0 },
+          cash: { pct: 14.12, zone: 'over_hard_cap', gap_usd: 0 },
+        },
+        broad_dow: { baseline_pct: 25, effective: { pct: 0.71, zone: 'under' }, cash: { pct: 0.35, zone: 'under' } },
+      },
+      allocation_plan: {
+        total_available_usd: 0,
+        by_sleeve: [
+          { sleeve: 'broad_dow', priority: 1, underweight_pp: -24.29, suggested_usd: 0, candidates: [{ symbol: 'UPRO' }] },
+          { sleeve: 'tech', priority: 99, blocked: true, block_reason: '已超目标配比，新增弹药不投向科技', suggested_usd: 0 },
+          { sleeve: 'other', priority: 99, suggested_usd: 0 },
+        ],
+      },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        analysisSnapshot={snapshot} {...quantProps}
+      />,
+    );
+
+    expect(html).toContain('现金分母：已投现金合计 $95,011');
+    expect(html).toContain('超硬顶(双)');
+    expect(html).toContain('不建议新增科技');
+    expect(html).toContain('当前无可分配弹药（闸门放行 $0）');
+    expect(html).toContain('待补：宽基+道指（低配 24.29pp；总额度为 0，并非不应补）');
+    expect(html).toContain('已超目标配比，新增弹药不投向科技');
+    expect(html).toContain('不投：其他 —— 后端闸门未放行');
+    expect(html).toContain('Delta 为统一假设 0.5，非真实 Delta');
+    expect(html).not.toContain('优先 99');
+    expect(html).not.toContain('缺口 $0');
   });
 
   it('omits the misleading total PnL card while retaining portfolio value cards', () => {

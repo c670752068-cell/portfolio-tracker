@@ -2,10 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AllocationChart } from './components/AllocationChart';
 import { AlertRulesPanel } from './components/AlertRulesPanel';
 import { ConditionLookup } from './components/ConditionLookup';
-import { DailyVerdictCard } from './components/DailyVerdictCard';
 import { DecisionStatusBar } from './components/DecisionStatusBar';
 import { BehaviorMirrorCard } from './components/BehaviorMirrorCard';
-import { OpportunityOverview, type OpportunitySide } from './components/OpportunityOverview';
 import { CashEditor } from './components/CashEditor';
 import { HoldingsTable } from './components/HoldingsTable';
 import { ImageImportPanel } from './components/ImageImportPanel';
@@ -13,7 +11,6 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { ScenarioCalculator } from './components/ScenarioCalculator';
 import { Summary } from './components/Summary';
 import { ThemeControl } from './components/ThemeControl';
-import { FearComfortBanner, LeverageOpportunityRadar } from './components/SmartInsightCards';
 import { ValuationPanel } from './components/ValuationPanel';
 import { ALERT_RULES_REFRESH_MS, deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
@@ -139,7 +136,6 @@ export default function App() {
   const [lastImport, setLastImport] = useState<ImportNotice | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [valuationEditorDirty, setValuationEditorDirty] = useState(false);
-  const [conditionTarget, setConditionTarget] = useState<{ symbol: string; side: OpportunitySide } | null>(null);
   const [marketNow, setMarketNow] = useState(() => new Date());
   const holdingsRef = useRef(portfolio.holdings);
   const portfolioRef = useRef(portfolio);
@@ -528,11 +524,6 @@ export default function App() {
     }
   }
 
-  function openConditionOpportunity(symbol: string, side: OpportunitySide) {
-    setConditionTarget({ symbol, side });
-    setTab('conditions');
-  }
-
   function changeTab(next: Tab) {
     if (
       tab === 'valuation'
@@ -577,17 +568,9 @@ export default function App() {
 
       {tab === 'dashboard' && (
         <section className="ui-enter space-y-5">
-          <DailyVerdictCard verdict={quantAnalysis?.today_verdict} />
-          <FearComfortBanner context={quantAnalysis?.context} />
           {latestAlert && (
             <div className="rounded-2xl border border-trim/40 border-l-4 border-l-trim bg-trim/10 p-4 text-sm leading-relaxed text-ink-primary">
               <strong><span className="font-mono tabular-nums">{latestAlert.symbol}</span> 目标提醒已触发</strong> · <span className="font-mono tabular-nums">{latestAlert.last_reminder_at}</span>。只提醒不下单，请在券商 App 手动执行。
-            </div>
-          )}
-          {quantAnalysis && (
-            <div className="grid items-start gap-5 lg:grid-cols-2">
-              <OpportunityOverview snapshot={quantAnalysis} compact onSelect={openConditionOpportunity} />
-              <LeverageOpportunityRadar snapshot={quantAnalysis} />
             </div>
           )}
           <Summary
@@ -644,8 +627,6 @@ export default function App() {
             snapshot={quantAnalysis}
             holdings={portfolio.holdings}
             monitoredQuotes={monitoredQuotes}
-            initialSymbol={conditionTarget?.symbol}
-            initialSide={conditionTarget?.side}
             loading={quantAnalysisStatus.loading}
             error={quantAnalysisStatus.error}
             onRefresh={refreshQuantAnalysis}
