@@ -28,7 +28,7 @@ describe('Summary cards', () => {
         id: 'sgov', symbol: 'SGOV', name: 'SGOV', shares: 100, buyPrice: 100,
         currentPrice: 100, sector: '现金', currency: 'USD', assetType: 'etf', cashEquivalent: true,
       }],
-      cash: [{ id: 'cash', currency: 'USD', amount: 5_000 }],
+      cash: [{ currency: 'USD', amount: 5_000 }],
       updatedAt: '2026-07-30',
     }, rates);
     const html = renderToStaticMarkup(

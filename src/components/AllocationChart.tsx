@@ -38,7 +38,7 @@ export function AllocationChart({ metrics, displayCurrency, rates }: AllocationC
     <div className="w-full min-w-0">
       <div className="hidden h-96 min-w-0 sm:block" data-allocation-wide="true">
         <ResponsiveContainer width="100%" height="100%">
-          <PieChart margin={{ top: 24, right: 24, bottom: 24, left: 24 }} className="font-mono tabular-nums">
+          <PieChart margin={{ top: 24, right: 24, bottom: 24, left: 24 }} className="tabular-nums">
             <Pie
               data={slices}
               dataKey="value"
@@ -88,7 +88,7 @@ export function AllocationChart({ metrics, displayCurrency, rates }: AllocationC
       <div className="sm:hidden" data-allocation-narrow="true">
         <div className="h-56 min-w-0">
           <ResponsiveContainer width="100%" height="100%">
-            <PieChart className="font-mono tabular-nums">
+            <PieChart className="tabular-nums">
               <Pie
                 data={slices}
                 dataKey="value"
@@ -124,7 +124,7 @@ export function AllocationChart({ metrics, displayCurrency, rates }: AllocationC
                   style={{ backgroundColor: sliceColor(slice, index) }}
                 />
                 <span className="min-w-0 flex-1 break-words leading-tight text-ink-secondary" title={slice.name}>{slice.name}</span>
-                <span className="shrink-0 text-right font-mono font-medium tabular-nums text-ink-primary">
+                <span className="shrink-0 text-right font-medium tabular-nums text-ink-primary">
                   <span className="block">{formatPct(slice.weight)}</span>
                   <span className="block text-[10px] font-normal text-ink-muted">{formatDisplayMoney(slice.value, displayCurrency, rates)}</span>
                 </span>

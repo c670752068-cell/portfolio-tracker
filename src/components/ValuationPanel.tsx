@@ -31,8 +31,8 @@ export function ValuationPanel({ snapshot, onDirtyChange }: ValuationPanelProps)
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-buy/30 bg-gradient-to-br from-buy/12 via-surface-raised to-surface-raised p-5 sm:p-6">
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-buy">此刻怎么做</div>
-        <h2 className="mt-2 max-w-4xl text-xl font-semibold leading-snug tracking-tight sm:text-2xl">
+        <div className="text-label text-xs font-semibold uppercase text-buy">此刻怎么做</div>
+        <h2 className="text-display mt-2 max-w-4xl text-xl font-semibold leading-snug sm:text-2xl">
           {buildValuationSummary(snapshot)}
         </h2>
         <p className="mt-3 text-xs leading-relaxed text-ink-muted">冷静时定规则，市场恐慌时执行规则。这里只做证据与计划展示，不自动下单。</p>
@@ -99,7 +99,7 @@ function CurrentIndicators({
       >
         {valuation.ndx.realtime_estimate && (
           <div className="mt-3 rounded-xl bg-buy/8 p-3 text-xs leading-relaxed text-ink-secondary">
-            实时估算 <strong className="font-mono text-buy tabular-nums">{valuation.ndx.realtime_estimate.pe.toFixed(2)}</strong>
+            实时估算 <strong className="text-buy tabular-nums">{valuation.ndx.realtime_estimate.pe.toFixed(2)}</strong>
             {' '}（QQQ {sessionText(valuation.ndx.realtime_estimate.price_session)}价；盈利基数按季更新）
             <div className="mt-1 text-ink-muted">{valuation.ndx.realtime_estimate.note}；估算值不参与判定</div>
           </div>
@@ -144,12 +144,12 @@ function IndicatorCard({
     <section className="rounded-2xl border border-neutral/40 bg-surface-raised p-5">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-ink-secondary">{title}</h3>
-        <span className="font-mono text-[11px] tabular-nums text-ink-muted">{timestamp}</span>
+        <span className="text-[11px] tabular-nums text-ink-muted">{timestamp}</span>
       </div>
-      <div className={`mt-3 font-mono text-4xl font-semibold tracking-tight tabular-nums ${tone}`}>
+      <div className={`text-display mt-3 text-4xl font-semibold tabular-nums ${tone}`}>
         {value === null ? '暂无' : `${valuePrefix}${value.toFixed(2)}`}
       </div>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-sm tabular-nums text-ink-secondary">
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums text-ink-secondary">
         {details.map((detail) => <span key={detail}>{detail}</span>)}
       </div>
       {children}
@@ -163,7 +163,7 @@ function DistanceSection({ valuation }: { valuation: QuantValuationTab }) {
     <section className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-base font-semibold">还差多少</h3>
-        <span className="font-mono text-[11px] tabular-nums text-ink-muted">OpenD 最新价 · {dateText(valuation.generated_at)}</span>
+        <span className="text-[11px] tabular-nums text-ink-muted">OpenD 最新价 · {dateText(valuation.generated_at)}</span>
       </div>
       {valuation.distance_to_anchors.length === 0 ? (
         <div className="mt-4 rounded-xl bg-surface-overlay/40 p-6 text-center text-sm text-ink-muted">锚点距离数据准备中</div>
@@ -198,7 +198,7 @@ function DistanceCard({ distance }: { distance: QuantValuationDistance }) {
         <h4 className="font-semibold">距 {distance.label}</h4>
         {reached && <span className="rounded-full bg-buy px-2.5 py-1 text-xs font-semibold text-surface-base">已到达</span>}
       </div>
-      <div className="mt-4 space-y-2 font-mono text-sm tabular-nums">
+      <div className="mt-4 space-y-2 text-sm tabular-nums">
         <div>PE {distance.current_pe.toFixed(2)} → {distance.target_pe.toFixed(2)} <span className={reached ? 'text-buy' : 'text-ink-secondary'}>（{gapText(distance.pe_gap_pct)}）</span></div>
         <div>
           QQQ {moneyText(distance.current_qqq_price)} → 约 {moneyText(distance.implied_qqq_price)}

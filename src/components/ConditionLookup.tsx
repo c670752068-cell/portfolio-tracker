@@ -97,7 +97,7 @@ function GateCard({ gateKey, label, gate }: { gateKey: string; label: string; ga
   return (
     <div className="rounded-lg border border-neutral/40 p-3">
       <div className="font-semibold"><span className={gate.passed ? 'text-gain' : 'text-loss'}>{gate.passed ? '✓' : '✗'}</span> {label}</div>
-      <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">{gateDetail(gateKey, gate)}</div>
+      <div className="mt-1 text-xs tabular-nums text-ink-muted">{gateDetail(gateKey, gate)}</div>
     </div>
   );
 }
@@ -107,9 +107,9 @@ function StatWindow({ label, stat }: { label: string; stat: QuantSignalStatWindo
     <div className="rounded-lg border border-neutral/40 p-2">
       <div className="font-medium">{label}</div>
       {stat.sample_insufficient || stat.n < 20 || stat.win_rate === null ? (
-        <div className="mt-1 font-mono tabular-nums text-trim">样本不足，勿下结论（n={stat.n}）</div>
+        <div className="mt-1 tabular-nums text-trim">样本不足，勿下结论（n={stat.n}）</div>
       ) : (
-        <div className="mt-1 font-mono tabular-nums text-ink-secondary">历史成功率 {(stat.win_rate * 100).toFixed(2)}%（n={stat.n}）</div>
+        <div className="mt-1 tabular-nums text-ink-secondary">历史成功率 {(stat.win_rate * 100).toFixed(2)}%（n={stat.n}）</div>
       )}
     </div>
   );
@@ -119,11 +119,11 @@ function DepthStat({ stat }: { stat: NonNullable<QuantSymbolAnalysis['depth_stat
   const insufficient = stat.sample_insufficient || stat.n < 20 || stat.win_rate_60d === null;
   return (
     <div className="mt-3 rounded-lg border border-neutral/40 p-3 text-sm">
-      <div className="font-mono font-medium tabular-nums">回撤深度 {stat.level_pct}%</div>
+      <div className="font-medium tabular-nums">回撤深度 {stat.level_pct}%</div>
       {insufficient ? (
-        <div className="mt-1 font-mono tabular-nums text-trim">样本不足，勿下结论（n={stat.n}）</div>
+        <div className="mt-1 tabular-nums text-trim">样本不足，勿下结论（n={stat.n}）</div>
       ) : (
-        <div className="mt-1 font-mono tabular-nums text-ink-secondary">60 日历史成功率 {(stat.win_rate_60d! * 100).toFixed(2)}%（n={stat.n}）</div>
+        <div className="mt-1 tabular-nums text-ink-secondary">60 日历史成功率 {(stat.win_rate_60d! * 100).toFixed(2)}%（n={stat.n}）</div>
       )}
       <div className="mt-1 text-xs text-ink-muted">含熊市样本：{stat.bear_included ? '是' : '否'}</div>
     </div>
@@ -173,10 +173,24 @@ function finalVerdictLayers(verdict: QuantFinalVerdict): QuantFinalVerdictLayer[
 
 function finalVerdictStatusLabel(snapshot: QuantAnalysisSnapshot | null, symbol: string): string {
   const verdict = snapshot ? finalVerdictSymbols(snapshot)[symbol] : undefined;
-  if (!verdict) return `⚪ ${symbol} · 等待最终裁决`;
-  if (verdict.verdict === 'BUY') return `🟣 ${symbol} · 条件完整`;
-  if (verdict.verdict === 'NO_BUY') return `⚪ ${symbol} · 不买`;
-  return `⚪ ${symbol} · 无法判定`;
+  if (!verdict) return `${symbol} · 等待最终裁决`;
+  if (verdict.verdict === 'BUY') return `${symbol} · 条件完整`;
+  if (verdict.verdict === 'NO_BUY') return `${symbol} · 不买`;
+  return `${symbol} · 无法判定`;
+}
+
+function finalVerdictTone(snapshot: QuantAnalysisSnapshot | null, symbol: string): StatusTone {
+  const verdict = snapshot ? finalVerdictSymbols(snapshot)[symbol] : undefined;
+  if (verdict?.verdict === 'BUY') return 'buy';
+  if (verdict?.verdict === 'UNDECIDABLE') return 'trim';
+  return 'neutral';
+}
+
+type StatusTone = 'buy' | 'trim' | 'neutral';
+
+function StatusDot({ tone }: { tone: StatusTone }) {
+  const color = tone === 'buy' ? 'bg-buy' : tone === 'trim' ? 'bg-trim' : 'bg-neutral';
+  return <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${color}`} />;
 }
 
 function FinalVerdictPanel({ verdict }: { verdict: QuantFinalVerdict | undefined }) {
@@ -196,12 +210,12 @@ function FinalVerdictPanel({ verdict }: { verdict: QuantFinalVerdict | undefined
           <h3 className="font-semibold text-ink-primary">最终裁决（后端唯一结论）</h3>
           <p className="mt-1 text-sm font-semibold text-ink-primary">{title}</p>
         </div>
-        <span className="rounded-full bg-neutral/25 px-2 py-1 font-mono text-[11px] tabular-nums text-ink-secondary">{verdict.symbol}</span>
+        <span className="rounded-full bg-neutral/25 px-2 py-1 text-[11px] tabular-nums text-ink-secondary">{verdict.symbol}</span>
       </div>
       <p className="mt-2 text-sm leading-relaxed text-ink-secondary">{verdict.single_sentence ?? '后端未提供结论说明。'}</p>
       <p className="mt-2 text-xs text-ink-muted">任何一层否决 = 不买</p>
       {verdict.is_silence_by_rule && <p className="mt-1 text-xs text-ink-muted">这是规则的结论，不是系统故障。</p>}
-      {verdict.data_stale && <p className="mt-1 font-mono text-xs tabular-nums text-trim">数据 {verdict.data_as_of ?? '暂无'}（落后 {verdict.data_stale_days} 天）</p>}
+      {verdict.data_stale && <p className="mt-1 text-xs tabular-nums text-trim">数据 {verdict.data_as_of ?? '暂无'}（落后 {verdict.data_stale_days} 天）</p>}
       <div className="mt-3 space-y-2">
         {layers.map((layer) => <FinalVerdictLayerCard key={layer.layer} layer={layer} />)}
       </div>
@@ -227,7 +241,7 @@ function FinalVerdictLayerCard({ layer }: { layer: QuantFinalVerdictLayer }) {
           <span className="ml-2 text-xs font-semibold">{stateText}</span>
         </div>
         <p className="min-w-0 text-xs leading-relaxed text-ink-secondary">{layer.reason || '后端未提供细节。'}</p>
-        <div className="font-mono text-[11px] tabular-nums text-ink-primary">
+        <div className="text-[11px] tabular-nums text-ink-primary">
           {layer.benchmark && typeof layer.trigger_price === 'number' ? `${layer.benchmark} → ${usdPrice(layer.trigger_price)}` : typeof layer.gap_pp === 'number' ? `还差 ${layer.gap_pp.toFixed(2)} 点` : '—'}
         </div>
       </div>
@@ -297,14 +311,14 @@ function DepthHighlight({
     <div className={`min-w-0 overflow-hidden rounded-lg border p-3 text-sm ${style.panel}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-semibold">{title}</div>
-        <span className={`rounded-full px-3 py-1 font-mono text-xs font-bold tabular-nums ${style.badge}`}>{badge}</span>
+        <span className={`rounded-full px-3 py-1 text-xs font-bold tabular-nums ${style.badge}`}>{badge}</span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <div><span className="block text-xs text-ink-muted">当前回撤</span><strong className="font-mono text-2xl tabular-nums">{numberText(depth.current_pct, '%')}</strong></div>
-        <div><span className="block text-xs text-ink-muted">阈值</span><strong className="font-mono text-2xl tabular-nums">{numberText(depth.threshold_pct, '%')}</strong></div>
+        <div><span className="block text-xs text-ink-muted">当前回撤</span><strong className="text-2xl tabular-nums">{numberText(depth.current_pct, '%')}</strong></div>
+        <div><span className="block text-xs text-ink-muted">阈值</span><strong className="text-2xl tabular-nums">{numberText(depth.threshold_pct, '%')}</strong></div>
       </div>
       {closedText && (
-        <div className="mt-3 rounded-lg bg-surface-raised/70 p-2 font-mono text-xs tabular-nums text-ink-secondary">
+        <div className="mt-3 rounded-lg bg-surface-raised/70 p-2 text-xs tabular-nums text-ink-secondary">
           {closedText}
         </div>
       )}
@@ -323,10 +337,10 @@ function DepthHighlight({
       {mismatch && <div className="mt-2 text-xs text-trim">{mismatch}</div>}
       <div className="mt-3 flex min-w-0 items-center gap-3">
         <progress aria-label="深度位进度" className={`h-3 min-w-0 flex-1 ${style.progress}`} max={100} value={presentation.progress_pct} />
-        {presentation.status === 'ready' && <span className="font-mono text-xs font-semibold tabular-nums">超出 {presentation.excess_pct.toFixed(2)} 点</span>}
+        {presentation.status === 'ready' && <span className="text-xs font-semibold tabular-nums">超出 {presentation.excess_pct.toFixed(2)} 点</span>}
       </div>
       {!closedText && priceSessionLabel(depth.price_session) && <div className="mt-2 text-xs text-ink-muted">取价时段：{priceSessionLabel(depth.price_session)}</div>}
-      <div className={`mt-3 font-mono tabular-nums ${depth.sample_insufficient || depth.win_rate_60d === null ? 'text-ink-muted opacity-70' : 'text-buy'}`}>
+      <div className={`mt-3 tabular-nums ${depth.sample_insufficient || depth.win_rate_60d === null ? 'text-ink-muted opacity-70' : 'text-buy'}`}>
         {depth.sample_insufficient || depth.win_rate_60d === null
           ? `60 日样本不足（n=${depth.n}）`
           : <><strong className="text-xl">60 日胜率 {(depth.win_rate_60d * 100).toFixed(2)}%</strong><span className="ml-2 text-xs">（n={depth.n}）</span></>}
@@ -365,7 +379,7 @@ function ValuationPosition({
       : `CNN ${position.toFixed(2)} / 100，数值越低代表市场情绪越恐慌`;
   return (
     <div className="rounded-lg bg-surface-overlay/50 p-3">
-      <div className="font-mono text-sm font-medium tabular-nums">{label} {position.toFixed(2)}{suffix}</div>
+      <div className="text-sm font-medium tabular-nums">{label} {position.toFixed(2)}{suffix}</div>
       <div
         role="meter"
         aria-label={label}
@@ -381,7 +395,7 @@ function ValuationPosition({
           style={{ left: `${position}%` }}
         />
       </div>
-      <div className="mt-2 font-mono text-xs tabular-nums text-ink-muted">{interpretation}</div>
+      <div className="mt-2 text-xs tabular-nums text-ink-muted">{interpretation}</div>
     </div>
   );
 }
@@ -418,7 +432,7 @@ function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
       <summary className="cursor-pointer font-semibold">六关原始证据（仅作证据，不单独构成结论）</summary>
       <div className="mt-3 space-y-3">
         {marketGates.length > 0 && <div className="flex items-center justify-between gap-3">
-        <strong className="font-mono tabular-nums">市场条件满足 {marketPassed}/{marketGates.length}</strong>
+        <strong className="tabular-nums">市场条件满足 {marketPassed}/{marketGates.length}</strong>
         <span className="text-xs text-ink-muted">市场判断</span>
         </div>}
         {marketGates.length > 0 && <div className="grid gap-2 sm:grid-cols-2">
@@ -427,7 +441,7 @@ function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
         {lowZone && !isApplicable(lowZone) && !analysis.depth_window?.applicable && (
         <div className="rounded-lg border border-neutral/40 p-3 text-sm text-ink-secondary">
           <div className="font-semibold">价格回撤参考</div>
-          <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">距最近 250 个交易日高点回撤 {numberText(lowZone.current_drawdown_pct, '%')}，不参与个股市场条件计数。</div>
+          <div className="mt-1 text-xs tabular-nums text-ink-muted">距最近 250 个交易日高点回撤 {numberText(lowZone.current_drawdown_pct, '%')}，不参与个股市场条件计数。</div>
         </div>
         )}
         <ReferenceInfo gate={gates.valuation} />
@@ -470,12 +484,12 @@ function OneXEntryGate({ status }: { status: QuantPanicSymbolStatus }) {
         </span>
       </div>
       {!gate.available ? <p className="mt-2 text-xs text-ink-muted">{gate.reason}</p> : <>
-        <div className="mt-3 grid gap-2 font-mono text-xs tabular-nums sm:grid-cols-2">
+        <div className="mt-3 grid gap-2 text-xs tabular-nums sm:grid-cols-2">
           <div><span className="text-ink-muted">判定基准</span> {gate.benchmark} {decisionLabel} {nullableUsdPrice(gate.decision_close)}</div>
           <div><span className="text-ink-muted">自高点回撤</span> {numberText(gate.drawdown.current_pct, '%')}{gate.drawdown.required_pct === null ? '（不适用）' : ` / 阈值 ${numberText(gate.drawdown.required_pct, '%')}`}</div>
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
-          {gate.moving_averages.map((movingAverage) => <span key={movingAverage.period} className={`rounded-md px-2 py-1 font-mono text-xs tabular-nums ${movingAverage.touched ? 'bg-gain/10 text-gain' : 'bg-surface-base text-ink-secondary'}`}>
+          {gate.moving_averages.map((movingAverage) => <span key={movingAverage.period} className={`rounded-md px-2 py-1 text-xs tabular-nums ${movingAverage.touched ? 'bg-gain/10 text-gain' : 'bg-surface-base text-ink-secondary'}`}>
             MA{movingAverage.period} {movingAverage.touched ? '已触及' : `还差 ${movingAverage.gap_pct.toFixed(2)}%`}
           </span>)}
         </div>
@@ -493,9 +507,9 @@ function ReviewCheckpointStrip({ snapshot }: { snapshot: QuantAnalysisSnapshot }
     <div className={`rounded-xl border p-3 text-sm ${checkpoint.stale ? 'border-trim/40 bg-trim/10' : 'border-neutral/40 bg-surface-raised'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong>定时审查：{checkpoint.label}</strong>
-        <span className="font-mono text-xs tabular-nums text-ink-muted">美股交易日 {checkpoint.us_trading_day}</span>
+        <span className="text-xs tabular-nums text-ink-muted">美股交易日 {checkpoint.us_trading_day}</span>
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs tabular-nums text-ink-secondary">
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums text-ink-secondary">
         <span>{checkpoint.stale ? '刷新未完成，保留上一份快照' : `本次已通知 ${checkpoint.notifications_sent} 条`}</span>
         <span>下一检查点 {checkpoint.next_at}</span>
         {checkpoint.error && <span className="text-trim">{checkpoint.error}</span>}
@@ -521,7 +535,7 @@ function PanicWindowStatus({ status }: { status: QuantPanicSymbolStatus }) {
       </div>
       <div className="mt-3 flex items-center gap-3">
         <progress className="h-2 flex-1 accent-loss" max={100} value={status.target.progress_pct} />
-        <span className="font-mono text-xs font-semibold tabular-nums">{status.display.progress_text}</span>
+        <span className="text-xs font-semibold tabular-nums">{status.display.progress_text}</span>
       </div>
       {status.stop_reason && <div className="mt-2 text-xs text-ink-muted">停止原因：{status.stop_reason}</div>}
     </div>
@@ -596,7 +610,7 @@ function SellWindow({
     <div className="mt-3 space-y-3 text-sm">
       <div className="rounded-lg border border-neutral/40 p-3">
         <div className="font-semibold">本族当前盈亏</div>
-        <div className="mt-2 grid gap-2 font-mono tabular-nums sm:grid-cols-3">
+        <div className="mt-2 grid gap-2 tabular-nums sm:grid-cols-3">
           <div>
             <div>市值 {formatDisplayMoney(pnl.marketValue, displayCurrency, rates)}</div>
             {pnl.coverage === 'partial' && <div className="mt-1 text-xs text-ink-muted">
@@ -612,7 +626,7 @@ function SellWindow({
               </div>
             </>}
         </div>
-        {pnl.coverage !== 'complete' && <p className="mt-2 font-mono text-xs font-medium tabular-nums text-trim">
+        {pnl.coverage !== 'complete' && <p className="mt-2 text-xs font-medium tabular-nums text-trim">
           {pnl.unknownCostHoldings.length} 个持仓成本未知（{unknownCostGuidance}），未计入本次盈亏：{pnl.unknownCostHoldings.join('、')}
         </p>}
       </div>
@@ -648,14 +662,14 @@ function SellWindow({
           <div className="font-semibold">知足常乐<ObservationBadge visible={item.contentment.observation} /></div>
           {!item.contentment.available ? <p className="mt-1 text-ink-muted">该持仓族暂无反弹基准对比数据。</p> : (
             <>
-              <p className="mt-1 font-mono tabular-nums text-ink-muted">本标的 {numberText(item.contentment.asset_gain_pct, '%')} · QQQ {numberText(item.contentment.qqq_gain_pct, '%')} · 差距 {numberText(item.contentment.gap_vs_qqq_pct, ' 点')}</p>
-              <p className={`mt-1 font-mono font-medium tabular-nums ${item.contentment.triggered && (item.contentment.actionable ?? gateActionable) ? 'text-trim' : 'text-ink-muted'}`}>{item.contentment.triggered ? ((item.contentment.actionable ?? gateActionable) ? `量化剧本参考比例 ${integerText(item.contentment.minimum_reduction_pct)}%` : '市场依据已出现，但盈利闸门未通过，不构成减仓提示') : '尚未接近或超过 QQQ，不触发该依据'}</p>
+              <p className="mt-1 tabular-nums text-ink-muted">本标的 {numberText(item.contentment.asset_gain_pct, '%')} · QQQ {numberText(item.contentment.qqq_gain_pct, '%')} · 差距 {numberText(item.contentment.gap_vs_qqq_pct, ' 点')}</p>
+              <p className={`mt-1 font-medium tabular-nums ${item.contentment.triggered && (item.contentment.actionable ?? gateActionable) ? 'text-trim' : 'text-ink-muted'}`}>{item.contentment.triggered ? ((item.contentment.actionable ?? gateActionable) ? `量化剧本参考比例 ${integerText(item.contentment.minimum_reduction_pct)}%` : '市场依据已出现，但盈利闸门未通过，不构成减仓提示') : '尚未接近或超过 QQQ，不触发该依据'}</p>
             </>
           )}
         </div>
         <div className="rounded-lg border border-neutral/40 p-3">
           <div className="font-semibold">补涨收敛<ObservationBadge visible={item.convergence.observation} /></div>
-          <p className="mt-1 font-mono tabular-nums text-ink-muted">大科技追平 QQQ：{integerText(item.convergence.count)}/{integerText(item.convergence.minimum_assets)} 只</p>
+          <p className="mt-1 tabular-nums text-ink-muted">大科技追平 QQQ：{integerText(item.convergence.count)}/{integerText(item.convergence.minimum_assets)} 只</p>
           <p className={`mt-1 font-medium ${item.convergence.triggered && (item.convergence.actionable ?? gateActionable) ? 'text-trim' : 'text-ink-muted'}`}>{item.convergence.triggered ? ((item.convergence.actionable ?? gateActionable) ? `市场亢奋·量化剧本参考：${item.convergence.action.replace('，仅手动操作', '')}` : '市场依据已出现，但盈利闸门未通过，不构成减仓提示') : '尚未达到补涨收敛门槛'}</p>
         </div>
       </div>
@@ -665,13 +679,13 @@ function SellWindow({
           <InfoDisclosure label="说明：止盈阶梯适用条件">只在浮盈达到最低档后适用</InfoDisclosure>
         </div>
         {firstStep && <p className="mt-1 text-xs text-ink-muted">只在浮盈达到最低档 +{firstStep.gain_min_pct.toFixed(2)}% 后适用。</p>}
-        {isCompleteLoss && firstStep && <p className="mt-2 rounded-lg bg-loss/10 p-3 font-mono font-medium tabular-nums text-loss">当前为浮亏 {signedPct(pnl.pnlPct!)}，止盈阶梯（最低档 +{firstStep.gain_min_pct.toFixed(2)}%）尚未适用。下方阶梯仅作参考，不构成减仓提示。</p>}
-        {isPartialLoss && <p className="mt-2 rounded-lg bg-trim/10 p-3 font-mono font-medium tabular-nums text-trim">已知成本部分为浮亏 {signedPct(pnl.pnlPct!)}（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知）。止盈阶梯参考请以券商实际成本为准。</p>}
-        {isPartialGain && <p className="mt-2 rounded-lg bg-trim/10 p-3 font-mono font-medium tabular-nums text-trim">该档位基于已计成本部分（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知），实际盈利可能不同；减仓比例请以券商实际成本为准。</p>}
-        {belowFirst && firstStep && <p className="mt-2 font-mono tabular-nums text-trim">距第一档 +{firstStep.gain_min_pct.toFixed(2)}% 还差 {(firstStep.gain_min_pct - pnl.pnlPct!).toFixed(2)} 点{pnl.coverage === 'partial' ? '（基于已计成本部分）' : ''}</p>}
+        {isCompleteLoss && firstStep && <p className="mt-2 rounded-lg bg-loss/10 p-3 font-medium tabular-nums text-loss">当前为浮亏 {signedPct(pnl.pnlPct!)}，止盈阶梯（最低档 +{firstStep.gain_min_pct.toFixed(2)}%）尚未适用。下方阶梯仅作参考，不构成减仓提示。</p>}
+        {isPartialLoss && <p className="mt-2 rounded-lg bg-trim/10 p-3 font-medium tabular-nums text-trim">已知成本部分为浮亏 {signedPct(pnl.pnlPct!)}（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知）。止盈阶梯参考请以券商实际成本为准。</p>}
+        {isPartialGain && <p className="mt-2 rounded-lg bg-trim/10 p-3 font-medium tabular-nums text-trim">该档位基于已计成本部分（另有 {pnl.unknownCostHoldings.length} 个持仓成本未知），实际盈利可能不同；减仓比例请以券商实际成本为准。</p>}
+        {belowFirst && firstStep && <p className="mt-2 tabular-nums text-trim">距第一档 +{firstStep.gain_min_pct.toFixed(2)}% 还差 {(firstStep.gain_min_pct - pnl.pnlPct!).toFixed(2)} 点{pnl.coverage === 'partial' ? '（基于已计成本部分）' : ''}</p>}
         {!item.playbook.available ? <p className="mt-1 text-ink-muted">该持仓族尚未配置止盈剧本。</p> : (
           <>
-            <ul className={`mt-2 space-y-1 font-mono tabular-nums text-ink-secondary ${gateActionable ? '' : 'opacity-40 grayscale'}`}>
+            <ul className={`mt-2 space-y-1 tabular-nums text-ink-secondary ${gateActionable ? '' : 'opacity-40 grayscale'}`}>
               {steps.map((step) => {
                 const active = activeStep === step;
                 return <li data-active={active ? 'true' : undefined} className={active ? 'rounded bg-gain/15 px-2 py-1 font-semibold text-gain' : ''} key={`${step.gain_min_pct}-${step.gain_max_pct}`}>盈利 {step.gain_min_pct.toFixed(2)}%{step.gain_max_pct >= 999 ? '+' : `–${step.gain_max_pct.toFixed(2)}%`}：减总仓 {step.sell_position_pct.toFixed(2)}%</li>;
@@ -683,7 +697,7 @@ function SellWindow({
       </div>
       <div className="rounded-lg border border-neutral/40 p-3">
         <div className="font-semibold">近期卖出信号</div>
-        {item.recent_signals.length === 0 ? <p className="mt-1 text-ink-muted">最近没有触发 sell 向信号。</p> : <ul className="mt-1 space-y-1 font-mono tabular-nums text-ink-secondary">{item.recent_signals.map((signal) => <li key={`${signal.name}-${signal.date}`}>{signal.label} {signal.date}</li>)}</ul>}
+        {item.recent_signals.length === 0 ? <p className="mt-1 text-ink-muted">最近没有触发 sell 向信号。</p> : <ul className="mt-1 space-y-1 tabular-nums text-ink-secondary">{item.recent_signals.map((signal) => <li key={`${signal.name}-${signal.date}`}>{signal.label} {signal.date}</li>)}</ul>}
       </div>
       <details className="rounded-lg border border-neutral/40 p-3">
         <summary className="cursor-pointer font-semibold">原始判定数据</summary>
@@ -741,10 +755,15 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
       : 'unavailable';
   const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
     const status = resolveSellStatus(snapshot, optionSymbol);
-    if (status.state === 'window_open') return `🟠 ${fallbackLabel} · 卖出窗口开启`;
-    if (status.state === 'observation') return `⚪ ${fallbackLabel} · 观察期`;
-    return `⚪ ${fallbackLabel}`;
+    if (status.state === 'window_open') return `${fallbackLabel} · 卖出窗口开启`;
+    if (status.state === 'observation') return `${fallbackLabel} · 观察期`;
+    return fallbackLabel;
   };
+  const selectedSellTone: StatusTone = selectedSellStatus.state === 'window_open'
+    ? 'buy'
+    : selectedSellStatus.state === 'observation'
+      ? 'trim'
+      : 'neutral';
   useEffect(() => {
     if (!initialSide) return;
     window.requestAnimationFrame(() => {
@@ -764,17 +783,20 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
           </div>
           {onRefresh && <button type="button" onClick={onRefresh} disabled={loading} className="rounded-md bg-neutral/30 px-3 py-2 text-sm">{loading ? '读取中…' : '刷新快照'}</button>}
         </div>
-        {snapshot && <p className="mt-2 font-mono text-xs tabular-nums text-ink-muted">{quantAnalysisFreshnessText(snapshot.generated_at)} · {REFRESH_CADENCE.quantAnalysis.interval}自动更新</p>}
-        <select aria-label="量化监控标的" value={selectedSymbol} onChange={(event) => setSymbol(event.target.value)} className="mt-4 w-full rounded-md border border-neutral bg-transparent px-3 py-2">
-          {monitoredSymbols.map((item) => <option key={item} value={item}>{finalVerdictStatusLabel(snapshot, item)}</option>)}
-        </select>
+        {snapshot && <p className="mt-2 text-xs tabular-nums text-ink-muted">{quantAnalysisFreshnessText(snapshot.generated_at)} · {REFRESH_CADENCE.quantAnalysis.interval}自动更新</p>}
+        <div className="mt-4 flex items-center gap-2">
+          <StatusDot tone={finalVerdictTone(snapshot, selectedSymbol)} />
+          <select aria-label="量化监控标的" value={selectedSymbol} onChange={(event) => setSymbol(event.target.value)} className="min-w-0 flex-1 rounded-md border border-neutral bg-transparent px-3 py-2">
+            {monitoredSymbols.map((item) => <option key={item} value={item}>{finalVerdictStatusLabel(snapshot, item)}</option>)}
+          </select>
+        </div>
       </div>
 
       {error && <div className="rounded-xl border border-loss/40 bg-loss/10 p-3 text-sm text-loss">读取失败：{error}</div>}
       {!snapshot && !error && <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4 text-sm text-ink-muted">{loading ? '正在读取量化系统快照…' : '暂无量化分析快照。'}</div>}
 
       {snapshot && isQuantAnalysisStale(snapshot.generated_at) && (
-        <div className="rounded-xl border border-trim/40 bg-trim/10 p-3 font-mono text-sm tabular-nums text-trim">量化分析数据 {snapshotAgeHours === null ? '时间未知' : `${snapshotAgeHours} 小时前`}，可能过期。</div>
+        <div className="rounded-xl border border-trim/40 bg-trim/10 p-3 text-sm tabular-nums text-trim">量化分析数据 {snapshotAgeHours === null ? '时间未知' : `${snapshotAgeHours} 小时前`}，可能过期。</div>
       )}
 
       {snapshot && result && !result.found && (
@@ -837,10 +859,13 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
           <h3 className="text-lg font-semibold">卖出窗口</h3>
           {snapshot.sell?.shadow && <p className="mt-1 text-sm font-medium text-trim">量化卖出模块当前为观察期，全部信号均未正式生效</p>}
           <p className="mt-1 text-sm text-ink-muted">从当前持仓选择标的，查看量化系统给出的修复期、知足常乐、补涨收敛与止盈阶梯依据。</p>
-          <select aria-label="卖出持仓标的" value={selectedSellSymbol} onChange={(event) => setSellSymbol(event.target.value)} className="mt-3 w-full rounded-md border border-neutral bg-transparent px-3 py-2">
-            {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}
-            {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{sellStatusLabel(item.symbol, item.label)}</option>)}
-          </select>
+          <div className="mt-3 flex items-center gap-2">
+            <StatusDot tone={selectedSellTone} />
+            <select aria-label="卖出持仓标的" value={selectedSellSymbol} onChange={(event) => setSellSymbol(event.target.value)} className="min-w-0 flex-1 rounded-md border border-neutral bg-transparent px-3 py-2">
+              {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}
+              {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{sellStatusLabel(item.symbol, item.label)}</option>)}
+            </select>
+          </div>
           {sellFamilyMatch?.multipleHeldMatches && <p className="mt-2 text-xs font-medium text-trim">该标的同时属于多个族，已按市值最大者展示</p>}
           {!snapshot.sell ? <p className="mt-3 text-sm text-ink-muted">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily || !familyPnl ? <p className="mt-3 text-sm text-ink-muted">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} status={selectedSellStatus} pnl={familyPnl} displayCurrency={displayCurrency} rates={rates} audit={sellAudit} />}
         </div>

@@ -134,8 +134,8 @@ export function ImageImportPanel({ settings, onConfirm, onOptionDetails, onOpenS
       </div>
 
       <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-buy/60 bg-surface-raised px-3 py-5 text-center text-sm text-buy hover:bg-buy/10 dark:border-buy dark:bg-surface-base dark:text-buy">
-        <span className="font-mono font-medium tabular-nums">选择持仓截图（最多 {MAX_FILES} 张，每张 ≤ 10MB）</span>
-        <span className="mt-1 font-mono text-xs tabular-nums text-ink-muted">支持 JPG、PNG、WEBP、GIF；发送前会自动压缩到最长边 {MAX_IMAGE_SIDE}px</span>
+        <span className="font-medium tabular-nums">选择持仓截图（最多 {MAX_FILES} 张，每张 ≤ 10MB）</span>
+        <span className="mt-1 text-xs tabular-nums text-ink-muted">支持 JPG、PNG、WEBP、GIF；发送前会自动压缩到最长边 {MAX_IMAGE_SIDE}px</span>
         <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="hidden" onChange={(event) => addFiles(event.target.files)} />
       </label>
 
@@ -163,7 +163,7 @@ export function ImageImportPanel({ settings, onConfirm, onOptionDetails, onOpenS
             : `截图只会随本次请求发送到 ${aiLabel}，不会保存到本地或导出 JSON。`}
         </span>
       </div>
-      {prepareSummary && <p className="font-mono text-xs tabular-nums text-ink-muted dark:text-ink-muted">{prepareSummary}</p>}
+      {prepareSummary && <p className="text-xs tabular-nums text-ink-muted dark:text-ink-muted">{prepareSummary}</p>}
 
       {error && (
         <div role="alert" className="rounded border border-loss/60 bg-loss/10 p-2 text-xs text-loss dark:border-loss/60 dark:bg-loss/15 dark:text-loss">
@@ -188,16 +188,16 @@ export function ImageImportPanel({ settings, onConfirm, onOptionDetails, onOpenS
                   {result.holdings.map((holding, index) => (
                     <tr key={`${holding.symbol}-${index}`}>
                       <td className="px-2 py-2"><div className="font-medium">{holding.symbol}</div><div className="text-ink-muted">{assetLabel(holding.assetType)} · {holding.confidence === 'low' ? '低置信度' : holding.confidence === 'high' ? '高置信度' : '待核对'}</div></td>
-                      <td className="px-2 py-2 font-mono tabular-nums">{holding.shares || '—'}</td>
-                      <td className="px-2 py-2 font-mono tabular-nums">{holding.marketValueOverride != null ? formatMoney(holding.marketValueOverride, holding.currency) : '待补充'}</td>
-                      <td className="px-2 py-2 font-mono tabular-nums text-ink-secondary dark:text-ink-secondary">{holding.option ? `${holding.option.underlying} ${holding.option.optionType.toUpperCase()} · ${holding.option.expiration ?? '到期日待补'} · Δ ${holding.option.delta ?? '待补'}` : '—'}</td>
+                      <td className="px-2 py-2 tabular-nums">{holding.shares || '—'}</td>
+                      <td className="px-2 py-2 tabular-nums">{holding.marketValueOverride != null ? formatMoney(holding.marketValueOverride, holding.currency) : '待补充'}</td>
+                      <td className="px-2 py-2 tabular-nums text-ink-secondary dark:text-ink-secondary">{holding.option ? `${holding.option.underlying} ${holding.option.optionType.toUpperCase()} · ${holding.option.expiration ?? '到期日待补'} · Δ ${holding.option.delta ?? '待补'}` : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          {result.cash.length > 0 && <p className="font-mono text-xs tabular-nums text-ink-secondary dark:text-ink-secondary">识别现金：{result.cash.map((cash) => formatMoney(cash.amount, cash.currency)).join('、')}</p>}
+          {result.cash.length > 0 && <p className="text-xs tabular-nums text-ink-secondary dark:text-ink-secondary">识别现金：{result.cash.map((cash) => formatMoney(cash.amount, cash.currency)).join('、')}</p>}
           {result.issues.length > 0 && (
             <div className="rounded border border-trim/40 bg-trim/10 p-2 text-xs text-trim dark:border-trim/30 dark:bg-trim/10 dark:text-trim">
               <div className="font-semibold">仍建议补充</div>
@@ -218,8 +218,8 @@ export function ImageImportPanel({ settings, onConfirm, onOptionDetails, onOpenS
           <p className="text-ink-muted">{optionResult.sourceSummary}。已安全补充；正股、ETF 与现金均未改动。</p>
           {optionResult.options.map((option, index) => (
             <div key={`${option.underlying}-${option.strike}-${index}`} className="rounded border border-neutral/40 p-2 dark:border-neutral/60">
-              <span className="font-mono font-medium tabular-nums">{option.underlying} {option.optionType.toUpperCase()} {option.strike ?? '行权价待补'}</span>
-              <span className="ml-2 font-mono tabular-nums text-ink-muted">{option.expiration ?? '到期日待补'} · Δ {option.delta ?? '待补'} · {option.contracts ?? '—'} 张</span>
+              <span className="font-medium tabular-nums">{option.underlying} {option.optionType.toUpperCase()} {option.strike ?? '行权价待补'}</span>
+              <span className="ml-2 tabular-nums text-ink-muted">{option.expiration ?? '到期日待补'} · Δ {option.delta ?? '待补'} · {option.contracts ?? '—'} 张</span>
             </div>
           ))}
           <button onClick={() => setOptionResult(null)} className="rounded-md bg-surface-overlay px-3 py-1.5 text-sm text-ink-primary dark:bg-surface-raised dark:text-ink-primary">关闭预览</button>

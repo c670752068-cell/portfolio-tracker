@@ -24,20 +24,20 @@ export function HoldingEmotionLine({
 
   return (
     <p className="mt-1 text-[11px] leading-relaxed text-ink-secondary">
-      <span className="font-mono tabular-nums">浮亏 {formatMoney(insight.lossUsd)}</span>
+      <span className="tabular-nums">浮亏 {formatMoney(insight.lossUsd)}</span>
       {insight.sampleInsufficient ? (
         insight.sampleCount > 0 && (
           <span className="text-ink-muted">
-            {' '}· 该深度样本不足（样本 <span className="font-mono tabular-nums">{insight.sampleCount}</span>）
+            {' '}· 该深度样本不足（样本 <span className="tabular-nums">{insight.sampleCount}</span>）
           </span>
         )
       ) : (
         <span>
           {' '}· 该深度历史 60 日胜率{' '}
-          <span className="font-mono tabular-nums text-gain">
+          <span className="tabular-nums text-gain">
             {((insight.winRate60d ?? 0) * 100).toFixed(2)}%
           </span>
-          （样本 <span className="font-mono tabular-nums">{insight.sampleCount}</span>）
+          （样本 <span className="tabular-nums">{insight.sampleCount}</span>）
         </span>
       )}
     </p>
@@ -58,7 +58,7 @@ export function FearComfortBanner({ context }: { context?: Record<string, unknow
       <p className="font-semibold text-ink-primary">
         现在是恐慌，正是用子弹的时刻——按你的规则执行
       </p>
-      <p className="mt-1 font-mono text-xs tabular-nums text-buy">
+      <p className="mt-1 text-xs tabular-nums text-buy">
         CNN 恐慌与贪婪指数 {fear.score.toFixed(2)}
       </p>
     </aside>
@@ -74,7 +74,7 @@ export function LeverageOpportunityRadar({ snapshot }: { snapshot: QuantAnalysis
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <p className="text-sm font-medium text-ink-secondary">机会雷达</p>
-          <h2 className="mt-1 text-lg font-semibold tracking-tight text-ink-primary">三倍标的买点进度</h2>
+          <h2 className="text-body mt-1 text-lg font-semibold text-ink-primary">三倍标的买点进度</h2>
         </div>
         <p className="text-xs text-ink-muted">只呈现量化系统已声明适用的标的</p>
       </div>
@@ -83,9 +83,9 @@ export function LeverageOpportunityRadar({ snapshot }: { snapshot: QuantAnalysis
         {rows.map((row) => (
           <div key={row.symbol}>
             <div className="flex items-center justify-between gap-3">
-              <span className="font-mono text-sm font-semibold tabular-nums text-ink-primary">{row.symbol}</span>
+              <span className="text-sm font-semibold tabular-nums text-ink-primary">{row.symbol}</span>
               <span
-                className={`rounded-full px-2.5 py-1 font-mono text-xs font-medium tabular-nums ${
+                className={`rounded-full px-2.5 py-1 text-xs font-medium tabular-nums ${
                   row.ready ? 'bg-buy/15 text-buy' : 'bg-surface-overlay text-ink-secondary'
                 }`}
               >
@@ -108,10 +108,10 @@ export function LeverageOpportunityRadar({ snapshot }: { snapshot: QuantAnalysis
               />
             </div>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-ink-muted">
-              <span className="font-mono tabular-nums">
+              <span className="tabular-nums">
                 回撤 {row.currentPct.toFixed(2)}% / 门槛 {row.thresholdPct.toFixed(2)}%
               </span>
-              <span className="font-mono tabular-nums">
+              <span className="tabular-nums">
                 {priceText(row)}
               </span>
             </div>

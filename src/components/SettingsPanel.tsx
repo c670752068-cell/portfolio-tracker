@@ -467,7 +467,7 @@ export function SettingsSaveBar({ dirtyCount, onSave }: { dirtyCount: number; on
 }
 
 const inputCls =
-  'w-full rounded-md border border-neutral/60 bg-surface-raised px-2 py-1.5 font-mono text-sm tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base';
+  'w-full rounded-md border border-neutral/60 bg-surface-raised px-2 py-1.5 text-sm tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

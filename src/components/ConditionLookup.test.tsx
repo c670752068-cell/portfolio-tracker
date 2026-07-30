@@ -90,11 +90,14 @@ describe('ConditionLookup', () => {
       <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="SOXL" />,
     );
 
-    expect(html).toContain('⚪ SOXL · 等待最终裁决');
-    expect(html).toContain('⚪ AMZN · 等待最终裁决');
-    expect(html).toContain('⚪ MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
+    expect(html).toContain('SOXL · 等待最终裁决');
+    expect(html).toContain('AMZN · 等待最终裁决');
+    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
+    expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-neutral');
+    expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-trim');
+    expect(html).not.toContain('⚪');
     expect(html).not.toContain('🟠 MSFT');
-    expect(html).toContain('⚪ AAPL · 等待最终裁决');
+    expect(html).toContain('AAPL · 等待最终裁决');
   });
 
   it('renders touch-accessible disclosure controls for sell-rule explanations', () => {
@@ -183,8 +186,8 @@ describe('ConditionLookup', () => {
 
     expect(html).toContain('深度买入窗口（个股）');
     expect(html).toContain('深度位 ✓');
-    expect(html).toContain('当前回撤</span><strong class="font-mono text-2xl tabular-nums">22.50%');
-    expect(html).toContain('阈值</span><strong class="font-mono text-2xl tabular-nums">21.70%');
+    expect(html).toContain('当前回撤</span><strong class="text-2xl tabular-nums">22.50%');
+    expect(html).toContain('阈值</span><strong class="text-2xl tabular-nums">21.70%');
     expect(html).toContain('60 日胜率 68.00%');
     expect(html).toContain('（n=25）');
     expect(html).toContain('个股 PE 分位 45.00%');
@@ -252,8 +255,8 @@ describe('ConditionLookup', () => {
     );
 
     expect(ready).toContain('✓ 已达标');
-    expect(ready).toContain('当前回撤</span><strong class="font-mono text-2xl tabular-nums">22.50%');
-    expect(ready).toContain('阈值</span><strong class="font-mono text-2xl tabular-nums">21.70%');
+    expect(ready).toContain('当前回撤</span><strong class="text-2xl tabular-nums">22.50%');
+    expect(ready).toContain('阈值</span><strong class="text-2xl tabular-nums">21.70%');
     expect(ready).toContain('value="100"');
     expect(ready).toContain('60 日胜率 68.00%');
     expect(near).toContain('接近 · 还差 2.30 点');
@@ -653,7 +656,8 @@ describe('ConditionLookup', () => {
       <ConditionLookup snapshot={snapshot} holdings={holdings} initialSymbol="MSFT" />,
     );
 
-    expect(html).toContain('🟠 MSFT · 市值 $4,000.00 · IBKR · 卖出窗口开启</option>');
+    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 卖出窗口开启</option>');
+    expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-buy');
     expect(html).not.toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
   });
 

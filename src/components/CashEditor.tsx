@@ -41,19 +41,19 @@ export function CashEditor({ cash, rates, onChange }: CashEditorProps) {
             value={c.amount || ''}
             placeholder="金额"
             onChange={(e) => update(i, { amount: Number(e.target.value) })}
-            className="col-span-3 rounded-md border border-neutral/60 bg-surface-raised px-2 py-1.5 font-mono tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base"
+            className="col-span-3 rounded-md border border-neutral/60 bg-surface-raised px-2 py-1.5 tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base"
           />
           <select
             value={c.currency}
             onChange={(e) => update(i, { currency: e.target.value as CashPosition['currency'] })}
-            className="col-span-2 rounded-md border border-neutral/60 bg-surface-raised px-2 py-1.5 font-mono tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base"
+            className="col-span-2 rounded-md border border-neutral/60 bg-surface-raised px-2 py-1.5 tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base"
           >
             {CURRENCIES.map((cc) => (
               <option key={cc} value={cc}>{cc}</option>
             ))}
           </select>
           <button onClick={() => remove(i)} className="text-xs text-loss">删</button>
-          <div className="col-span-6 font-mono text-xs tabular-nums text-ink-muted">折算显示：{formatMoney(c.amount, c.currency)} {toUsd(c.amount, c.currency, rates) != null && c.currency !== 'USD' ? `≈ ${formatMoney(toUsd(c.amount, c.currency, rates) ?? 0)} USD` : ''}</div>
+          <div className="col-span-6 text-xs tabular-nums text-ink-muted">折算显示：{formatMoney(c.amount, c.currency)} {toUsd(c.amount, c.currency, rates) != null && c.currency !== 'USD' ? `≈ ${formatMoney(toUsd(c.amount, c.currency, rates) ?? 0)} USD` : ''}</div>
           {c.note && <div className="col-span-6 text-xs text-trim dark:text-trim">{c.note}</div>}
         </div>
       ))}

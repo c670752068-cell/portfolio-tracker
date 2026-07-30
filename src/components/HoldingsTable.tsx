@@ -74,9 +74,9 @@ export function HoldingsTable({
           <select value={draft.currency} onChange={(event) => setDraft({ ...draft, currency: event.target.value as Currency })} className={inputCls}>
             {CURRENCIES.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
           </select>
-          <input type="number" step="any" min={0} placeholder={draft.assetType === 'option' ? '合约张数' : '股数'} value={draft.shares || ''} onChange={(event) => setDraft({ ...draft, shares: Number(event.target.value) })} className={`${inputCls} font-mono tabular-nums`} />
-          <input type="number" step="any" min={0} placeholder="买入价" value={draft.buyPrice || ''} onChange={(event) => setDraft({ ...draft, buyPrice: Number(event.target.value) })} className={`${inputCls} font-mono tabular-nums`} />
-          <input type="number" step="any" min={0} placeholder="当前价" value={draft.currentPrice || ''} onChange={(event) => setDraft({ ...draft, currentPrice: Number(event.target.value) })} className={`${inputCls} font-mono tabular-nums`} />
+          <input type="number" step="any" min={0} placeholder={draft.assetType === 'option' ? '合约张数' : '股数'} value={draft.shares || ''} onChange={(event) => setDraft({ ...draft, shares: Number(event.target.value) })} className={`${inputCls} tabular-nums`} />
+          <input type="number" step="any" min={0} placeholder="买入价" value={draft.buyPrice || ''} onChange={(event) => setDraft({ ...draft, buyPrice: Number(event.target.value) })} className={`${inputCls} tabular-nums`} />
+          <input type="number" step="any" min={0} placeholder="当前价" value={draft.currentPrice || ''} onChange={(event) => setDraft({ ...draft, currentPrice: Number(event.target.value) })} className={`${inputCls} tabular-nums`} />
           <select value={draft.sector} onChange={(event) => setDraft({ ...draft, sector: event.target.value })} className={inputCls}>
             <option value="">行业</option>
             {SECTOR_PRESETS.map((sector) => <option key={sector} value={sector}>{sector}</option>)}
@@ -116,7 +116,7 @@ export function HoldingsTable({
           </section>
           <div aria-label="桌面端持仓表" className="hidden overflow-x-auto rounded-xl border border-neutral/40 bg-surface-raised md:block">
             <table className="min-w-[1050px] divide-y divide-neutral/40 text-sm">
-              <thead className="sticky top-0 z-10 bg-surface-raised text-xs uppercase tracking-wide text-ink-muted">
+              <thead className="text-label sticky top-0 z-10 bg-surface-raised text-xs uppercase text-ink-muted">
                 <tr>
                   <Th>代码 / 类型</Th><Th>名称 / 行业</Th><Th className="text-right">数量</Th><Th className="text-right">买入价</Th><Th className="text-right">当前价 / 市值（{displayCurrency}）</Th><Th className="text-right">今日（{displayCurrency}）</Th><Th className="text-right">市值（{displayCurrency}）/ 占比</Th><Th className="text-right">盈亏（{displayCurrency}）</Th><Th>期权等效正股</Th><Th />
                 </tr>
@@ -214,7 +214,7 @@ function RowEditor({
           </div>
           <MobileHeadlineMetric label={isOption ? '张数' : '数量'} value={String(holding.shares)} />
           <MobileHeadlineMetric label="市值" value={formatDisplayMoney(metric.marketValue, displayCurrency, rates)} />
-          <div className={`min-w-0 text-right font-mono tabular-nums ${pnlClass}`}>
+          <div className={`min-w-0 text-right tabular-nums ${pnlClass}`}>
             <div className="text-[10px] text-ink-muted">盈亏</div>
             {needsPnlCheck && <span className="mr-1 text-trim" title="盈亏与券商截图不符，请核对买入价/股数">⚠</span>}
             <div className="break-all text-[11px] leading-tight">{pnlContent}</div>
@@ -230,15 +230,15 @@ function RowEditor({
             <input value={holding.sector} onChange={(event) => onUpdate(holding.id, { sector: event.target.value })} className={mobileInputCls} placeholder="行业" />
           </MobileEditField>
           <MobileEditField label={isOption ? '合约张数' : '股数'}>
-            <input type="number" step="any" value={holding.shares} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className={`${mobileInputCls} text-right font-mono tabular-nums`} />
+            <input type="number" step="any" value={holding.shares} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className={`${mobileInputCls} text-right tabular-nums`} />
           </MobileEditField>
           <MobileEditField label={`买入价（${holding.currency}）`}>
-            <input type="number" step="any" value={holding.buyPrice} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className={`${mobileInputCls} text-right font-mono tabular-nums`} />
+            <input type="number" step="any" value={holding.buyPrice} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className={`${mobileInputCls} text-right tabular-nums`} />
           </MobileEditField>
           <MobileEditField label={`当前价（${holding.currency}）`}>
-            <input type="number" step="any" value={holding.currentPrice} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className={`${mobileInputCls} text-right font-mono tabular-nums`} />
+            <input type="number" step="any" value={holding.currentPrice} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className={`${mobileInputCls} text-right tabular-nums`} />
           </MobileEditField>
-          <div className={`min-w-0 rounded-lg border border-neutral/30 bg-surface-base px-3 py-2 text-right font-mono tabular-nums ${dayClass}`}>
+          <div className={`min-w-0 rounded-lg border border-neutral/30 bg-surface-base px-3 py-2 text-right tabular-nums ${dayClass}`}>
             <div className="text-left text-[10px] text-ink-muted">今日（{displayCurrency}）</div>
             {dayChangeContent}
           </div>
@@ -253,18 +253,18 @@ function RowEditor({
           {holding.assetType === 'leveraged_etf' && (
             <label className="flex min-h-11 items-center">
               杠杆倍数
-              <input type="number" min={0.5} max={5} step={0.1} value={holding.leverageFactor ?? ''} placeholder={String(leverageFactorFor(holding))} onChange={(event) => onUpdate(holding.id, { leverageFactor: event.target.value === '' ? undefined : Number(event.target.value) })} className="ml-1 min-h-11 w-16 rounded border border-neutral/60 bg-surface-base px-2 text-right font-mono tabular-nums text-ink-primary" />
+              <input type="number" min={0.5} max={5} step={0.1} value={holding.leverageFactor ?? ''} placeholder={String(leverageFactorFor(holding))} onChange={(event) => onUpdate(holding.id, { leverageFactor: event.target.value === '' ? undefined : Number(event.target.value) })} className="ml-1 min-h-11 w-16 rounded border border-neutral/60 bg-surface-base px-2 text-right tabular-nums text-ink-primary" />
             </label>
           )}
         </div>
 
-        {optionDescription && <div className="font-mono text-xs tabular-nums text-ink-muted">{optionDescription}</div>}
+        {optionDescription && <div className="text-xs tabular-nums text-ink-muted">{optionDescription}</div>}
         {holding.missingFields && holding.missingFields.length > 0 && <div className="mt-1 text-xs text-trim">待补：{holding.missingFields.join('、')}</div>}
         {holding.quote?.note && <div className="mt-1 text-xs text-ink-secondary">{holding.quote.note}</div>}
-        <div className="mt-2 font-mono text-xs tabular-nums text-ink-secondary">{deltaContent}</div>
+        <div className="mt-2 text-xs tabular-nums text-ink-secondary">{deltaContent}</div>
 
         <div className="mt-2 flex items-center justify-between border-t border-neutral/30 pt-2">
-          <div className="font-mono text-xs tabular-nums text-ink-muted">
+          <div className="text-xs tabular-nums text-ink-muted">
             占比 {formatPct(metric.weight)}
           </div>
           <button onClick={() => onDelete(holding.id)} className="min-h-11 min-w-11 px-2 text-xs text-loss hover:underline" aria-label={`删除 ${holding.symbol}`}>删除</button>
@@ -275,19 +275,19 @@ function RowEditor({
 
   return (
     <tr className="align-top hover:bg-surface-overlay/50">
-      <td className="px-3 py-2.5"><div className="font-medium">{holding.symbol}</div><div className="font-mono text-xs tabular-nums text-ink-muted">{label} · {holding.currency}</div>{holding.broker && <span className="mt-1 inline-block rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] font-semibold text-ink-secondary">{brokerLabel(holding.broker)}</span>}{holding.assetType === 'leveraged_etf' && <label className="mt-1 block text-xs text-ink-muted">杠杆倍数 <input type="number" min={0.5} max={5} step={0.1} value={holding.leverageFactor ?? ''} placeholder={String(leverageFactorFor(holding))} onChange={(event) => onUpdate(holding.id, { leverageFactor: event.target.value === '' ? undefined : Number(event.target.value) })} className="ml-1 w-14 rounded border border-neutral/60 bg-transparent px-1 py-0.5 text-right font-mono tabular-nums" /></label>}{optionDescription && <div className="mt-1 max-w-44 font-mono text-xs tabular-nums text-ink-muted">{optionDescription}</div>}</td>
+      <td className="px-3 py-2.5"><div className="font-medium">{holding.symbol}</div><div className="text-xs tabular-nums text-ink-muted">{label} · {holding.currency}</div>{holding.broker && <span className="mt-1 inline-block rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] font-semibold text-ink-secondary">{brokerLabel(holding.broker)}</span>}{holding.assetType === 'leveraged_etf' && <label className="mt-1 block text-xs text-ink-muted">杠杆倍数 <input type="number" min={0.5} max={5} step={0.1} value={holding.leverageFactor ?? ''} placeholder={String(leverageFactorFor(holding))} onChange={(event) => onUpdate(holding.id, { leverageFactor: event.target.value === '' ? undefined : Number(event.target.value) })} className="ml-1 w-14 rounded border border-neutral/60 bg-transparent px-1 py-0.5 text-right tabular-nums" /></label>}{optionDescription && <div className="mt-1 max-w-44 text-xs tabular-nums text-ink-muted">{optionDescription}</div>}</td>
       <td className="px-3 py-2.5"><input value={holding.name} onChange={(event) => onUpdate(holding.id, { name: event.target.value })} className="w-28 bg-transparent text-ink-primary focus:outline-none" placeholder="名称" /><input value={holding.sector} onChange={(event) => onUpdate(holding.id, { sector: event.target.value })} className="mt-1 w-24 bg-transparent text-xs text-ink-muted focus:outline-none" placeholder="行业" /><label className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><input type="checkbox" checked={isCashEquivalent(holding)} onChange={(event) => onUpdate(holding.id, { cashEquivalent: event.target.checked })} className="accent-buy" />现金等价物</label>{holding.missingFields && holding.missingFields.length > 0 && <div className="mt-1 max-w-36 text-xs text-trim">待补：{holding.missingFields.join('、')}</div>}{holding.quote?.note && <div className="mt-1 max-w-44 text-xs text-ink-secondary">{holding.quote.note}</div>}</td>
-      <td className="px-3 py-2.5 text-right font-mono tabular-nums"><input type="number" step="any" value={holding.shares} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className="w-20 bg-transparent text-right font-mono tabular-nums focus:outline-none" /><div className="text-xs text-ink-muted">{isOption ? '合约张数' : '股'}</div></td>
-      <td className="px-3 py-2.5 text-right font-mono tabular-nums"><input type="number" step="any" value={holding.buyPrice} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className="w-20 bg-transparent text-right font-mono tabular-nums focus:outline-none" /><div className="text-xs text-ink-muted">{holding.currency}</div></td>
-      <td className="px-3 py-2.5 text-right font-mono tabular-nums"><input type="number" step="any" value={holding.currentPrice} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className="w-20 bg-transparent text-right font-mono tabular-nums focus:outline-none" /><div className="mt-1 text-xs font-medium">{formatDisplayMoney(metric.marketValue, displayCurrency, rates)}</div></td>
-      <td className={`px-3 py-2.5 text-right font-mono tabular-nums ${dayClass}`}>{dayChangeContent}</td>
-      <td className="px-3 py-2.5 text-right font-mono tabular-nums"><div>{formatDisplayMoney(metric.marketValue, displayCurrency, rates)}</div><div className="text-xs text-ink-muted">{formatPct(metric.weight)}</div></td>
-      <td className={`px-3 py-2.5 text-right font-mono tabular-nums ${pnlClass}`}>
+      <td className="px-3 py-2.5 text-right tabular-nums"><input type="number" step="any" value={holding.shares} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-ink-muted">{isOption ? '合约张数' : '股'}</div></td>
+      <td className="px-3 py-2.5 text-right tabular-nums"><input type="number" step="any" value={holding.buyPrice} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-ink-muted">{holding.currency}</div></td>
+      <td className="px-3 py-2.5 text-right tabular-nums"><input type="number" step="any" value={holding.currentPrice} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="mt-1 text-xs font-medium">{formatDisplayMoney(metric.marketValue, displayCurrency, rates)}</div></td>
+      <td className={`px-3 py-2.5 text-right tabular-nums ${dayClass}`}>{dayChangeContent}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums"><div>{formatDisplayMoney(metric.marketValue, displayCurrency, rates)}</div><div className="text-xs text-ink-muted">{formatPct(metric.weight)}</div></td>
+      <td className={`px-3 py-2.5 text-right tabular-nums ${pnlClass}`}>
         {needsPnlCheck && <span className="mr-1 text-trim" title="盈亏与券商截图不符，请核对买入价/股数">⚠</span>}
         {pnlContent}
         <HoldingEmotionLine metric={metric} snapshot={analysisSnapshot} />
       </td>
-      <td className="px-3 py-2.5 font-mono text-xs tabular-nums text-ink-secondary">{deltaContent}</td>
+      <td className="px-3 py-2.5 text-xs tabular-nums text-ink-secondary">{deltaContent}</td>
       <td className="px-3 py-2.5 text-right"><button onClick={() => onDelete(holding.id)} className="text-xs text-loss hover:underline" aria-label={`删除 ${holding.symbol}`}>删除</button></td>
     </tr>
   );
@@ -306,7 +306,7 @@ function MobileEditField({ label, children }: { label: string; children: React.R
 
 function MobileHeadlineMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 text-right font-mono tabular-nums">
+    <div className="min-w-0 text-right tabular-nums">
       <div className="text-[10px] text-ink-muted">{label}</div>
       <div className="break-all text-[11px] leading-tight text-ink-primary">{value}</div>
     </div>

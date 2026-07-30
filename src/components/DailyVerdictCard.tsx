@@ -23,10 +23,10 @@ export function DailyVerdictCard({ verdict }: DailyVerdictCardProps) {
   return (
     <section
       aria-label="今日决断"
-      className={`rounded-2xl border border-neutral/60 border-l-4 bg-surface-raised p-6 ${accentClasses[level]}`}
+      className={`elev-3 rounded-2xl border border-neutral/60 border-l-4 bg-surface-raised p-6 ${accentClasses[level]}`}
     >
-      <p className="text-sm font-medium tracking-wide text-ink-secondary">今日决断</p>
-      <h2 className="mt-2 text-2xl font-semibold leading-tight tracking-tight text-ink-primary sm:text-3xl">
+      <p className="text-label text-sm font-medium text-ink-secondary">今日决断</p>
+      <h2 className="text-display mt-2 text-2xl font-semibold leading-tight text-ink-primary sm:text-3xl">
         {visibleTitle}
       </h2>
       {points.length > 0 && (
@@ -34,7 +34,7 @@ export function DailyVerdictCard({ verdict }: DailyVerdictCardProps) {
           {points.map((point) => <li key={point}>· {point}</li>)}
         </ul>
       )}
-      <p className="mt-3 font-mono text-xs tabular-nums text-ink-muted">
+      <p className="mt-3 text-xs tabular-nums text-ink-muted">
         {verdict.as_of} · 规则 {verdict.rule_version}
       </p>
     </section>

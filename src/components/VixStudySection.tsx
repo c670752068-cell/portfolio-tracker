@@ -30,7 +30,9 @@ export function VixStudySection({
             {study.source.is_proxy ? 'RV20 代理，非真实 VIX' : '真实 VIX'} · {study.sample.start} 至 {study.sample.end} · {study.sample.trading_days} 个交易日
           </span>
         </span>
-        <span className="text-xs text-ink-muted group-open:rotate-180" aria-hidden="true">⌄</span>
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className="h-5 w-5 shrink-0 text-ink-muted transition-transform duration-200 ease-out group-open:rotate-180">
+          <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </summary>
       <div className="border-t border-neutral/30 px-4 pb-5 pt-4 sm:px-5">
         <p className="rounded-xl bg-surface-overlay/50 p-3 text-sm leading-relaxed text-ink-secondary">
@@ -103,7 +105,7 @@ function ResearchTable({ title, children }: { title: string; children: React.Rea
     <section className="min-w-0 rounded-xl bg-surface-overlay/35 p-3">
       <h4 className="text-sm font-semibold">{title}</h4>
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[330px] text-left font-mono text-xs tabular-nums">
+        <table className="w-full min-w-[330px] text-left text-xs tabular-nums">
           {children}
         </table>
       </div>

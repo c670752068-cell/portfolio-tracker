@@ -94,7 +94,7 @@ function PeHistoryChart({
       </div>
       {isForward && (
         <div className="mb-4 space-y-2 rounded-lg border border-neutral/40 bg-surface-overlay/35 p-3 text-xs leading-relaxed text-ink-secondary">
-          <div className="font-mono tabular-nums">
+          <div className="tabular-nums">
             当前 {formatNumber(current)}
             {noPercentile ? ` · ${forward?.percentile_unavailable_reason ?? '历史积累中'}` : ` · 分位 ${formatNumber(forward?.percentile ?? null)}`}
           </div>
@@ -125,7 +125,7 @@ function PeHistoryChart({
           </div>
         </div>
       )}
-      {!isForward && <p className="mt-3 font-mono text-xs tabular-nums text-ink-muted">当前 {formatNumber(current)} · 5年分位 {index === 'NDX' ? formatNumber(valuation.ndx.pe_percentile_5y) : formatNumber(ttm.percentile)}</p>}
+      {!isForward && <p className="mt-3 text-xs tabular-nums text-ink-muted">当前 {formatNumber(current)} · 5年分位 {index === 'NDX' ? formatNumber(valuation.ndx.pe_percentile_5y) : formatNumber(ttm.percentile)}</p>}
     </ChartCard>
   );
 }
@@ -167,7 +167,7 @@ function SegmentButton({ active, onClick, children }: { active: boolean; onClick
 }
 
 function ChartCard({ title, meta, children }: { title: string; meta: string; children: React.ReactNode }) {
-  return <section className="overflow-hidden rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5"><div className="mb-4 flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-base font-semibold">{title}</h3><span className="font-mono text-[11px] tabular-nums text-ink-muted">{meta}</span></div>{children}</section>;
+  return <section className="overflow-hidden rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5"><div className="mb-4 flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-base font-semibold">{title}</h3><span className="text-[11px] tabular-nums text-ink-muted">{meta}</span></div>{children}</section>;
 }
 
 function metricFromUrl(): PeMetricView {

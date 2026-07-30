@@ -297,7 +297,7 @@ describe('ValuationPanel', () => {
   it('calculates stale age from the valuation date and shows the warning only once', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-30T08:49:00-04:00'));
-    const staleSnapshot = structuredClone(snapshot);
+    const staleSnapshot: QuantAnalysisSnapshot = structuredClone(snapshot);
     staleSnapshot.valuation_tab!.ndx.as_of = '2026-07-28';
     staleSnapshot.valuation_tab!.ndx.stale = true;
     staleSnapshot.valuation_tab!.ndx.stale_days = 4;

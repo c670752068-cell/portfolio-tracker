@@ -96,8 +96,8 @@ export function ScenarioCalculator({ metrics, displayCurrency, rates, monitoredQ
       {result && (
         <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4 dark:border-neutral/60 dark:bg-surface-raised">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="font-mono font-semibold tabular-nums">{selected.symbol}：{selected.spot.toFixed(2)} → {targetPrice.toFixed(2)}</h3>
-            <span className="font-mono text-xs tabular-nums text-ink-muted">{formatSignedPct(targetPrice / selected.spot - 1)} · {days} 天</span>
+            <h3 className="font-semibold tabular-nums">{selected.symbol}：{selected.spot.toFixed(2)} → {targetPrice.toFixed(2)}</h3>
+            <span className="text-xs tabular-nums text-ink-muted">{formatSignedPct(targetPrice / selected.spot - 1)} · {days} 天</span>
           </div>
           {result.lines.length > 0 ? (
             <div className="divide-y divide-neutral/30 dark:divide-neutral/50">
@@ -111,7 +111,7 @@ export function ScenarioCalculator({ metrics, displayCurrency, rates, monitoredQ
                         {line.symbol} · {kindLabel(line.kind)}{line.broker ? ` · ${brokerLabel(line.broker)}` : ''}
                       </div>
                     </div>
-                    <div className={`text-right font-mono tabular-nums ${pnlClass}`}>
+                    <div className={`text-right tabular-nums ${pnlClass}`}>
                       <div>{formatDisplayMoney(line.pnl, displayCurrency, rates)}</div>
                       <div className="text-xs">{formatSignedPct(line.pnlPct)}</div>
                     </div>
@@ -120,7 +120,7 @@ export function ScenarioCalculator({ metrics, displayCurrency, rates, monitoredQ
               })}
               <div className="flex items-center justify-between gap-3 pt-3 text-sm font-semibold">
                 <span>合计情景盈亏</span>
-                <span className={`text-right font-mono tabular-nums ${totalClass}`}>
+                <span className={`text-right tabular-nums ${totalClass}`}>
                   <span className="block">{formatDisplayMoney(result.totalPnl, displayCurrency, rates)}</span>
                   <span className="block text-xs font-medium">占总资产 {formatSignedPct(result.totalPnlPctOfAssets)}</span>
                 </span>
@@ -167,5 +167,5 @@ function roundPrice(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-const inputClass = 'w-full rounded-md border border-neutral/60 bg-surface-raised px-2 py-2 font-mono text-sm tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base';
-const chipClass = 'rounded-md border border-neutral/60 px-2 py-1 font-mono text-xs tabular-nums hover:bg-surface-overlay dark:border-neutral dark:hover:bg-surface-overlay';
+const inputClass = 'w-full rounded-md border border-neutral/60 bg-surface-raised px-2 py-2 text-sm tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base';
+const chipClass = 'rounded-md border border-neutral/60 px-2 py-1 text-xs tabular-nums hover:bg-surface-overlay dark:border-neutral dark:hover:bg-surface-overlay';

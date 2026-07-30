@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  BUY_PLAN_DRAFT_STORAGE_KEY,
   BUY_PLAN_TEMPLATES,
   alignValuationHistoryAsOf,
   buildValuationSummary,
+  clearBuyPlanDraft,
   evaluateLocalBuyPlan,
+  loadBuyPlanDraft,
   planToYaml,
+  saveBuyPlanDraft,
   validateLocalBuyPlan,
 } from './valuationPlan';
 import type { QuantAnalysisSnapshot } from './types';
@@ -176,5 +180,28 @@ describe('valuation plan helpers', () => {
     expect(yaml).not.toContain('undefined');
     expect(result.conditions.map((item) => item.key)).toContain('vix_above');
     expect(result.conditions.map((item) => item.key)).toContain('vix_percentile_above');
+  });
+
+  it('persists and clears an unfinished valuation editor draft without a leave prompt', () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+    const draft = {
+      ...BUY_PLAN_TEMPLATES[0].values,
+      id: 'draft',
+      symbol: 'TQQQ',
+      label: '未完成草稿',
+    };
+
+    saveBuyPlanDraft(draft);
+    expect(loadBuyPlanDraft()).toEqual(draft);
+    expect(values.has(BUY_PLAN_DRAFT_STORAGE_KEY)).toBe(true);
+
+    clearBuyPlanDraft();
+    expect(loadBuyPlanDraft()).toBeNull();
+    vi.unstubAllGlobals();
   });
 });

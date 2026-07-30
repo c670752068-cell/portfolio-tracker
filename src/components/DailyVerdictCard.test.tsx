@@ -30,6 +30,7 @@ describe('DailyVerdictCard', () => {
     expect(html).toContain('规则 2.2');
     expect(html).toContain('rounded-2xl');
     expect(html).toContain('border-l-neutral');
-    expect(html).toContain('font-mono');
+    expect(html).toContain('tabular-nums');
+    expect(html).not.toContain('font-mono');
   });
 });

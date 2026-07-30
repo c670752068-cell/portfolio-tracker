@@ -154,7 +154,7 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
       {latestReminder && (
         <div className="rounded-xl border border-trim/60 bg-trim/10 p-3 text-sm text-trim dark:border-trim/60 dark:bg-trim/15 dark:text-trim">
           <strong>{latestReminder.symbol} {reminderTypeLabel(latestReminder.last_alert_type)}提醒</strong>
-          <span className="ml-2 font-mono tabular-nums">{latestReminder.last_reminder_at}</span>
+          <span className="ml-2 tabular-nums">{latestReminder.last_reminder_at}</span>
           <div className="mt-1 text-xs">只提醒不下单，请在券商 App 手动执行。</div>
         </div>
       )}
@@ -225,9 +225,9 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
                 <div key={rule.id} className="py-3 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="font-mono font-semibold tabular-nums">{rule.symbol} · {rule.type === 'target_price' ? `目标价 ${target == null ? '暂无' : formatMoney(target)}` : `成本 ${rule.cost_basis == null ? '暂无' : formatMoney(rule.cost_basis)} +${Number(rule.gain_pct).toFixed(2)}%`}</div>
-                      <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">{formatAlertCurrentPrice(displayRule)} · {formatAlertDistance(displayRule)}</div>
-                      <div className="mt-1 font-mono text-xs tabular-nums text-ink-muted">最近提醒 {rule.last_reminder_at || '尚未触发'}</div>
+                      <div className="font-semibold tabular-nums">{rule.symbol} · {rule.type === 'target_price' ? `目标价 ${target == null ? '暂无' : formatMoney(target)}` : `成本 ${rule.cost_basis == null ? '暂无' : formatMoney(rule.cost_basis)} +${Number(rule.gain_pct).toFixed(2)}%`}</div>
+                      <div className="mt-1 text-xs tabular-nums text-ink-muted">{formatAlertCurrentPrice(displayRule)} · {formatAlertDistance(displayRule)}</div>
+                      <div className="mt-1 text-xs tabular-nums text-ink-muted">最近提醒 {rule.last_reminder_at || '尚未触发'}</div>
                     </div>
                     <div className="flex gap-2"><button type="button" onClick={() => editRule(rule)} className={smallButtonClass}>编辑</button><button type="button" onClick={() => void props.onDelete(rule.id)} className={smallButtonClass}>删除</button></div>
                   </div>
@@ -242,5 +242,5 @@ export function AlertRulesPanel(props: AlertRulesPanelProps) {
   );
 }
 
-const inputClass = 'w-full rounded-md border border-neutral/60 bg-surface-raised px-2 py-2 font-mono text-sm tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base';
+const inputClass = 'w-full rounded-md border border-neutral/60 bg-surface-raised px-2 py-2 text-sm tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base';
 const smallButtonClass = 'rounded-md border border-neutral/60 px-2 py-1 text-xs dark:border-neutral';

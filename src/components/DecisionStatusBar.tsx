@@ -33,7 +33,7 @@ export function DecisionStatusBar({ snapshot }: { snapshot: QuantAnalysisSnapsho
   const funding = fundingFacts(snapshot);
 
   return (
-    <section className="rounded-2xl border border-neutral/40 bg-surface-raised p-3" aria-label="量化系统最终裁决">
+    <section className="elev-3 rounded-2xl border border-neutral/40 bg-surface-raised p-3" aria-label="量化系统最终裁决">
       <div className="rounded-xl border border-neutral/30 bg-surface-overlay/45 px-3 py-2">
         <div className="text-sm font-semibold text-ink-primary">{headline}</div>
         {verdicts.length === 0 ? (
@@ -43,7 +43,7 @@ export function DecisionStatusBar({ snapshot }: { snapshot: QuantAnalysisSnapsho
             <summary className="cursor-pointer text-ink-secondary">查看 {verdicts.length} 个标的明细</summary>
             <div className="mt-2 space-y-1">
               {verdicts.map((verdict) => (
-                <p key={verdict.symbol} className="font-mono text-xs leading-relaxed tabular-nums text-ink-secondary">
+                <p key={verdict.symbol} className="text-xs leading-relaxed tabular-nums text-ink-secondary">
                   <span className="mr-1 font-semibold text-ink-primary">{verdict.symbol}</span>
                   {verdict.single_sentence ?? '后端未提供结论说明。'}
                   {verdict.is_silence_by_rule && <span className="ml-1 text-ink-muted">不是系统故障，是规则暂不放行。</span>}
@@ -52,8 +52,8 @@ export function DecisionStatusBar({ snapshot }: { snapshot: QuantAnalysisSnapsho
             </div>
           </details>
         )}
-        {stale && <p className="mt-2 font-mono text-xs tabular-nums text-trim">数据 {stale.dataAsOf ?? '暂无'}{typeof stale.staleDays === 'number' ? `（落后 ${stale.staleDays} 天）` : ''}</p>}
-        {funding && <p className="mt-2 font-mono text-xs font-medium tabular-nums text-ink-primary">可用资金 {formatMoney(funding.availableUsd)} · 闸门放行 {formatMoney(funding.gateAllowedUsd)}</p>}
+        {stale && <p className="mt-2 text-xs tabular-nums text-trim">数据 {stale.dataAsOf ?? '暂无'}{typeof stale.staleDays === 'number' ? `（落后 ${stale.staleDays} 天）` : ''}</p>}
+        {funding && <p className="mt-2 text-xs font-medium tabular-nums text-ink-primary">可用资金 {formatMoney(funding.availableUsd)} · 闸门放行 {formatMoney(funding.gateAllowedUsd)}</p>}
       </div>
       <FreshnessBadges freshness={freshness} />
     </section>
@@ -98,7 +98,7 @@ function FreshnessBadges({ freshness }: { freshness: QuantAnalysisFreshness | un
   return (
     <div className="mt-2 flex min-w-0 flex-wrap gap-x-3 gap-y-1 border-t border-neutral/25 pt-2">
       {badges.map(([label, value]) => (
-        <span key={label} className="font-mono text-[10px] tabular-nums text-ink-muted">
+        <span key={label} className="text-[10px] tabular-nums text-ink-muted">
           {label} {dateText(value)}
         </span>
       ))}

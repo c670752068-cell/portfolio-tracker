@@ -19,6 +19,7 @@ export interface LocalBuyPlan {
 }
 
 export const BUY_PLAN_STORAGE_KEY = 'portfolio-tracker:buy-plans-v1';
+export const BUY_PLAN_DRAFT_STORAGE_KEY = 'portfolio-tracker:buy-plan-draft-v1';
 
 export const BUY_PLAN_TEMPLATES = [
   {
@@ -237,6 +238,28 @@ export function loadLocalBuyPlans(): LocalBuyPlan[] | null {
 export function saveLocalBuyPlans(plans: readonly LocalBuyPlan[]): void {
   if (typeof localStorage === 'undefined' || typeof localStorage.setItem !== 'function') return;
   localStorage.setItem(BUY_PLAN_STORAGE_KEY, JSON.stringify(plans));
+}
+
+export function loadBuyPlanDraft(): LocalBuyPlan | null {
+  if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') return null;
+  const raw = localStorage.getItem(BUY_PLAN_DRAFT_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw);
+    return isLocalBuyPlan(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveBuyPlanDraft(plan: LocalBuyPlan): void {
+  if (typeof localStorage === 'undefined' || typeof localStorage.setItem !== 'function') return;
+  localStorage.setItem(BUY_PLAN_DRAFT_STORAGE_KEY, JSON.stringify(plan));
+}
+
+export function clearBuyPlanDraft(): void {
+  if (typeof localStorage === 'undefined' || typeof localStorage.removeItem !== 'function') return;
+  localStorage.removeItem(BUY_PLAN_DRAFT_STORAGE_KEY);
 }
 
 function condition(

@@ -3,10 +3,13 @@ import { dateText } from '../format';
 import type { QuantAnalysisSnapshot, QuantBuyPlan } from '../types';
 import {
   BUY_PLAN_TEMPLATES,
+  clearBuyPlanDraft,
   conditionProgress,
   evaluateLocalBuyPlan,
+  loadBuyPlanDraft,
   loadLocalBuyPlans,
   planToYaml,
+  saveBuyPlanDraft,
   saveLocalBuyPlans,
   serverPlanToLocal,
   validateLocalBuyPlan,
@@ -36,9 +39,10 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
     () => snapshot.buy_plan_status?.plans ?? [],
     [snapshot.buy_plan_status?.plans],
   );
+  const [initialDraft] = useState(() => loadBuyPlanDraft());
   const [localPlans, setLocalPlans] = useState<LocalBuyPlan[] | null>(() => loadLocalBuyPlans());
-  const [editing, setEditing] = useState<LocalBuyPlan | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [editing, setEditing] = useState<LocalBuyPlan | null>(initialDraft);
+  const [dirty, setDirty] = useState(Boolean(initialDraft));
   const [errors, setErrors] = useState<string[]>([]);
   const [showYaml, setShowYaml] = useState(false);
   const [copyState, setCopyState] = useState('');
@@ -69,14 +73,8 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
 
   useEffect(() => {
     onDirtyChange(dirty);
-    if (!dirty) return undefined;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty, onDirtyChange]);
+    if (dirty && editing) saveBuyPlanDraft(editing);
+  }, [dirty, editing, onDirtyChange]);
 
   function beginCreate(templateIndex = 0) {
     const template = BUY_PLAN_TEMPLATES[templateIndex];
@@ -116,13 +114,14 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
     ];
     setLocalPlans(next);
     saveLocalBuyPlans(next);
+    clearBuyPlanDraft();
     setEditing(null);
     setDirty(false);
     onDirtyChange(false);
   }
 
   function cancelEditing() {
-    if (dirty && !window.confirm('当前修改尚未保存，确定放弃吗？')) return;
+    clearBuyPlanDraft();
     setEditing(null);
     setDirty(false);
     setErrors([]);
@@ -153,7 +152,7 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
           <h3 className="text-base font-semibold">开枪计划表</h3>
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">在冷静时写下条件，恐慌时就不用临时决定。</p>
         </div>
-        <span className="font-mono text-[11px] tabular-nums text-ink-muted">
+        <span className="text-[11px] tabular-nums text-ink-muted">
           量化快照 {dateText(snapshot.buy_plan_status?.evaluated_at) === '暂无' ? '数据准备中' : dateText(snapshot.buy_plan_status?.evaluated_at)}
         </span>
       </div>
@@ -234,14 +233,15 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
 function PlanAccountContext({ plan }: { plan: QuantBuyPlan }) {
   const sizing = plan.buy_sizing!;
   const risk = sizing.risk_context!;
+  const gate = sizing.gate;
   const isHardCapBlocked = risk.sleeve.over_hard_cap_usd > 0;
   return (
     <div className="mt-4 rounded-xl border border-neutral/30 bg-surface-overlay/45 p-3 text-xs text-ink-secondary">
-      <div className="tabular-nums">当前仓位门额度：${sizing.suggested_usd.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+      <div className="tabular-nums">当前仓位门额度：{sizing.suggested_usd === null ? '暂无' : `$${sizing.suggested_usd.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}</div>
       <div className="mt-1 tabular-nums">等效敞口 {risk.total_effective_pct.toFixed(2)}% · 实付现金 {risk.total_cash_pct.toFixed(2)}%</div>
       <div className="mt-1 tabular-nums">{risk.sleeve.name}：等效 {risk.sleeve.effective_pct.toFixed(2)}% · 现金 {risk.sleeve.cash_pct.toFixed(2)}%</div>
-      <div className={`mt-2 rounded-lg px-3 py-2 ${sizing.gate.passed ? 'bg-buy/10 text-buy' : 'bg-trim/10 text-trim'}`}>
-        {isHardCapBlocked ? '本轮不建议新增：' : sizing.gate.passed ? '仓位门通过：' : '仓位门未过：'}{sizing.gate.reason}
+      <div className={`mt-2 rounded-lg px-3 py-2 ${gate?.passed ? 'bg-buy/10 text-buy' : gate ? 'bg-trim/10 text-trim' : 'bg-neutral/20 text-ink-secondary'}`}>
+        {gate ? <>{isHardCapBlocked ? '本轮不建议新增：' : gate.passed ? '仓位门通过：' : '仓位门未过：'}{gate.reason}</> : '仓位门数据待量化同步'}
         {isHardCapBlocked && <span className="ml-1 tabular-nums">（{risk.sleeve.name}超硬顶 {risk.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
       </div>
     </div>
@@ -268,7 +268,7 @@ function PlanCard({
     <article className={`rounded-xl border p-4 ${readyStyle}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-semibold"><span className="font-mono tabular-nums">{plan.symbol}</span> · {plan.label}</div>
+          <div className="font-semibold"><span className="tabular-nums">{plan.symbol}</span> · {plan.label}</div>
           <div className={`mt-1 text-xs ${plan.ready ? 'text-buy' : 'text-ink-muted'}`}>
             {plan.ready ? '条件已满足，可按预先计划执行' : `${plan.met_count}/${plan.total_count} 条件满足`}
           </div>
@@ -283,7 +283,7 @@ function PlanCard({
           <div key={conditionValue.key}>
             <div className="flex items-center justify-between gap-3 text-xs">
               <span>{conditionValue.met ? <span className="text-buy">✓</span> : <span className="text-ink-muted">○</span>} {conditionValue.name}</span>
-              <span className="font-mono text-right tabular-nums text-ink-secondary">
+              <span className="text-right tabular-nums text-ink-secondary">
                 当前 {numberText(conditionValue.current)} · {conditionValue.gap_text}
               </span>
             </div>
@@ -294,14 +294,14 @@ function PlanCard({
         ))}
       </div>
       {!risk && <div className="mt-4 border-t border-neutral/30 pt-3 text-xs">
-        <div className="font-mono tabular-nums text-ink-secondary">
+        <div className="tabular-nums text-ink-secondary">
           {proposedAmount === null
             ? `${plan.action_text} · 金额待量化同步`
             : `触发时：$${proposedAmount.toLocaleString('en-US', { maximumFractionDigits: 2 })}（账户 ${plan.buy_pct_of_nav}%）`}
         </div>
         <div className={`mt-2 rounded-lg px-3 py-2 ${gatePassed ? 'bg-buy/10 text-buy' : 'bg-trim/10 text-trim'}`}>
           {isHardCapBlocked ? '本轮不建议新增：' : gatePassed ? '仓位门通过：' : '仓位门未过：'}{gateNote}
-          {isHardCapBlocked && <span className="ml-1 font-mono tabular-nums">（{risk!.sleeve.name}超硬顶 {risk!.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
+          {isHardCapBlocked && <span className="ml-1 tabular-nums">（{risk!.sleeve.name}超硬顶 {risk!.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
         </div>
       </div>}
     </article>
@@ -414,7 +414,7 @@ function StepperField({
           step={step}
           value={value}
           onChange={(event) => onChange(Number(event.target.value))}
-          className="min-h-11 min-w-0 bg-transparent px-2 text-center font-mono tabular-nums outline-none"
+          className="min-h-11 min-w-0 bg-transparent px-2 text-center tabular-nums outline-none"
         />
         <button type="button" aria-label={`${label}增加`} onClick={() => onChange(Number((value + step).toFixed(2)))} className="min-h-11 border-l border-neutral/40 text-lg text-ink-secondary hover:bg-surface-overlay">+</button>
       </span>

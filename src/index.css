@@ -35,6 +35,9 @@
   --color-grid-base: rgb(var(--surface-raised));
   --chart-grid: rgb(217 222 229);
   --chart-axis: rgb(72 83 97);
+  --elev-1: 0 0 0 rgb(0 0 0 / 0);
+  --elev-2: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 1px rgb(0 0 0 / 0.02);
+  --elev-3: 0 4px 16px rgb(0 0 0 / 0.08);
 }
 
 :root.dark {
@@ -53,6 +56,8 @@
   --neutral: 58 69 83;
   --chart-grid: rgb(58 69 83);
   --chart-axis: rgb(155 168 184);
+  --elev-2: 0 1px 2px rgb(0 0 0 / 0.16), 0 1px 1px rgb(0 0 0 / 0.1);
+  --elev-3: 0 4px 16px rgb(0 0 0 / 0.22);
 }
 
 html,
@@ -89,6 +94,36 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
+.elev-1 {
+  box-shadow: var(--elev-1);
+}
+
+.elev-2 {
+  box-shadow: var(--elev-2);
+}
+
+.elev-3 {
+  border-radius: 1.25rem;
+  box-shadow: var(--elev-3);
+}
+
+.dark .elev-2,
+.dark .elev-3 {
+  border-top-color: rgb(255 255 255 / 0.06);
+}
+
+.text-display {
+  letter-spacing: -0.02em;
+}
+
+.text-body {
+  letter-spacing: 0;
+}
+
+.text-label {
+  letter-spacing: 0.01em;
+}
+
 .ui-enter {
   animation: ui-enter 260ms ease-out both;
 }
@@ -112,7 +147,8 @@ a:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
+    transition-property: opacity, color, background-color, border-color !important;
+    transition-duration: 150ms !important;
   }
 
   button:active:not(:disabled) {

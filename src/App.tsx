@@ -136,7 +136,7 @@ export default function App() {
   const [oneTapCooldownSeconds, setOneTapCooldownSeconds] = useState(0);
   const [lastImport, setLastImport] = useState<ImportNotice | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
-  const [valuationEditorDirty, setValuationEditorDirty] = useState(false);
+  const [, setValuationEditorDirty] = useState(false);
   const [marketNow, setMarketNow] = useState(() => new Date());
   const holdingsRef = useRef(portfolio.holdings);
   const portfolioRef = useRef(portfolio);
@@ -526,32 +526,33 @@ export default function App() {
   }
 
   function changeTab(next: Tab) {
-    if (
-      tab === 'valuation'
-      && next !== 'valuation'
-      && valuationEditorDirty
-      && !window.confirm('开枪计划还有未保存的修改，确定离开吗？')
-    ) {
-      return;
-    }
     if (next !== 'valuation') setValuationEditorDirty(false);
     setTab(next);
   }
 
+  const tabIndex = ['dashboard', 'holdings', 'conditions', 'calculator', 'settings', 'valuation'].indexOf(tab);
+
   return (
     <div className="mx-auto min-h-full max-w-6xl px-4 py-5 sm:px-6 md:py-8">
-      <header className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <header className="elev-2 sticky top-0 z-40 -mx-4 mb-6 flex flex-col gap-3 border-b border-neutral/30 bg-surface-base/80 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">我的投资组合</h1>
+          <h1 className="text-display text-2xl font-semibold sm:text-3xl">我的投资组合</h1>
           <p className="mt-1 text-xs leading-relaxed text-ink-secondary">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</p>
           {quantAnalysis && <SnapshotStamp snapshot={quantAnalysis} />}
         </div>
         <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
           <ThemeControl />
-          <nav className="grid w-full grid-cols-3 gap-1 rounded-2xl border border-neutral/30 bg-surface-raised p-1 text-xs sm:text-sm md:w-auto md:grid-cols-6">
+          <nav
+            className="relative grid w-full grid-cols-6 rounded-2xl border border-neutral/30 bg-surface-raised p-1 text-[11px] sm:text-sm md:w-[34rem]"
+          >
+            <span
+              aria-hidden="true"
+              className="absolute bottom-1 left-1 top-1 w-[calc((100%_-_0.5rem)/6)] rounded-xl bg-buy transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
+              style={{ transform: `translateX(${tabIndex * 100}%)` }}
+            />
             <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => changeTab('dashboard')} />
             <TabBtn
-              label={<>持仓 {needsReviewCount > 0 && <span className="font-mono tabular-nums text-trim">●{needsReviewCount}</span>}</>}
+              label={<>持仓 {needsReviewCount > 0 && <span className="tabular-nums text-trim">●{needsReviewCount}</span>}</>}
               active={tab === 'holdings'}
               onClick={() => changeTab('holdings')}
             />
@@ -563,11 +564,11 @@ export default function App() {
         </div>
       </header>
       {tab === 'dashboard' && (
-        <section className="ui-enter space-y-5">
+        <section className="space-y-5">
           {quantAnalysis && <DecisionStatusBar snapshot={quantAnalysis} />}
           {latestAlert && (
             <div className="rounded-2xl border border-trim/40 border-l-4 border-l-trim bg-trim/10 p-4 text-sm leading-relaxed text-ink-primary">
-              <strong><span className="font-mono tabular-nums">{latestAlert.symbol}</span> 目标提醒已触发</strong> · <span className="font-mono tabular-nums">{latestAlert.last_reminder_at}</span>。只提醒不下单，请在券商 App 手动执行。
+              <strong><span className="tabular-nums">{latestAlert.symbol}</span> 目标提醒已触发</strong> · <span className="tabular-nums">{latestAlert.last_reminder_at}</span>。只提醒不下单，请在券商 App 手动执行。
             </div>
           )}
           <Summary
@@ -603,7 +604,7 @@ export default function App() {
       )}
 
       {tab === 'holdings' && (
-        <section className="ui-enter space-y-4">
+        <section className="space-y-4">
           <ImageImportPanel settings={settings} onConfirm={importFromImages} onOptionDetails={importOptionDetails} onOpenSettings={() => setTab('settings')} />
           <HoldingsTable
             metrics={metrics.holdingsMetrics}
@@ -619,7 +620,7 @@ export default function App() {
       )}
 
       {tab === 'conditions' && (
-        <section className="ui-enter">
+        <section>
           <ConditionLookup
             snapshot={quantAnalysis}
             holdings={portfolio.holdings}
@@ -635,7 +636,7 @@ export default function App() {
       )}
 
       {tab === 'calculator' && (
-        <section className="ui-enter space-y-4">
+        <section className="space-y-4">
           <ScenarioCalculator metrics={metrics} displayCurrency={settings.displayCurrency} rates={rates} monitoredQuotes={monitoredQuotes} />
           <AlertRulesPanel
             rules={alertRules}
@@ -652,7 +653,7 @@ export default function App() {
       )}
 
       {tab === 'settings' && (
-        <section className="ui-enter space-y-4">
+        <section className="space-y-4">
           <SettingsPanel
             settings={settings}
             holdings={portfolio.holdings}
@@ -668,7 +669,7 @@ export default function App() {
       )}
 
       {tab === 'valuation' && (
-        <section className="ui-enter">
+        <section>
           <ValuationPanel snapshot={quantAnalysis} onDirtyChange={setValuationEditorDirty} />
         </section>
       )}
@@ -688,15 +689,15 @@ function ImportResultNotice({ result: notice, onClose, onUndo }: { result: Impor
         <div>
           <div className="font-semibold">{notice.mode === 'full' ? '截图识别已自动导入' : notice.mode === 'option' ? '期权详情已安全补充' : '量化系统持仓已同步'}</div>
           {notice.mode === 'full' ? (
-            <p className="mt-1 font-mono text-xs tabular-nums">
+            <p className="mt-1 text-xs tabular-nums">
               本次已替换上一批截图导入（手动添加的条目未受影响）；共导入 {notice.result.holdings.length} 个持仓、{notice.result.cash.length} 个现金条目。
             </p>
           ) : notice.mode === 'option' ? (
-            <p className="mt-1 font-mono text-xs tabular-nums">
+            <p className="mt-1 text-xs tabular-nums">
               已更新 {notice.result.updated.length} 个期权、补充新增 {notice.result.added.length} 个；未动任何正股、ETF 与现金。
             </p>
           ) : (
-            <p className="mt-1 font-mono text-xs tabular-nums">
+            <p className="mt-1 text-xs tabular-nums">
               已替换量化同步与截图导入条目；共同步 {notice.result.holdings.length} 个持仓、{notice.result.cash.length} 个推算现金条目，手工条目未受影响。
             </p>
           )}
@@ -726,9 +727,9 @@ function TabBtn({ label, active, onClick }: { label: React.ReactNode; active: bo
   return (
     <button
       onClick={onClick}
-      className={`min-h-11 rounded-xl px-3 py-2 font-medium transition-colors ${
+      className={`relative z-10 min-h-11 min-w-0 rounded-xl px-1 py-2 font-medium transition-colors sm:px-3 ${
         active
-          ? 'bg-buy text-surface-base'
+          ? 'text-surface-base'
           : 'text-ink-secondary hover:bg-surface-overlay hover:text-ink-primary'
       }`}
     >

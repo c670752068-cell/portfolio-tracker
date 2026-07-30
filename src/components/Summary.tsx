@@ -94,7 +94,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <div className={`font-mono text-[11px] tabular-nums ${trendClass}`}>
+            <div className={`text-[11px] tabular-nums ${trendClass}`}>
               {trendPoints.length >= 8 ? '近 7 天' : '记录以来'} {formatSignedPct(trendPct)}
             </div>
           </div>
@@ -110,7 +110,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
         accentClass={dayAccentClass}
       >
         {dayChangeStatusText && (
-          <div className="mt-1 font-mono text-[11px] leading-relaxed tabular-nums text-ink-secondary">
+          <div className="mt-1 text-[11px] leading-relaxed tabular-nums text-ink-secondary">
             {dayChangeStatusText}
           </div>
         )}
@@ -123,7 +123,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
               {oneTapUnavailableReason || oneTapRefreshState.message || '重新读取行情、持仓和分析，并请求量化系统立即重算。'}
             </div>
             {oneTapCooldownSeconds > 0 && (
-              <div className="mt-1 font-mono text-xs tabular-nums text-trim">
+              <div className="mt-1 text-xs tabular-nums text-trim">
                 {oneTapCooldownSeconds} 秒后可再次刷新
               </div>
             )}
@@ -132,7 +132,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
             type="button"
             onClick={onOneTapRefresh}
             disabled={!canOneTapRefresh || oneTapBusy || oneTapCooldownSeconds > 0}
-            className="min-h-11 w-full rounded-xl bg-buy px-4 py-2 font-mono text-sm font-semibold tabular-nums text-surface-base hover:bg-buy/85 disabled:cursor-not-allowed disabled:bg-neutral disabled:text-ink-muted sm:w-auto sm:min-w-40"
+            className="min-h-11 w-full rounded-xl bg-buy px-4 py-2 text-sm font-semibold tabular-nums text-surface-base hover:bg-buy/85 disabled:cursor-not-allowed disabled:bg-neutral disabled:text-ink-muted sm:w-auto sm:min-w-40"
           >
             {oneTapButtonLabel}
           </button>
@@ -160,12 +160,12 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
           value={formatDisplayMoney(metrics.equivalentExposureTotal, displayCurrency, rates)}
           sub={`等效仓位 ${formatPct(metrics.equivalentExposurePct)} · 目标 ${exposureTargetPct}%`}
         >
-          <div className="mt-1 font-mono text-[11px] leading-relaxed tabular-nums text-ink-secondary">
+          <div className="mt-1 text-[11px] leading-relaxed tabular-nums text-ink-secondary">
             正股 {formatDisplayMoney(metrics.plainEquityExposure, displayCurrency, rates)} · 杠杆折算 {formatDisplayMoney(metrics.leveragedEtfExposure, displayCurrency, rates)} · 期权Δ {formatDisplayMoney(metrics.optionDeltaExposure, displayCurrency, rates)}
           </div>
           <div className="mt-1 text-[11px] text-ink-secondary">网站口径：仅真实 Delta；缺失项未计入，见下方期权风险专区的 0.5 假设口径</div>
           {metrics.uncomputableOptions > 0 && (
-            <div className="mt-1 font-mono text-[11px] tabular-nums text-trim">
+            <div className="mt-1 text-[11px] tabular-nums text-trim">
               ⚠ {metrics.uncomputableOptions} 个期权缺 Delta/标的价未计入（用「补充期权详情」导入）
             </div>
           )}
@@ -179,24 +179,24 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
             aria-label="显示货币"
             value={displayCurrency}
             onChange={(event) => onDisplayCurrencyChange(event.target.value as DisplayCurrency)}
-            className="ml-1 rounded border border-neutral bg-surface-overlay px-2 py-1 font-mono text-xs tabular-nums text-ink-primary"
+            className="ml-1 rounded border border-neutral bg-surface-overlay px-2 py-1 text-xs tabular-nums text-ink-primary"
           >
             {(['USD', 'CNY', 'HKD', 'JPY', 'EUR', 'GBP'] as DisplayCurrency[]).map((currency) => (
               <option key={currency} value={currency}>{currency}</option>
             ))}
           </select>
         </label>
-        <span className="ml-3 font-mono tabular-nums text-ink-secondary">1 USD ≈ {rates.CNY.toFixed(4)} CNY</span>
-        <span className="ml-2 font-mono tabular-nums text-ink-muted">{rates.source === 'live' ? `实时数据 ${rates.updatedAt ?? ''}` : rates.source === 'cache' ? `缓存数据 ${rates.updatedAt ?? ''}` : '近似兜底值'}</span>
+        <span className="ml-3 tabular-nums text-ink-secondary">1 USD ≈ {rates.CNY.toFixed(4)} CNY</span>
+        <span className="ml-2 tabular-nums text-ink-muted">{rates.source === 'live' ? `实时数据 ${rates.updatedAt ?? ''}` : rates.source === 'cache' ? `缓存数据 ${rates.updatedAt ?? ''}` : '近似兜底值'}</span>
         {rateError && <span className="ml-2 text-trim">{rateError}</span>}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral/40 bg-surface-raised p-4 text-xs md:col-span-4">
         <div>
           <span className="font-medium text-ink-primary">行情同步：</span>
-          <span className="font-mono tabular-nums text-ink-secondary">
+          <span className="tabular-nums text-ink-secondary">
             {quoteStatus.loading ? '正在刷新…' : quoteStatus.summary || (canRefreshQuotes ? `${REFRESH_CADENCE.quotes.interval}自动刷新` : '未配置行情源')}
           </span>
-          {quoteStatus.lastSyncedAt && <span className="ml-2 font-mono tabular-nums text-ink-muted">{new Date(quoteStatus.lastSyncedAt).toLocaleString()}</span>}
+          {quoteStatus.lastSyncedAt && <span className="ml-2 tabular-nums text-ink-muted">{new Date(quoteStatus.lastSyncedAt).toLocaleString()}</span>}
           {quoteStatus.error && <span className="ml-2 text-trim">{quoteStatus.error}</span>}
         </div>
         <button
@@ -218,10 +218,10 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
           ) : !quantTokenConfigured ? (
             <span className="text-trim">未填写同步 Token</span>
           ) : (
-            <span className="font-mono tabular-nums text-ink-secondary">{quantStatus.loading ? '正在同步…' : quantStatus.summary || '等待首次同步'}</span>
+            <span className="tabular-nums text-ink-secondary">{quantStatus.loading ? '正在同步…' : quantStatus.summary || '等待首次同步'}</span>
           )}
           {quantStatus.asOf && quantStatus.pushedAt && (
-            <div className="mt-1 font-mono tabular-nums text-ink-secondary">
+            <div className="mt-1 tabular-nums text-ink-secondary">
               数据截至 {quantStatus.asOf}（IBKR 快照日）· 推送于 {new Date(quantStatus.pushedAt).toLocaleString()}
               {quantStatus.stale && <span className="ml-2 rounded bg-trim/10 px-1.5 py-0.5 font-medium text-trim">数据陈旧</span>}
             </div>
@@ -267,13 +267,13 @@ function RiskOverview({ snapshot, displayCurrency, rates }: { snapshot?: QuantAn
         {estimatedDelta && <p className="mt-2 text-xs text-ink-muted">Delta 为统一假设 0.5，不是网站真实 Delta 口径</p>}
         <div className="mt-3 rounded-xl border border-neutral/35 bg-surface-overlay/60 p-3">
           <div className="text-xs font-medium text-ink-primary">弹药总览</div>
-          <div className="mt-2 grid grid-cols-3 gap-2 font-mono text-xs tabular-nums text-ink-secondary">
+          <div className="mt-2 grid grid-cols-3 gap-2 text-xs tabular-nums text-ink-secondary">
             <span>正股 {formatDisplayMoney(power?.by_underlying_usd ?? 0, displayCurrency, rates)}</span>
             <span>2× {formatDisplayMoney(power?.by_2x_usd ?? 0, displayCurrency, rates)}</span>
             <span>3× {formatDisplayMoney(power?.by_3x_usd ?? 0, displayCurrency, rates)}</span>
           </div>
           {power?.headline && <p className="mt-2 text-xs leading-relaxed text-trim">{power.headline}</p>}
-          {ammo?.top_consumers?.length ? <p className="mt-2 font-mono text-[11px] tabular-nums text-ink-muted">主要敞口：{ammo.top_consumers.map((item) => `${item.symbol} ${item.pct_of_nav.toFixed(2)}%`).join(' · ')}</p> : null}
+          {ammo?.top_consumers?.length ? <p className="mt-2 text-[11px] tabular-nums text-ink-muted">主要敞口：{ammo.top_consumers.map((item) => `${item.symbol} ${item.pct_of_nav.toFixed(2)}%`).join(' · ')}</p> : null}
         </div>
       </div>
       <div className="rounded-2xl border border-neutral/50 bg-surface-raised p-4">
@@ -292,13 +292,13 @@ function RiskOverview({ snapshot, displayCurrency, rates }: { snapshot?: QuantAn
         <AllocationPlan allocation={allocation} displayCurrency={displayCurrency} rates={rates} />
       </div>
       {options && <details className="rounded-2xl border border-neutral/50 bg-surface-raised p-4 lg:col-span-2"><summary className="cursor-pointer text-sm font-semibold text-ink-primary">期权风险专区 · Delta 敞口 {moneyOrUnavailable(options.delta_exposure_usd, displayCurrency, rates, estimatedDelta)}</summary>{estimatedDelta && <p className="mt-2 text-xs text-ink-muted">Delta 为统一假设 0.5，不是网站真实 Delta 口径</p>}<div className="mt-3 grid gap-3 sm:grid-cols-3"><RiskMetric label="权利金" value={moneyOrUnavailable(options.premium_usd, displayCurrency, rates)} sub={options.premium_pct_of_nav !== undefined && options.premium_cap_pct !== undefined ? `${options.premium_pct_of_nav.toFixed(2)}% / 上限 ${options.premium_cap_pct.toFixed(2)}%` : '暂无'} tone={options.over_limit ? 'trim' : undefined} />{options.items?.map((item, index) => <RiskMetric key={`${item.symbol}-${index}`} label={`${item.symbol} · ${item.delta_source === 'broker' ? '券商 Delta' : '估算 Delta'}`} value={moneyOrUnavailable(item.delta_notional_usd, displayCurrency, rates, item.delta_source !== 'broker')} sub={item.days_to_expiry === null || item.days_to_expiry === undefined ? '到期日暂无' : `距到期 ${item.days_to_expiry} 天`} tone={item.status === 'critical' ? 'trim' : undefined} />)}</div></details>}
-      {dips && Object.entries(dips).map(([symbol, status]) => <div key={symbol} className="rounded-2xl border border-neutral/40 bg-surface-overlay/35 p-4 text-sm leading-relaxed text-ink-primary lg:col-span-2"><span className="font-mono font-semibold tabular-nums">{symbol}</span> · {status.companion_text || '暂无分批进度'}<div className="mt-1 font-mono text-xs tabular-nums text-ink-secondary">计划剩余 {formatDisplayMoney(status.ammo?.remaining_usd ?? 0, displayCurrency, rates)} · 账户可动用 {formatDisplayMoney(status.ammo?.account_gate?.allowed_usd ?? 0, displayCurrency, rates)}</div></div>)}
+      {dips && Object.entries(dips).map(([symbol, status]) => <div key={symbol} className="rounded-2xl border border-neutral/40 bg-surface-overlay/35 p-4 text-sm leading-relaxed text-ink-primary lg:col-span-2"><span className="font-semibold tabular-nums">{symbol}</span> · {status.companion_text || '暂无分批进度'}<div className="mt-1 text-xs tabular-nums text-ink-secondary">计划剩余 {formatDisplayMoney(status.ammo?.remaining_usd ?? 0, displayCurrency, rates)} · 账户可动用 {formatDisplayMoney(status.ammo?.account_gate?.allowed_usd ?? 0, displayCurrency, rates)}</div></div>)}
     </section>
   );
 }
 
 function RiskMetric({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: 'trim' }) {
-  return <div className="rounded-xl border border-neutral/35 bg-surface-overlay/60 p-3"><div className="text-xs text-ink-secondary">{label}</div><div className={`mt-1 font-mono text-lg font-semibold tabular-nums ${tone === 'trim' ? 'text-trim' : 'text-ink-primary'}`}>{value}</div><div className="mt-1 font-mono text-[11px] tabular-nums text-ink-secondary">{sub}</div></div>;
+  return <div className="rounded-xl border border-neutral/35 bg-surface-overlay/60 p-3"><div className="text-xs text-ink-secondary">{label}</div><div className={`mt-1 text-lg font-semibold tabular-nums ${tone === 'trim' ? 'text-trim' : 'text-ink-primary'}`}>{value}</div><div className="mt-1 text-[11px] tabular-nums text-ink-secondary">{sub}</div></div>;
 }
 
 function moneyOrUnavailable(value: number | undefined, displayCurrency: DisplayCurrency, rates: ExchangeRates, approximate = false): string {
@@ -373,7 +373,7 @@ export function SleeveBar({ name, row, displayBasis }: { name: string; row: Quan
       metric.over_hard_cap_usd && metric.over_hard_cap_usd > 0 ? `超硬顶 $${metric.over_hard_cap_usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : null,
       metric.zone !== 'over_hard_cap' && metric.gap_usd && metric.gap_usd > 0 ? `缺口 $${metric.gap_usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : null,
     ].filter(Boolean);
-    return facts.length > 0 ? <p className="mt-1 font-mono text-[10px] leading-relaxed tabular-nums text-ink-secondary">{metricName(basis)}：{facts.join(' · ')}</p> : null;
+    return facts.length > 0 ? <p className="mt-1 text-[10px] leading-relaxed tabular-nums text-ink-secondary">{metricName(basis)}：{facts.join(' · ')}</p> : null;
   };
   const isDualBasis = displayBasis === 'both';
   const selectedBasis = isDualBasis ? null : visibleMetrics[0]?.[0];
@@ -420,9 +420,9 @@ export function SleeveBar({ name, row, displayBasis }: { name: string; row: Quan
       })()
       : '';
   return <div className="min-w-0 rounded-xl border border-neutral/25 bg-surface-overlay/35 p-3">
-    <div className="flex min-w-0 flex-col gap-1 text-xs sm:flex-row sm:items-start sm:justify-between sm:gap-2"><div className="min-w-0"><span className="font-medium text-ink-primary">{label}</span><span className={`ml-2 inline-block rounded-full px-1.5 py-0.5 text-[10px] ${statusClass}`}>{status}</span></div><span className="max-w-full break-words font-mono tabular-nums text-ink-secondary">{headerGuide}</span></div>
+    <div className="flex min-w-0 flex-col gap-1 text-xs sm:flex-row sm:items-start sm:justify-between sm:gap-2"><div className="min-w-0"><span className="font-medium text-ink-primary">{label}</span><span className={`ml-2 inline-block rounded-full px-1.5 py-0.5 text-[10px] ${statusClass}`}>{status}</span></div><span className="max-w-full break-words tabular-nums text-ink-secondary">{headerGuide}</span></div>
     {note && <p className={`mt-2 break-words text-sm leading-relaxed ${noteClass}`}>{note}</p>}
-    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums">
+    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] tabular-nums">
       {displayBasis !== 'cash' && <span className="text-ink-primary">等效 {effective?.pct === undefined ? '暂无' : `${effective.pct.toFixed(2)}%`}</span>}
       {displayBasis !== 'effective' && <span className="text-cash">现金 {cash?.pct === undefined ? '暂无' : `${cash.pct.toFixed(2)}%`}</span>}
     </div>
@@ -434,7 +434,7 @@ export function SleeveBar({ name, row, displayBasis }: { name: string; row: Quan
       {displayBasis !== 'cash' && metricTargetMarker('effective', effective, 'top-0 h-2.5')}
       {sharedTargetMarker}{sharedHardCapMarker}
     </div>
-    <div className="mt-1 flex flex-wrap gap-x-2 font-mono text-[10px] tabular-nums text-ink-muted">{isDualBasis && <span>{target === undefined ? '基准暂无' : `↑ 基准 ${target.toFixed(0)}%`}</span>}{isDualBasis && hardCap !== null && <span className="text-loss">↑ 硬顶 {hardCap.toFixed(0)}%</span>}{displayBasis !== 'cash' && targetHint('effective', effective)}{displayBasis !== 'effective' && targetHint('cash', cash)}</div>
+    <div className="mt-1 flex flex-wrap gap-x-2 text-[10px] tabular-nums text-ink-muted">{isDualBasis && <span>{target === undefined ? '基准暂无' : `↑ 基准 ${target.toFixed(0)}%`}</span>}{isDualBasis && hardCap !== null && <span className="text-loss">↑ 硬顶 {hardCap.toFixed(0)}%</span>}{displayBasis !== 'cash' && targetHint('effective', effective)}{displayBasis !== 'effective' && targetHint('cash', cash)}</div>
     <details className="mt-2 text-xs"><summary className="cursor-pointer text-ink-muted">{displayBasis === 'both' ? '查看双口径明细' : '查看本口径明细'}</summary><div className="mt-2">{displayBasis !== 'cash' && metricLine('effective', effective)}{displayBasis !== 'effective' && metricLine('cash', cash)}</div></details>
     {name === 'options' && <p className="mt-2 text-[11px] text-trim">禁区，不可借</p>}
     {borrowFootnote && <p className="mt-2 break-words text-[11px] text-trim">{borrowFootnote}{name === 'tech' && displayBasis !== 'cash' ? ` · 剩余 ${row.borrow_room_pp?.toFixed(2) ?? '暂无'}pp` : ''}</p>}
@@ -473,7 +473,7 @@ function AllocationPlan({ allocation, displayCurrency, rates }: { allocation: Qu
   if (available !== undefined && available <= 0) {
     return <details className="mt-4 border-t border-neutral/35 pt-3 text-xs text-ink-secondary"><summary className="cursor-pointer font-medium text-ink-primary">当前无可分配弹药（闸门放行 $0）</summary><div className="mt-2 space-y-1">{allocation.by_sleeve.map((item) => <p key={item.sleeve}>{isBlocked(item) ? `不投：${labelFor(item.sleeve)} —— ${blockReason(item)}` : `待补：${labelFor(item.sleeve)}${underweightText(item)}${item.candidates?.length ? ` · ${item.candidates.map((candidate) => candidate.symbol).join('/')}` : ''}`}</p>)}</div></details>;
   }
-  return <div className="mt-4 border-t border-neutral/35 pt-3 text-xs text-ink-secondary"><div className="font-medium text-ink-primary">弹药定向</div>{allocation.by_sleeve.map((item) => <div key={item.sleeve} className="mt-1 flex justify-between gap-2"><span>{isBlocked(item) ? `不投：${labelFor(item.sleeve)} —— ${blockReason(item)}` : `${item.priority !== undefined ? `优先 ${item.priority} · ` : ''}${labelFor(item.sleeve)}`}</span>{!isBlocked(item) && <span className="font-mono tabular-nums">{moneyOrUnavailable(item.suggested_usd, displayCurrency, rates)}{item.candidates?.length ? ` · ${item.candidates.map((candidate) => candidate.symbol).join('/')}` : ''}</span>}</div>)}</div>;
+  return <div className="mt-4 border-t border-neutral/35 pt-3 text-xs text-ink-secondary"><div className="font-medium text-ink-primary">弹药定向</div>{allocation.by_sleeve.map((item) => <div key={item.sleeve} className="mt-1 flex justify-between gap-2"><span>{isBlocked(item) ? `不投：${labelFor(item.sleeve)} —— ${blockReason(item)}` : `${item.priority !== undefined ? `优先 ${item.priority} · ` : ''}${labelFor(item.sleeve)}`}</span>{!isBlocked(item) && <span className="tabular-nums">{moneyOrUnavailable(item.suggested_usd, displayCurrency, rates)}{item.candidates?.length ? ` · ${item.candidates.map((candidate) => candidate.symbol).join('/')}` : ''}</span>}</div>)}</div>;
 }
 
 interface CardProps {
@@ -490,10 +490,10 @@ interface CardProps {
 function Card({ label, value, sub, valueClass, subClass, variant = 'standard', accentClass = 'border-l-neutral', children }: CardProps) {
   const isHero = variant === 'hero';
   return (
-    <div className={`${isHero ? `rounded-2xl border border-neutral/60 border-l-4 p-6 md:col-span-2 ${accentClass}` : 'rounded-2xl border border-neutral/40 p-4'} bg-surface-raised`}>
+    <div className={`${isHero ? `elev-3 rounded-2xl border border-neutral/60 border-l-4 p-6 md:col-span-2 ${accentClass}` : 'elev-2 rounded-2xl border border-neutral/40 p-4'} bg-surface-raised`}>
       <div className={`${isHero ? 'text-sm font-medium' : 'text-xs'} text-ink-secondary`}>{label}</div>
-      <div className={`mt-2 font-mono font-semibold leading-none tracking-tight tabular-nums ${isHero ? 'text-4xl' : 'text-xl'} ${valueClass ?? ''}`}>{value}</div>
-      {sub && <div className={`mt-2 font-mono tabular-nums ${isHero ? 'text-sm' : 'text-xs'} ${subClass ?? 'text-ink-secondary'}`}>{sub}</div>}
+      <div className={`text-display mt-2 font-semibold leading-none tabular-nums ${isHero ? 'text-4xl' : 'text-xl'} ${valueClass ?? ''}`}>{value}</div>
+      {sub && <div className={`mt-2 tabular-nums ${isHero ? 'text-sm' : 'text-xs'} ${subClass ?? 'text-ink-secondary'}`}>{sub}</div>}
       {children}
     </div>
   );
