@@ -9,7 +9,7 @@ import type { QuantFinalVerdict, QuantFinalVerdictLayer } from './types';
  */
 
 const LAYER_LABELS: Record<string, string> = {
-  gates_six: '六关',
+  gates_six: '价格与估值',
   entry_gate_1x: '1x 入场门',
   sleeve_borrow: '板块额度',
   buy_plan_conditions: '计划条件',

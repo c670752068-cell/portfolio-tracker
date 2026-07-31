@@ -277,7 +277,7 @@ describe('DecisionStatusBar', () => {
     const html = renderToStaticMarkup(<DecisionStatusBar snapshot={snapshot} />);
 
     expect(html).toContain('最接近的是 ');
-    expect(html.replace(/<[^>]*>/g, '')).toContain('最接近的是 AAPL —— 5 层已过 4 层，仅差 六关');
+    expect(html.replace(/<[^>]*>/g, '')).toContain('最接近的是 AAPL —— 5 层已过 4 层，仅差 价格与估值');
     expect(html).toContain('需要：SOXX 跌到 $393.01（还差 10.99pp）');
   });
 

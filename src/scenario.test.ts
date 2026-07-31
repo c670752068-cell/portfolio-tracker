@@ -138,3 +138,33 @@ describe('scenarioFamilyFor', () => {
     expect(scenarioFamilyFor(call.holding)).toBe('NVDA');
   });
 });
+
+describe('index-tracking leveraged ETFs are their own scenario family', () => {
+  // TQQQ/SPXL/SOXL... track an index, so leverageMap gives them no holdable
+  // underlying and the family falls back to the ETF itself.  The target price
+  // is then already the ETF's own price: multiplying by 3 again triples it.
+  const tqqqIbkr = metric({ symbol: 'TQQQ', assetType: 'leveraged_etf', currentPrice: 63.30 }, 20_382.60);
+  const tqqqFutu = metric({ symbol: 'TQQQ', assetType: 'leveraged_etf', currentPrice: 63.30 }, 1_937.39);
+
+  it('applies the target return once when the family is the ETF itself', () => {
+    const result = simulateScenario({
+      family: 'TQQQ', spot: 63.30, targetPrice: 82.29, days: 0,
+      holdings: [tqqqIbkr, tqqqFutu], totalAssets: 137_000,
+    });
+
+    // +30.00% on the ETF price, not +90.00%
+    expect(result.lines[0].pnl).toBeCloseTo(20_382.60 * 0.3, 2);
+    expect(result.lines[1].pnl).toBeCloseTo(1_937.39 * 0.3, 2);
+    expect(result.totalPnl).toBeCloseTo((20_382.60 + 1_937.39) * 0.3, 2);
+  });
+
+  it('still amplifies when the family is a real holdable underlying', () => {
+    // NVDL tracks NVDA 2x: a 10% NVDA move is a 20% NVDL move.
+    const result = simulateScenario({
+      family: 'NVDA', spot: 200, targetPrice: 220, days: 0,
+      holdings: [leveraged], totalAssets: 100_000,
+    });
+
+    expect(result.lines[0].pnl).toBeCloseTo(5_000 * 2 * 0.1, 2);
+  });
+});

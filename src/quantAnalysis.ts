@@ -83,7 +83,7 @@ function validateSymbolAnalysis(value: unknown, symbol: string): asserts value i
     throw new Error(`${symbol} 的量化分析格式无效`);
   }
   if (value.gates !== undefined && !isRecord(value.gates)) {
-    throw new Error(`${symbol} 的六关数据格式无效`);
+    throw new Error(`${symbol} 的价格与估值数据格式无效`);
   }
   if (isRecord(value.signal_stats)) {
     for (const [signal, raw] of Object.entries(value.signal_stats)) {

@@ -59,11 +59,6 @@ const MARKET_GATES = [
   ['valuation', '估值/情绪'],
 ] as const;
 
-const DISCIPLINE_GATES = [
-  ['position_gate', '仓位门'],
-  ['batch_available', '批次'],
-] as const;
-
 function numberText(value: unknown, suffix = ''): string {
   return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)}${suffix}` : '暂无';
 }
@@ -79,12 +74,6 @@ function isApplicable(gate: QuantGateResult | undefined): boolean {
 function gateDetail(key: string, gate: QuantGateResult): string {
   if (key === 'low_zone') {
     return `距最近 250 个交易日高点回撤 ${numberText(gate.current_drawdown_pct, '%')}；达到 ${numberText(gate.threshold_pct, '%')} 进入低位区`;
-  }
-  if (key === 'position_gate') {
-    return `同族仓位 ${numberText(gate.family_share_pct, '%')} / 上限 ${numberText(gate.cap_pct, '%')}`;
-  }
-  if (key === 'batch_available') {
-    return `第 ${integerText(gate.next_batch)} 批 / 共 ${integerText(gate.batch_count)} 批`;
   }
   if (key === 'valuation') {
     const reason = String(gate.reason || '按量化系统当前估值与情绪规则判定');
@@ -135,7 +124,7 @@ function usdPrice(value: number): string {
 }
 
 const FINAL_LAYER_LABELS: Record<string, string> = {
-  gates_six: '六关',
+  gates_six: '价格与估值',
   entry_gate_1x: '1x 入场门',
   sleeve_borrow: '板块额度',
   buy_plan_conditions: '计划条件',
@@ -429,7 +418,7 @@ function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
   const lowZone = gates.low_zone;
   return (
     <details className="mt-3 rounded-lg border border-neutral/40 p-3">
-      <summary className="cursor-pointer font-semibold">六关原始证据（仅作证据，不单独构成结论）</summary>
+      <summary className="cursor-pointer font-semibold">价格与估值证据（仅作证据，不单独构成结论）</summary>
       <div className="mt-3 space-y-3">
         {marketGates.length > 0 && <div className="flex items-center justify-between gap-3">
         <strong className="tabular-nums">市场条件满足 {marketPassed}/{marketGates.length}</strong>
@@ -445,15 +434,6 @@ function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
         </div>
         )}
         <ReferenceInfo gate={gates.valuation} />
-        <details className="rounded-lg border border-neutral/40 p-3">
-        <summary className="cursor-pointer font-semibold">纪律闸门（决定允许买多少），不是行情判断</summary>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {DISCIPLINE_GATES.map(([key, label]) => {
-            const gate = gates[key] ?? { passed: false };
-            return isApplicable(gate) ? <GateCard key={key} gateKey={key} label={label} gate={gate} /> : null;
-          })}
-        </div>
-        </details>
       </div>
     </details>
   );

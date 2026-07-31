@@ -97,7 +97,11 @@ export function simulateScenario(input: ScenarioInput): ScenarioResult {
     }
 
     if (holding.assetType === 'leveraged_etf') {
-      const pnl = marketValue * leverageFactorFor(holding) * r;
+      // Index trackers (TQQQ, SPXL, SOXL…) have no holdable underlying, so the
+      // family falls back to the ETF itself and `r` is already the ETF's own
+      // return.  Amplifying it again would report three times the real move.
+      const amplification = normalize(holding.symbol) === family ? 1 : leverageFactorFor(holding);
+      const pnl = marketValue * amplification * r;
       lines.push(lineFor(holding, 'leveraged_etf', pnl, marketValue));
       continue;
     }

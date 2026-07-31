@@ -46,7 +46,7 @@ describe('nearestVerdict', () => {
       symbol: 'AAPL',
       passedCount: 4,
       totalCount: 5,
-      blockingLabels: ['六关'],
+      blockingLabels: ['价格与估值'],
     });
   });
 

@@ -56,7 +56,7 @@ describe('ConditionLookup', () => {
 
     const html = renderToStaticMarkup(<ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />);
 
-    expect(html).toContain('六关');
+    expect(html).toContain('价格与估值');
     expect(html).toContain('1x 入场门');
     expect(html).toContain('板块额度');
     expect(html).toContain('计划条件');
@@ -540,10 +540,8 @@ describe('ConditionLookup', () => {
     );
 
     expect(html).toContain('<details');
-    expect(html).toContain('纪律闸门（决定允许买多少），不是行情判断');
-    expect(html).toContain('第 2 批 / 共 3 批');
-    expect(html).not.toContain('2.00');
-    expect(html).not.toContain('3.00 批');
+    expect(html).not.toContain('纪律闸门');
+    expect(html).not.toContain('第 2 批 / 共 3 批');
     expect(html).toContain('CNN 46.30');
     expect(html).toContain('纳指100 PE 分位 83.10%');
     expect(html).toContain('SOXX 分位 98.70%');
@@ -969,4 +967,37 @@ describe('ConditionLookup', () => {
     expect(html).toContain('请在持仓表补填买入价');
   });
 
+});
+
+describe('entry evidence shows price and valuation only', () => {
+  it('drops the 六关 wording and the discipline-gate block', () => {
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-07-31T13:14:00-04:00',
+      rule_version: '2.7', disclaimer: '', context: {},
+      symbols: {
+        AVGO: {
+          available: true,
+          gates: {
+            low_zone: { passed: true, applicable: true, current_drawdown_pct: -21.17, threshold_pct: -16.24 },
+            valuation: { passed: true, applicable: true, reason: '估值通过', stock_percentile: 18.8 },
+            signal_triggered: { passed: false, applicable: true, recent_buy_signals: [] },
+            position_gate: { passed: true, applicable: true, family_share_pct: 0, cap_pct: 10 },
+            batch_available: { passed: true, applicable: true, next_batch: 1, batch_count: 3 },
+            daily_fuse: { passed: true, applicable: true, buys_today: 0, max_new_buys: 2 },
+          },
+        },
+      },
+      final_verdict: { symbols: { AVGO: { symbol: 'AVGO', verdict: 'BUY', single_sentence: '条件完整', layers: [] } } },
+    } as unknown as QuantAnalysisSnapshot;
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="AVGO" />,
+    );
+
+    expect(html).not.toContain('六关');
+    expect(html).not.toContain('纪律闸门');
+    expect(html).not.toContain('仓位门');
+    expect(html).not.toContain('批次');
+    expect(html).toContain('低位区');
+  });
 });
