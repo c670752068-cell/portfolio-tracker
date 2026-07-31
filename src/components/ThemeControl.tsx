@@ -26,7 +26,7 @@ export function ThemeControl() {
   }
 
   return (
-    <label className="flex min-h-11 items-center gap-2 rounded-xl border border-neutral/45 bg-surface-raised px-3 text-xs text-ink-secondary">
+    <label className="flex min-h-11 w-fit shrink-0 items-center gap-2 rounded-xl border border-neutral/45 bg-surface-raised px-3 text-xs text-ink-secondary">
       <span aria-hidden="true">◐</span>
       <span className="sr-only">主题</span>
       <select

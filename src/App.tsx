@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AllocationChart } from './components/AllocationChart';
 import { AlertRulesPanel } from './components/AlertRulesPanel';
 import { ConditionLookup } from './components/ConditionLookup';
-import { DecisionStatusBar } from './components/DecisionStatusBar';
 import { BehaviorMirrorCard } from './components/BehaviorMirrorCard';
 import { CashEditor } from './components/CashEditor';
 import { HoldingsTable } from './components/HoldingsTable';
@@ -535,13 +534,15 @@ export default function App() {
   return (
     <div className="mx-auto min-h-full max-w-6xl px-4 py-5 sm:px-6 md:py-8">
       <header className="elev-2 sticky top-0 z-40 -mx-4 mb-6 flex flex-col gap-3 border-b border-neutral/30 bg-surface-base/80 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-display text-2xl font-semibold sm:text-3xl">我的投资组合</h1>
-          <p className="mt-1 text-xs leading-relaxed text-ink-secondary">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</p>
-          {quantAnalysis && <SnapshotStamp snapshot={quantAnalysis} />}
+        <div className="flex items-start justify-between gap-3 md:contents">
+          <div className="min-w-0">
+            <h1 className="text-display text-2xl font-semibold sm:text-3xl">我的投资组合</h1>
+            <p className="mt-1 text-xs leading-relaxed text-ink-secondary">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</p>
+            {quantAnalysis && <SnapshotStamp snapshot={quantAnalysis} />}
+          </div>
+          <ThemeControl />
         </div>
         <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
-          <ThemeControl />
           <nav
             className="relative grid w-full grid-cols-6 rounded-2xl border border-neutral/30 bg-surface-raised p-1 text-[11px] sm:text-sm md:w-[34rem]"
           >
@@ -565,7 +566,6 @@ export default function App() {
       </header>
       {tab === 'dashboard' && (
         <section className="space-y-5">
-          {quantAnalysis && <DecisionStatusBar snapshot={quantAnalysis} />}
           {latestAlert && (
             <div className="rounded-2xl border border-trim/40 border-l-4 border-l-trim bg-trim/10 p-4 text-sm leading-relaxed text-ink-primary">
               <strong><span className="tabular-nums">{latestAlert.symbol}</span> 目标提醒已触发</strong> · <span className="tabular-nums">{latestAlert.last_reminder_at}</span>。只提醒不下单，请在券商 App 手动执行。

@@ -15,7 +15,7 @@ const holdings = [
 afterEach(() => vi.useRealTimers());
 
 describe('ConditionLookup', () => {
-  it('renders the five backend verdict layers and their server-authored trigger-price evidence', () => {
+  it('shows raw evidence without resurrecting the verdict panel', () => {
     const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot & { final_verdict?: Record<string, unknown> };
     snapshot.final_verdict = {
       SOXL: {
@@ -36,11 +36,10 @@ describe('ConditionLookup', () => {
 
     const html = renderToStaticMarkup(<ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />);
 
-    expect(html).toContain('最终裁决（后端唯一结论）');
-    expect(html).toContain('任何一层否决 = 不买');
-    expect(html).toContain('1x 入场门');
-    expect(html).toContain('SOXX → $393.01');
-    expect(html).toContain('约每 5 年一次，长期静默正常');
+    // The verdict panel was removed on purpose; the raw evidence stays.
+    expect(html).not.toContain('最终裁决');
+    expect(html).not.toContain('任何一层否决 = 不买');
+    expect(html).toContain('量化原始证据');
   });
 
   it('keeps all five server-owned verdict rows visible when an older snapshot only exposes blocker and pass lists', () => {
@@ -56,12 +55,9 @@ describe('ConditionLookup', () => {
 
     const html = renderToStaticMarkup(<ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />);
 
-    expect(html).toContain('价格与估值');
-    expect(html).toContain('1x 入场门');
-    expect(html).toContain('板块额度');
-    expect(html).toContain('计划条件');
-    expect(html).toContain('恐慌窗口');
-    expect(html).toContain('需要：SOXX → $393.01');
+    // Verdict layers are gone; raw evidence carries the numbers now.
+    expect(html).not.toContain('最终裁决');
+    expect(html).toContain('量化原始证据');
   });
 
   it('states that the loaded snapshot refreshes every 5 minutes in market and 25 otherwise', () => {
@@ -90,14 +86,14 @@ describe('ConditionLookup', () => {
       <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="SOXL" />,
     );
 
-    expect(html).toContain('SOXL · 等待最终裁决');
-    expect(html).toContain('AMZN · 等待最终裁决');
+    expect(html).toContain('SOXL · 待更新');
+    expect(html).toContain('AMZN · 待更新');
     expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
     expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-neutral');
     expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-trim');
     expect(html).not.toContain('⚪');
     expect(html).not.toContain('🟠 MSFT');
-    expect(html).toContain('AAPL · 等待最终裁决');
+    expect(html).toContain('AAPL · 待更新');
   });
 
   it('renders touch-accessible disclosure controls for sell-rule explanations', () => {
@@ -519,7 +515,7 @@ describe('ConditionLookup', () => {
     expect(far).toContain('未达标');
     expect(far).toContain('value="55.55"');
     expect(far).toContain('dark:');
-    expect(insufficient).toContain('最终裁决待下一份量化快照生成');
+    expect(insufficient).not.toContain('最终裁决');
     expect(insufficient).toContain('text-ink-muted');
     expect(insufficient).toContain('min-w-0');
     expect(insufficient).toContain('overflow-hidden');
@@ -999,5 +995,18 @@ describe('entry evidence shows price and valuation only', () => {
     expect(html).not.toContain('仓位门');
     expect(html).not.toContain('批次');
     expect(html).toContain('低位区');
+  });
+});
+
+describe('verdict panel removed', () => {
+  it('no longer renders the final-verdict block', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+    );
+
+    expect(html).not.toContain('最终裁决');
+    expect(html).not.toContain('任何一层否决');
+    expect(html).toContain('量化原始证据');
+    expect(html).toContain('估值基准');
   });
 });
