@@ -39,7 +39,7 @@ describe('ConditionLookup', () => {
     // The verdict panel was removed on purpose; the raw evidence stays.
     expect(html).not.toContain('最终裁决');
     expect(html).not.toContain('任何一层否决 = 不买');
-    expect(html).toContain('量化原始证据');
+    expect(html).toContain('恐慌抢买窗口');
   });
 
   it('keeps all five server-owned verdict rows visible when an older snapshot only exposes blocker and pass lists', () => {
@@ -57,7 +57,7 @@ describe('ConditionLookup', () => {
 
     // Verdict layers are gone; raw evidence carries the numbers now.
     expect(html).not.toContain('最终裁决');
-    expect(html).toContain('量化原始证据');
+    expect(html).toContain('恐慌抢买窗口');
   });
 
   it('states that the loaded snapshot refreshes every 5 minutes in market and 25 otherwise', () => {
@@ -998,6 +998,36 @@ describe('entry evidence shows price and valuation only', () => {
   });
 });
 
+describe('quant evidence is not collapsed away', () => {
+  it('renders the panic window without the 量化原始证据 disclosure wrapper', () => {
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+    );
+
+    expect(html).not.toContain('量化原始证据（不单独构成结论）');
+    expect(html).not.toContain('量化原始证据');
+    expect(html).toContain('恐慌抢买窗口');
+    expect(html).toContain('1× 基准判定');
+  });
+
+  it('names the moving average as the blocker once the drawdown itself is satisfied', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    const gate = snapshot.panic_window!.symbols.SOXL.entry_gate!;
+    gate.drawdown = { current_pct: 15.86, required_pct: 11, passed: true };
+    gate.passed = false;
+    gate.moving_averages = [
+      { period: 100, value: 176.2, touched: false, gap_pct: 0.24 },
+      { period: 120, value: 170.1, touched: true, gap_pct: 0 },
+    ];
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />,
+    );
+
+    expect(html).toContain('回撤条件已满足，卡在均线：MA100 还差 0.24%');
+  });
+});
+
 describe('valuation price source', () => {
   it('falls back to the quant snapshot price when no holding or monitored quote exists', () => {
     const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
@@ -1021,7 +1051,7 @@ describe('verdict panel removed', () => {
 
     expect(html).not.toContain('最终裁决');
     expect(html).not.toContain('任何一层否决');
-    expect(html).toContain('量化原始证据');
+    expect(html).toContain('恐慌抢买窗口');
     expect(html).toContain('估值基准');
   });
 });

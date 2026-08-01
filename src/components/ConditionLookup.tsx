@@ -17,6 +17,7 @@ import {
   quoteSessionMismatchText,
 } from '../quoteSession';
 import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
+import { finalVerdictWord, SymbolVerdictCard } from './SymbolVerdictCard';
 import { ValuationCard, type ValuationSettings } from './ValuationCard';
 
 type OpportunitySide = 'buy' | 'sell';
@@ -132,10 +133,7 @@ function usdPrice(value: number): string {
  */
 function finalVerdictStatusLabel(snapshot: QuantAnalysisSnapshot | null, symbol: string): string {
   const verdict = snapshot ? finalVerdictSymbols(snapshot)[symbol] : undefined;
-  if (!verdict) return `${symbol} · 待更新`;
-  if (verdict.verdict === 'BUY') return `${symbol} · 条件完整`;
-  if (verdict.verdict === 'NO_BUY') return `${symbol} · 不买`;
-  return `${symbol} · 无法判定`;
+  return `${symbol} · ${finalVerdictWord(verdict)}`;
 }
 
 function finalVerdictTone(snapshot: QuantAnalysisSnapshot | null, symbol: string): StatusTone {
@@ -368,6 +366,10 @@ function OneXEntryGate({ status }: { status: QuantPanicSymbolStatus }) {
   }
   const stateClass = gate.available && gate.passed ? 'border-gain/50 bg-gain/10 text-gain' : 'border-trim/50 bg-trim/10 text-trim';
   const decisionLabel = gate.price_basis === 'close' ? '闭市价' : '判定价';
+  const untouchedText = gate.moving_averages
+    .filter((movingAverage) => !movingAverage.touched)
+    .map((movingAverage) => `MA${movingAverage.period} 还差 ${movingAverage.gap_pct.toFixed(2)}%`)
+    .join('、');
   const referenceLabel = gate.reference_session ? priceSessionLabel(gate.reference_session) : '扩展时段';
   return (
     <div className="mt-3 rounded-lg border border-neutral/40 bg-surface-overlay/50 p-3">
@@ -378,10 +380,19 @@ function OneXEntryGate({ status }: { status: QuantPanicSymbolStatus }) {
         </span>
       </div>
       {!gate.available ? <p className="mt-2 text-xs text-ink-muted">{gate.reason}</p> : <>
-        <div className="mt-3 grid gap-2 text-xs tabular-nums sm:grid-cols-2">
-          <div><span className="text-ink-muted">判定基准</span> {gate.benchmark} {decisionLabel} {nullableUsdPrice(gate.decision_close)}</div>
-          <div><span className="text-ink-muted">自高点回撤</span> {numberText(gate.drawdown.current_pct, '%')}{gate.drawdown.required_pct === null ? '（不适用）' : ` / 阈值 ${numberText(gate.drawdown.required_pct, '%')}`}</div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div>
+            <span className="block text-xs text-ink-muted">判定基准</span>
+            <strong className="text-xl tabular-nums">{gate.benchmark} {decisionLabel} {nullableUsdPrice(gate.decision_close)}</strong>
+          </div>
+          <div>
+            <span className="block text-xs text-ink-muted">自高点回撤</span>
+            <strong className="text-xl tabular-nums">{numberText(gate.drawdown.current_pct, '%')}{gate.drawdown.required_pct === null ? '（不适用）' : ` / 阈值 ${numberText(gate.drawdown.required_pct, '%')}`}</strong>
+          </div>
         </div>
+        {gate.drawdown.passed === true && gate.passed === false && untouchedText && (
+          <p className="mt-3 text-sm font-medium text-trim">回撤条件已满足，卡在均线：{untouchedText}</p>
+        )}
         <div className="mt-2 flex flex-wrap gap-2">
           {gate.moving_averages.map((movingAverage) => <span key={movingAverage.period} className={`rounded-md px-2 py-1 text-xs tabular-nums ${movingAverage.touched ? 'bg-gain/10 text-gain' : 'bg-surface-base text-ink-secondary'}`}>
             MA{movingAverage.period} {movingAverage.touched ? '已触及' : `还差 ${movingAverage.gap_pct.toFixed(2)}%`}
@@ -706,15 +717,14 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
 
       {snapshot && result?.found && (
         <>
+          <SymbolVerdictCard snapshot={snapshot} symbol={result.symbol} />
+
           <div id="buy-condition-detail" className="scroll-mt-4 rounded-xl border border-neutral/40 bg-surface-raised p-4">
-            <details className="mb-4 rounded-lg border border-neutral/40 bg-surface-overlay/25 p-3">
-              <summary className="cursor-pointer text-sm font-semibold text-ink-primary">量化原始证据（不单独构成结论）</summary>
-              <div className="mt-3">
-                {panicStatus?.applicable
-                  ? <PanicWindowStatus status={panicStatus} />
-                  : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} quote={selectedDepthQuote} />}
-              </div>
-            </details>
+            <div className="mb-4">
+              {panicStatus?.applicable
+                ? <PanicWindowStatus status={panicStatus} />
+                : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} quote={selectedDepthQuote} />}
+            </div>
             <ValuationCard
               symbol={result.symbol}
               history={snapshot.pe_history ?? null}
