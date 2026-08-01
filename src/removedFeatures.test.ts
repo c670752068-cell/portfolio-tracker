@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import app from './App.tsx?raw';
+import conditionLookup from './components/ConditionLookup.tsx?raw';
 import kimi from './kimi.ts?raw';
 
 describe('removed analysis surfaces stay removed', () => {
@@ -41,5 +42,11 @@ describe('removed analysis surfaces stay removed', () => {
 
   it('keeps imported image results routed to the dashboard', () => {
     expect(app).toContain("setLastImport({ mode: 'full', result });");
+  });
+
+  it('has no raw buy-condition evidence block', () => {
+    expect(conditionLookup).not.toContain('原始条件证据');
+    expect(conditionLookup).not.toContain('市场条件满足');
+    expect(conditionLookup).not.toContain('估值位置（参考，不参与开窗）');
   });
 });

@@ -128,24 +128,11 @@ describe('ConditionLookup', () => {
     expect(html).toContain('快照 2026-07-15 10:00 ET，12 分钟前');
   });
 
-  it('removes the production signal row while keeping the 3x depth and macro conditions', () => {
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
-    );
-
-    expect(html).toContain('市场条件满足 1/2');
-    expect(html).toContain('低位区');
-    expect(html).not.toContain('买入信号');
-    expect(html).toContain('估值/情绪');
-    expect(html).not.toContain('当日熔断');
-  });
-
   it('renders the server-authored panic status above an applicable 3x symbol card', () => {
     const html = renderToStaticMarkup(
       <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
-    expect(html.indexOf('恐慌抢买窗口')).toBeLessThan(html.indexOf('SOXL 原始条件证据'));
     expect(html).toContain('疯狂提醒中');
     expect(html).toContain('1× 基准判定');
     expect(html).toContain('SOXX 闭市价 $465.00');
@@ -186,60 +173,9 @@ describe('ConditionLookup', () => {
     expect(html).toContain('阈值</span><strong class="text-2xl tabular-nums">21.70%');
     expect(html).toContain('60 日胜率 68.00%');
     expect(html).toContain('（n=25）');
-    expect(html).toContain('个股 PE 分位 45.00%');
     expect(html).not.toContain('CNN 29.00');
     expect(html).not.toContain('SOXX');
     expect(html).not.toContain('纳指100');
-  });
-
-  it('expands the valuation position card by default', () => {
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
-    );
-
-    expect(html).toContain('估值位置（参考，不参与开窗）');
-    expect(html).not.toContain('<summary class="cursor-pointer font-semibold">参考信息（不参与开窗）</summary>');
-  });
-
-  it('renders a low 20.40-percent PE percentile as green with an honest interpretation', () => {
-    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
-    snapshot.symbols.AAPL.gates!.valuation.stock_percentile = 20.4;
-
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
-    );
-
-    expect(html).toContain('aria-label="个股 PE 分位"');
-    expect(html).toContain('aria-valuenow="20.4"');
-    expect(html).toContain('data-zone="low"');
-    expect(html).toContain('bg-gain');
-    expect(html).toContain('分位 20.40% = 当前 PE 低于过去约 80% 的时间');
-  });
-
-  it('renders an 85-percent PE percentile as a red historical-high position', () => {
-    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
-    snapshot.symbols.AAPL.gates!.valuation.stock_percentile = 85;
-
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
-    );
-
-    expect(html).toContain('data-zone="high"');
-    expect(html).toContain('bg-loss');
-    expect(html).toContain('分位 85.00% = 当前 PE 低于过去约 15% 的时间');
-  });
-
-  it('shows unavailable valuation data without drawing a fake percentile bar', () => {
-    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
-    snapshot.symbols.AAPL.gates!.valuation.stock_percentile = null;
-
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
-    );
-
-    expect(html).toContain('个股 PE 分位');
-    expect(html).toContain('暂无');
-    expect(html).not.toContain('role="meter"');
   });
 
   it('renders backend-authored ready and near depth highlights without recomputing thresholds', () => {
@@ -528,20 +464,6 @@ describe('ConditionLookup', () => {
 
     expect(html).toContain('恐慌位 ✓ 已触发');
     expect(html).toContain('触发时段：盘中');
-  });
-
-  it('collapses position and batch into an integer-formatted discipline group', () => {
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
-    );
-
-    expect(html).toContain('<details');
-    expect(html).not.toContain('纪律闸门');
-    expect(html).not.toContain('第 2 批 / 共 3 批');
-    expect(html).toContain('CNN 46.30');
-    expect(html).toContain('纳指100 PE 分位 83.10%');
-    expect(html).toContain('SOXX 分位 98.70%');
-    expect(html).toContain('个股 PE 分位 暂无');
   });
 
   it('shows the exact snapshot age when quant data is stale', () => {
@@ -994,7 +916,6 @@ describe('entry evidence shows price and valuation only', () => {
     expect(html).not.toContain('纪律闸门');
     expect(html).not.toContain('仓位门');
     expect(html).not.toContain('批次');
-    expect(html).toContain('低位区');
   });
 });
 

@@ -8,6 +8,7 @@ import { formatDisplayMoney } from '../displayCurrency';
 import { formatMoney } from '../format';
 import { REFRESH_CADENCE } from '../refreshCadence';
 import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
+import { finalVerdictWord } from '../finalVerdictWord';
 import { finalVerdictSymbols, isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import { findSellFamily, resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
 import {
@@ -16,8 +17,8 @@ import {
   priceSessionLabel,
   quoteSessionMismatchText,
 } from '../quoteSession';
-import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantGateResult, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
-import { finalVerdictWord, SymbolVerdictCard } from './SymbolVerdictCard';
+import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantPanicSymbolStatus, QuantSellFamily, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
+import { SymbolVerdictCard } from './SymbolVerdictCard';
 import { ValuationCard, type ValuationSettings } from './ValuationCard';
 
 type OpportunitySide = 'buy' | 'sell';
@@ -56,41 +57,12 @@ const RISK_ROLE_LABELS: Record<string, string> = {
   underlying: '正股/单倍 ETF',
 };
 
-const MARKET_GATES = [
-  ['low_zone', '低位区'],
-  ['valuation', '估值/情绪'],
-] as const;
-
 function numberText(value: unknown, suffix = ''): string {
   return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(2)}${suffix}` : '暂无';
 }
 
 function integerText(value: unknown): string {
   return typeof value === 'number' && Number.isFinite(value) ? String(Math.trunc(value)) : '暂无';
-}
-
-function isApplicable(gate: QuantGateResult | undefined): boolean {
-  return gate?.applicable !== false;
-}
-
-function gateDetail(key: string, gate: QuantGateResult): string {
-  if (key === 'low_zone') {
-    return `距最近 250 个交易日高点回撤 ${numberText(gate.current_drawdown_pct, '%')}；达到 ${numberText(gate.threshold_pct, '%')} 进入低位区`;
-  }
-  if (key === 'valuation') {
-    const reason = String(gate.reason || '按量化系统当前估值与情绪规则判定');
-    return `${reason}；CNN ${numberText(gate.cnn)}（<30 恐慌开窗）；纳指100 PE 分位 ${numberText(gate.ndx_percentile, '%')}；SOXX 分位 ${numberText(gate.soxx_percentile, '%')}；个股 PE 分位 ${numberText(gate.stock_percentile, '%')}`;
-  }
-  return String(gate.reason || '按量化系统当前估值与情绪规则判定');
-}
-
-function GateCard({ gateKey, label, gate }: { gateKey: string; label: string; gate: QuantGateResult }) {
-  return (
-    <div className="rounded-lg border border-neutral/40 p-3">
-      <div className="font-semibold"><span className={gate.passed ? 'text-gain' : 'text-loss'}>{gate.passed ? '✓' : '✗'}</span> {label}</div>
-      <div className="mt-1 text-xs tabular-nums text-ink-muted">{gateDetail(gateKey, gate)}</div>
-    </div>
-  );
 }
 
 function StatWindow({ label, stat }: { label: string; stat: QuantSignalStatWindow }) {
@@ -247,107 +219,6 @@ function DepthHighlight({
           : <><strong className="text-xl">60 日胜率 {(depth.win_rate_60d * 100).toFixed(2)}%</strong><span className="ml-2 text-xs">（n={depth.n}）</span></>}
       </div>
     </div>
-  );
-}
-
-type ValuationPositionKind = 'pe' | 'indicator' | 'cnn';
-
-function ValuationPosition({
-  label,
-  value,
-  kind,
-}: {
-  label: string;
-  value: unknown;
-  kind: ValuationPositionKind;
-}) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return <div className="rounded-lg bg-surface-overlay/50 p-3 text-sm text-ink-muted">{label} 暂无</div>;
-  }
-  const position = Math.max(0, Math.min(100, value));
-  const zone = position < 30 ? 'low' : position > 70 ? 'high' : 'neutral';
-  const marker = zone === 'low'
-    ? 'bg-gain'
-    : zone === 'high'
-      ? 'bg-loss'
-      : 'bg-neutral';
-  const suffix = kind === 'cnn' ? '' : '%';
-  const lowerTime = Math.max(0, 100 - position);
-  const interpretation = kind === 'pe'
-    ? `分位 ${position.toFixed(2)}% = 当前 PE 低于过去约 ${lowerTime.toFixed(0)}% 的时间`
-    : kind === 'indicator'
-      ? `分位 ${position.toFixed(2)}% = 当前指标低于过去约 ${lowerTime.toFixed(0)}% 的时间`
-      : `CNN ${position.toFixed(2)} / 100，数值越低代表市场情绪越恐慌`;
-  return (
-    <div className="rounded-lg bg-surface-overlay/50 p-3">
-      <div className="text-sm font-medium tabular-nums">{label} {position.toFixed(2)}{suffix}</div>
-      <div
-        role="meter"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={position}
-        data-zone={zone}
-        className="relative mt-3 h-2 rounded-full bg-gradient-to-r from-gain/20 via-neutral/40 to-loss/20"
-      >
-        <span
-          aria-hidden="true"
-          className={`absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded ${marker}`}
-          style={{ left: `${position}%` }}
-        />
-      </div>
-      <div className="mt-2 text-xs tabular-nums text-ink-muted">{interpretation}</div>
-    </div>
-  );
-}
-
-function ReferenceInfo({ gate }: { gate: QuantGateResult | undefined }) {
-  if (!gate) return null;
-  const stockOnly = gate.reference_only === true;
-  const rows = stockOnly
-    ? [{ label: '个股 PE 分位', value: gate.stock_percentile, kind: 'pe' as const }]
-    : [
-        { label: 'CNN', value: gate.cnn, kind: 'cnn' as const },
-        { label: '纳指100 PE 分位', value: gate.ndx_percentile, kind: 'pe' as const },
-        { label: 'SOXX 分位', value: gate.soxx_percentile, kind: 'indicator' as const },
-      ];
-  return (
-    <div className="rounded-lg border border-neutral/40 p-3">
-      <div className="font-semibold">估值位置（参考，不参与开窗）</div>
-      <div className="mt-3 grid gap-2">
-        {rows.map((row) => <ValuationPosition key={row.label} {...row} />)}
-      </div>
-    </div>
-  );
-}
-
-function BuyConditions({ analysis }: { analysis: QuantSymbolAnalysis }) {
-  const gates = analysis.gates ?? {};
-  const marketGates = MARKET_GATES
-    .map(([key, label]) => ({ key, label, gate: gates[key] ?? { passed: false } }))
-    .filter((item) => isApplicable(item.gate));
-  const marketPassed = marketGates.filter((item) => item.gate.passed).length;
-  const lowZone = gates.low_zone;
-  return (
-    <details className="mt-3 rounded-lg border border-neutral/40 p-3">
-      <summary className="cursor-pointer font-semibold">价格与估值证据（仅作证据，不单独构成结论）</summary>
-      <div className="mt-3 space-y-3">
-        {marketGates.length > 0 && <div className="flex items-center justify-between gap-3">
-        <strong className="tabular-nums">市场条件满足 {marketPassed}/{marketGates.length}</strong>
-        <span className="text-xs text-ink-muted">市场判断</span>
-        </div>}
-        {marketGates.length > 0 && <div className="grid gap-2 sm:grid-cols-2">
-        {marketGates.map((item) => <GateCard key={item.key} gateKey={item.key} label={item.label} gate={item.gate} />)}
-        </div>}
-        {lowZone && !isApplicable(lowZone) && !analysis.depth_window?.applicable && (
-        <div className="rounded-lg border border-neutral/40 p-3 text-sm text-ink-secondary">
-          <div className="font-semibold">价格回撤参考</div>
-          <div className="mt-1 text-xs tabular-nums text-ink-muted">距最近 250 个交易日高点回撤 {numberText(lowZone.current_drawdown_pct, '%')}，不参与个股市场条件计数。</div>
-        </div>
-        )}
-        <ReferenceInfo gate={gates.valuation} />
-      </div>
-    </details>
   );
 }
 
@@ -734,10 +605,9 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
               displayCurrency={displayCurrency}
               rates={rates}
             />
-            <h3 className="text-lg font-semibold">{result.symbol} 原始条件证据</h3>
-            {!result.analysis.available ? (
+            {!result.analysis.available && (
               <p className="mt-3 text-trim">当前无可用判定：{result.analysis.error || '数据未生成'}</p>
-            ) : <BuyConditions analysis={result.analysis} />}
+            )}
           </div>
 
           <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4">
