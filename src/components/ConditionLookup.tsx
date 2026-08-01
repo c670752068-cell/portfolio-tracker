@@ -519,6 +519,8 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
       .map((item) => ({ symbol: item.symbol, state: resolveSellStatus(snapshot, item.symbol).state }))
       .filter((item) => item.state !== 'none'),
   } : {};
+  const hasSignalStats = Object.keys(result?.analysis?.signal_stats ?? {}).length > 0;
+  const hasDepthStats = Boolean(result?.analysis?.depth_stats);
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
   const selectedHoldingQuotePrice = depthQuotePrice(holdings, new Map(), selectedSymbol);
@@ -612,9 +614,10 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
 
           <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4">
             <h3 className="font-semibold">历史事件统计</h3>
-            {Object.keys(result.analysis.signal_stats || {}).length === 0 ? (
+            {!hasSignalStats && !hasDepthStats && (
               <p className="mt-2 text-sm text-ink-muted">当前没有可展示的历史事件样本。</p>
-            ) : Object.entries(result.analysis.signal_stats || {}).map(([name, stats]) => (
+            )}
+            {Object.entries(result.analysis.signal_stats || {}).map(([name, stats]) => (
               <div key={name} className="mt-3">
                 <div className="text-sm font-medium">{name}</div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-3">

@@ -78,6 +78,22 @@ describe('SymbolVerdictCard', () => {
     expect(html).toContain('不适用');
   });
 
+  it('will not tick a layer that only passed because its inputs are missing', () => {
+    const missing: QuantFinalVerdict = {
+      symbol: 'TQQQ',
+      verdict: 'NO_BUY',
+      layers: [
+        { layer: 'gates_six', label: '估值/情绪', state: 'passed', reason: '指数估值或 CNN 情绪数据缺失' },
+      ],
+    };
+
+    const html = renderToStaticMarkup(<SymbolVerdictCard snapshot={snapshotWith(missing)} symbol="TQQQ" />);
+
+    expect(html).toContain('⚠');
+    expect(html).toContain('（因数据缺失而未拦截，非真实通过）');
+    expect(html).not.toContain('✓');
+  });
+
   it('describes a BUY verdict as satisfied conditions, never as an action', () => {
     const avgo: QuantFinalVerdict = {
       symbol: 'AVGO',

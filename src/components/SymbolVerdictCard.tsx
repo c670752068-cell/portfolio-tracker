@@ -1,4 +1,5 @@
 import { finalVerdictWord } from '../finalVerdictWord';
+import { isHonestPass } from '../gateHonesty';
 import { finalVerdictSymbols } from '../quantAnalysis';
 import { dedupeVerdictSentence, layerRequirements } from '../silenceBroadcast';
 import type { QuantAnalysisSnapshot, QuantFinalVerdictLayer } from '../types';
@@ -9,10 +10,12 @@ import type { QuantAnalysisSnapshot, QuantFinalVerdictLayer } from '../types';
  * being invisible behind a collapsed disclosure.
  */
 
-type LayerState = 'passed' | 'failed' | 'not_applicable' | 'unknown';
+type LayerState = 'passed' | 'passed_on_missing_data' | 'failed' | 'not_applicable' | 'unknown';
 
 const LAYER_STATE_VIEW = {
   passed: { icon: '✓', className: 'text-gain', note: '' },
+  // The verdict stays the server's `passed`; only the icon and the wording change.
+  passed_on_missing_data: { icon: '⚠', className: 'text-trim', note: '（因数据缺失而未拦截，非真实通过）' },
   failed: { icon: '✗', className: 'text-loss', note: '' },
   not_applicable: { icon: '○', className: 'text-ink-muted', note: '不适用' },
   unknown: { icon: '○', className: 'text-ink-muted', note: '' },
@@ -24,7 +27,8 @@ const VERDICT_BADGE = {
 } as const;
 
 function layerState(layer: QuantFinalVerdictLayer): LayerState {
-  if (layer.state === 'passed' || layer.state === 'failed' || layer.state === 'not_applicable') return layer.state;
+  if (layer.state === 'passed') return isHonestPass(true, layer.reason) ? 'passed' : 'passed_on_missing_data';
+  if (layer.state === 'failed' || layer.state === 'not_applicable') return layer.state;
   return 'unknown';
 }
 
@@ -56,8 +60,8 @@ export function SymbolVerdictCard({ snapshot, symbol }: { snapshot: QuantAnalysi
                 <span className={`shrink-0 font-semibold ${view.className}`} data-layer-state={state}>{view.icon}</span>
                 <span className="min-w-0">
                   <span className="font-medium">{layer.label ?? layer.layer}</span>
-                  {view.note && <span className="ml-1 text-ink-muted">{view.note}</span>}
                   {layer.reason && <span className="ml-1 text-ink-muted">{layer.reason}</span>}
+                  {view.note && <span className="ml-1 text-ink-muted">{view.note}</span>}
                 </span>
               </li>
             );

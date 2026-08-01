@@ -949,6 +949,35 @@ describe('quant evidence is not collapsed away', () => {
   });
 });
 
+describe('historical sample block', () => {
+  it('does not open with 没有样本 when a drawdown-depth sample exists', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.signal_stats = {};
+    snapshot.symbols.AAPL.depth_stats = {
+      level_pct: 10, n: 24, win_rate_60d: 0.791667, sample_insufficient: false, bear_included: true,
+    };
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+    );
+
+    expect(html).not.toContain('当前没有可展示的历史事件样本');
+    expect(html).toContain('60 日历史成功率 79.17%（n=24）');
+  });
+
+  it('still says so when neither sample exists', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AAPL.signal_stats = {};
+    snapshot.symbols.AAPL.depth_stats = null;
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('当前没有可展示的历史事件样本');
+  });
+});
+
 describe('valuation price source', () => {
   it('falls back to the quant snapshot price when no holding or monitored quote exists', () => {
     const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
