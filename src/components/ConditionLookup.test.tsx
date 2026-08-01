@@ -998,6 +998,21 @@ describe('entry evidence shows price and valuation only', () => {
   });
 });
 
+describe('valuation price source', () => {
+  it('falls back to the quant snapshot price when no holding or monitored quote exists', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    (snapshot.symbols.AAPL.depth_window as unknown as Record<string, unknown>).current_price = 308.91;
+
+    const html = renderToStaticMarkup(
+      <ConditionLookup snapshot={snapshot} holdings={[]} monitoredQuotes={new Map()} initialSymbol="AAPL" />,
+    );
+
+    expect(html).not.toContain('data-valuation-field="price">股价 暂无');
+    expect(html).toContain('data-valuation-field="price">股价 $308.91');
+    expect(html).toContain('量化快照价');
+  });
+});
+
 describe('verdict panel removed', () => {
   it('no longer renders the final-verdict block', () => {
     const html = renderToStaticMarkup(

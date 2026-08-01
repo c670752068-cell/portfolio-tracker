@@ -10,7 +10,7 @@ export type AssetType = 'stock' | 'etf' | 'leveraged_etf' | 'option' | 'fund' | 
 
 export type QuoteProvider = 'none' | 'finnhub' | 'fmp' | 'alphavantage' | 'proxy';
 
-export type QuoteSource = QuoteProvider | 'delta_estimate';
+export type QuoteSource = QuoteProvider | 'delta_estimate' | 'quant';
 
 export type PriceSession = 'pre' | 'regular' | 'post' | 'overnight' | 'closed';
 

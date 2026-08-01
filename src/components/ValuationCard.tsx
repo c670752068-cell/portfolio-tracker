@@ -24,7 +24,7 @@ interface ValuationCardProps {
   settings: ValuationSettings;
   alphaSnapshot?: PeSnapshot | null;
   currentPrice?: number | null;
-  priceSource?: 'holding' | 'monitored' | 'unavailable';
+  priceSource?: 'holding' | 'monitored' | 'quant' | 'unavailable';
   displayCurrency?: DisplayCurrency;
   rates?: ExchangeRates;
 }
@@ -121,7 +121,9 @@ function priceSourceText(
     ? '持仓报价'
     : priceSource === 'monitored'
       ? '监控池报价'
-      : '暂无';
+      : priceSource === 'quant'
+        ? '量化快照价'
+        : '暂无';
   return `价格：${label}（${displayCurrency}）`;
 }
 

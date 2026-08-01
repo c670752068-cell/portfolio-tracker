@@ -3,6 +3,7 @@ import { buildAlertHoldingOptions } from '../alertRules';
 import { CASH_EQUIVALENT_SYMBOLS } from '../assetClass';
 import { buildDepthPriceView } from '../depthPrice';
 import { depthQuotePrice, depthQuoteSnapshot, type DepthQuote } from '../depthQuotePrice';
+import { quantSnapshotQuote } from '../depthWindowPrice';
 import { formatDisplayMoney } from '../displayCurrency';
 import { formatMoney } from '../format';
 import { REFRESH_CADENCE } from '../refreshCadence';
@@ -639,13 +640,17 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
   const selectedHoldingQuotePrice = depthQuotePrice(holdings, new Map(), selectedSymbol);
-  const selectedDepthQuotePrice = depthQuotePrice(holdings, monitoredQuotes, selectedSymbol);
+  const selectedMonitoredQuotePrice = depthQuotePrice(holdings, monitoredQuotes, selectedSymbol);
+  const selectedQuantQuotePrice = quantSnapshotQuote(snapshot, selectedSymbol)?.price ?? null;
+  const selectedDepthQuotePrice = selectedMonitoredQuotePrice ?? selectedQuantQuotePrice;
   const selectedDepthQuote = depthQuoteSnapshot(holdings, monitoredQuotes, selectedSymbol);
   const selectedDepthPriceSource = selectedHoldingQuotePrice !== null
     ? 'holding'
-    : selectedDepthQuotePrice !== null
+    : selectedMonitoredQuotePrice !== null
       ? 'monitored'
-      : 'unavailable';
+      : selectedQuantQuotePrice !== null
+        ? 'quant'
+        : 'unavailable';
   const sellStatusLabel = (optionSymbol: string, fallbackLabel: string) => {
     const status = resolveSellStatus(snapshot, optionSymbol);
     if (status.state === 'window_open') return `${fallbackLabel} · 卖出窗口开启`;
