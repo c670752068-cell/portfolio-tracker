@@ -519,8 +519,9 @@ export function ConditionLookup({ snapshot, holdings = [], monitoredQuotes = new
       .map((item) => ({ symbol: item.symbol, state: resolveSellStatus(snapshot, item.symbol).state }))
       .filter((item) => item.state !== 'none'),
   } : {};
-  const hasSignalStats = Object.keys(result?.analysis?.signal_stats ?? {}).length > 0;
-  const hasDepthStats = Boolean(result?.analysis?.depth_stats);
+  const foundAnalysis = result?.found ? result.analysis : undefined;
+  const hasSignalStats = Object.keys(foundAnalysis?.signal_stats ?? {}).length > 0;
+  const hasDepthStats = Boolean(foundAnalysis?.depth_stats);
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
   const selectedHoldingQuotePrice = depthQuotePrice(holdings, new Map(), selectedSymbol);
