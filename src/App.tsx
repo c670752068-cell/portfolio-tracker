@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AllocationChart } from './components/AllocationChart';
 import { AlertRulesPanel } from './components/AlertRulesPanel';
-import { ConditionLookup } from './components/ConditionLookup';
 import { BehaviorMirrorCard } from './components/BehaviorMirrorCard';
 import { CashEditor } from './components/CashEditor';
+import { SellWindowSection } from './components/SellWindowSection';
 import { DecisionStatusBar } from './components/DecisionStatusBar';
 import { HoldingsTable } from './components/HoldingsTable';
 import { ImageImportPanel } from './components/ImageImportPanel';
@@ -38,7 +38,7 @@ import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
 
-type Tab = 'dashboard' | 'holdings' | 'conditions' | 'calculator' | 'settings' | 'valuation';
+type Tab = 'dashboard' | 'holdings' | 'calculator' | 'settings' | 'valuation';
 type QuoteRefreshReason = 'manual' | 'daily' | 'session';
 
 const DAILY_QUOTE_SYNC_KEY = 'portfolio-tracker:daily-quote-sync-key-v1';
@@ -265,7 +265,7 @@ export default function App() {
   const refreshQuantAnalysis = useCallback(async () => {
     const url = getServerQuantAnalysisUrl();
     if (!url) {
-      setQuantAnalysisStatus({ loading: false, error: '量化条件查询仅在 VPS 入口可用', stale: false });
+      setQuantAnalysisStatus({ loading: false, error: '量化决策数据仅在 VPS 入口可用', stale: false });
       return;
     }
     setQuantAnalysisStatus((status) => ({ ...status, loading: true, error: '' }));
@@ -530,7 +530,7 @@ export default function App() {
     setTab(next);
   }
 
-  const tabIndex = ['dashboard', 'holdings', 'conditions', 'calculator', 'settings', 'valuation'].indexOf(tab);
+  const tabIndex = ['dashboard', 'holdings', 'calculator', 'settings', 'valuation'].indexOf(tab);
 
   return (
     <div className="mx-auto min-h-full max-w-6xl px-4 py-5 sm:px-6 md:py-8">
@@ -545,11 +545,11 @@ export default function App() {
         </div>
         <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
           <nav
-            className="relative grid w-full grid-cols-6 rounded-2xl border border-neutral/30 bg-surface-raised p-1 text-[11px] sm:text-sm md:w-[34rem]"
+            className="relative grid w-full grid-cols-5 rounded-2xl border border-neutral/30 bg-surface-raised p-1 text-[11px] sm:text-sm md:w-[28rem]"
           >
             <span
               aria-hidden="true"
-              className="absolute bottom-1 left-1 top-1 w-[calc((100%_-_0.5rem)/6)] rounded-xl bg-buy transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
+              className="absolute bottom-1 left-1 top-1 w-[calc((100%_-_0.5rem)/5)] rounded-xl bg-buy transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
               style={{ transform: `translateX(${tabIndex * 100}%)` }}
             />
             <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => changeTab('dashboard')} />
@@ -558,10 +558,9 @@ export default function App() {
               active={tab === 'holdings'}
               onClick={() => changeTab('holdings')}
             />
-            <TabBtn label="条件查询" active={tab === 'conditions'} onClick={() => changeTab('conditions')} />
             <TabBtn label="计算器" active={tab === 'calculator'} onClick={() => changeTab('calculator')} />
             <TabBtn label="设置" active={tab === 'settings'} onClick={() => changeTab('settings')} />
-            <TabBtn label="估值" active={tab === 'valuation'} onClick={() => changeTab('valuation')} />
+            <TabBtn label="决策" active={tab === 'valuation'} onClick={() => changeTab('valuation')} />
           </nav>
         </div>
       </header>
@@ -617,23 +616,13 @@ export default function App() {
             onUpdate={updateHolding}
             onDelete={deleteHolding}
           />
-          <CashEditor cash={portfolio.cash} rates={rates} onChange={setCash} />
-        </section>
-      )}
-
-      {tab === 'conditions' && (
-        <section>
-          <ConditionLookup
+          <SellWindowSection
             snapshot={quantAnalysis}
             holdings={portfolio.holdings}
-            monitoredQuotes={monitoredQuotes}
-            loading={quantAnalysisStatus.loading}
-            error={quantAnalysisStatus.error}
-            onRefresh={refreshQuantAnalysis}
             displayCurrency={settings.displayCurrency}
             rates={rates}
-            valuationSettings={settings}
           />
+          <CashEditor cash={portfolio.cash} rates={rates} onChange={setCash} />
         </section>
       )}
 
@@ -672,7 +661,18 @@ export default function App() {
 
       {tab === 'valuation' && (
         <section>
-          <ValuationPanel snapshot={quantAnalysis} onDirtyChange={setValuationEditorDirty} />
+          <ValuationPanel
+            snapshot={quantAnalysis}
+            onDirtyChange={setValuationEditorDirty}
+            holdings={portfolio.holdings}
+            monitoredQuotes={monitoredQuotes}
+            quantLoading={quantAnalysisStatus.loading}
+            quantError={quantAnalysisStatus.error}
+            onRefreshQuant={refreshQuantAnalysis}
+            displayCurrency={settings.displayCurrency}
+            rates={rates}
+            valuationSettings={settings}
+          />
         </section>
       )}
 

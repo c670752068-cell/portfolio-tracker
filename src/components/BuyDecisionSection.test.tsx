@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { depthQuotePrice } from '../depthQuotePrice';
 import { quantAnalysisFixture } from '../testFixtures/quantAnalysis';
 import type { QuantAnalysisSnapshot } from '../types';
-import { ConditionLookup } from './ConditionLookup';
+import { BuyDecisionSection } from './BuyDecisionSection';
 
 const holdings = [
   { id: 'msft', symbol: 'MSFT', name: '微软', shares: 10, buyPrice: 300, currentPrice: 400, sector: '科技', currency: 'USD' as const, assetType: 'stock' as const, broker: 'IBKR' },
@@ -14,7 +14,7 @@ const holdings = [
 
 afterEach(() => vi.useRealTimers());
 
-describe('ConditionLookup', () => {
+describe('BuyDecisionSection', () => {
   it('shows raw evidence without resurrecting the verdict panel', () => {
     const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot & { final_verdict?: Record<string, unknown> };
     snapshot.final_verdict = {
@@ -34,7 +34,7 @@ describe('ConditionLookup', () => {
       },
     };
 
-    const html = renderToStaticMarkup(<ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />);
+    const html = renderToStaticMarkup(<BuyDecisionSection snapshot={snapshot} initialSymbol="SOXL" />);
 
     // The verdict panel was removed on purpose; the raw evidence stays.
     expect(html).not.toContain('最终裁决');
@@ -53,7 +53,7 @@ describe('ConditionLookup', () => {
       },
     };
 
-    const html = renderToStaticMarkup(<ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />);
+    const html = renderToStaticMarkup(<BuyDecisionSection snapshot={snapshot} initialSymbol="SOXL" />);
 
     // Verdict layers are gone; raw evidence carries the numbers now.
     expect(html).not.toContain('最终裁决');
@@ -62,7 +62,7 @@ describe('ConditionLookup', () => {
 
   it('states that the loaded snapshot refreshes every 5 minutes in market and 25 otherwise', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('盘中每 5 分钟；其他时段每 25 分钟自动更新');
@@ -70,7 +70,7 @@ describe('ConditionLookup', () => {
 
   it('uses a locked snapshot-symbol select and filters cash equivalents', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('<select');
@@ -83,38 +83,14 @@ describe('ConditionLookup', () => {
 
   it('uses final-verdict status dots rather than independently derived opportunity states', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('SOXL · 待更新');
     expect(html).toContain('AMZN · 待更新');
-    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
     expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-neutral');
-    expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-trim');
     expect(html).not.toContain('⚪');
-    expect(html).not.toContain('🟠 MSFT');
     expect(html).toContain('AAPL · 待更新');
-  });
-
-  it('renders touch-accessible disclosure controls for sell-rule explanations', () => {
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="AAPL" />,
-    );
-
-    expect(html).toContain('aria-label="说明：修复期口径"');
-    expect(html).toContain('aria-label="说明：止盈阶梯适用条件"');
-    expect(html).toContain('min-h-11');
-    expect(html).not.toContain('title="这是市场维度');
-    expect(html).not.toContain('title="只在浮盈达到最低档后适用');
-  });
-
-  it('omits an empty sell-status suffix instead of appending dot-none', () => {
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="AAPL" />,
-    );
-
-    expect(html).not.toContain('· 无</option>');
-    expect(html).toContain('TQQQ · 市值 $600.00 · LONGPORT</option>');
   });
 
   it('shows successful refresh feedback with the snapshot timestamp and minute age', () => {
@@ -122,7 +98,7 @@ describe('ConditionLookup', () => {
     vi.setSystemTime(new Date('2026-07-15T14:12:59.000Z'));
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} onRefresh={() => undefined} />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} onRefresh={() => undefined} />,
     );
 
     expect(html).toContain('快照 2026-07-15 10:00 ET，12 分钟前');
@@ -130,7 +106,7 @@ describe('ConditionLookup', () => {
 
   it('renders the server-authored panic status above an applicable 3x symbol card', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('疯狂提醒中');
@@ -145,7 +121,7 @@ describe('ConditionLookup', () => {
 
   it('shows the Shanghai checkpoint status without inventing a notification result', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('定时审查：夜盘审查');
@@ -156,7 +132,7 @@ describe('ConditionLookup', () => {
 
   it('does not render a panic status for a symbol absent from the backend block', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
     );
 
     expect(html).not.toContain('恐慌抢买窗口');
@@ -164,7 +140,7 @@ describe('ConditionLookup', () => {
 
   it('renders stock own-depth first and removes CNN SOXX and NDX from its card', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
     );
 
     expect(html).toContain('深度买入窗口（个股）');
@@ -180,10 +156,10 @@ describe('ConditionLookup', () => {
 
   it('renders backend-authored ready and near depth highlights without recomputing thresholds', () => {
     const ready = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
     );
     const near = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AMZN" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="AMZN" />,
     );
 
     expect(ready).toContain('✓ 已达标');
@@ -220,7 +196,7 @@ describe('ConditionLookup', () => {
     }];
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={quotedHoldings} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={snapshot} holdings={quotedHoldings} initialSymbol="AAPL" />,
     );
 
     expect(html).toContain('现价 $384.98');
@@ -258,7 +234,7 @@ describe('ConditionLookup', () => {
     }];
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={quotedHoldings} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={snapshot} holdings={quotedHoldings} initialSymbol="AAPL" />,
     );
 
     expect(html).toContain('现价 $388.00（盘前 09:20 ET）');
@@ -291,7 +267,7 @@ describe('ConditionLookup', () => {
     }];
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={legacyHoldings} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={snapshot} holdings={legacyHoldings} initialSymbol="AAPL" />,
     );
 
     expect(html).toContain('现价 $388.00');
@@ -328,7 +304,7 @@ describe('ConditionLookup', () => {
     }];
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={closedHoldings} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={snapshot} holdings={closedHoldings} initialSymbol="AAPL" />,
     );
 
     expect(html).toContain('休市 · 上一交易日收盘价 $390.34');
@@ -345,7 +321,7 @@ describe('ConditionLookup', () => {
     };
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="AAPL" />,
     );
 
     expect(html).toContain('夜盘价格暂无（数据源不覆盖）');
@@ -384,7 +360,7 @@ describe('ConditionLookup', () => {
     };
 
     const html = renderToStaticMarkup(
-      <ConditionLookup
+      <BuyDecisionSection
         snapshot={snapshot}
         holdings={[]}
         monitoredQuotes={new Map([['AAPL', 384.98]])}
@@ -408,7 +384,7 @@ describe('ConditionLookup', () => {
     };
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="AAPL" />,
     );
 
     expect(html).toContain('现价 $380.00');
@@ -421,7 +397,7 @@ describe('ConditionLookup', () => {
 
   it('keeps the percentage-only card when neither quant nor quote prices exist', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
     );
 
     expect(html).toContain('当前回撤');
@@ -442,10 +418,10 @@ describe('ConditionLookup', () => {
       },
     };
     const far = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="AMZN" />,
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="AMZN" />,
     );
     const insufficient = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(far).toContain('未达标');
@@ -459,7 +435,7 @@ describe('ConditionLookup', () => {
 
   it('highlights the panic result and names its trigger session', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('恐慌位 ✓ 已触发');
@@ -472,7 +448,7 @@ describe('ConditionLookup', () => {
       generated_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
     };
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('量化分析数据 25 小时前，可能过期');
@@ -480,7 +456,7 @@ describe('ConditionLookup', () => {
 
   it('shows the mandatory warning instead of a win rate for samples below 20', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('5 日');
@@ -493,7 +469,7 @@ describe('ConditionLookup', () => {
 
   it('shows the mandatory warning for an insufficient drawdown-depth sample', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('回撤深度 60%');
@@ -519,370 +495,12 @@ describe('ConditionLookup', () => {
       },
     };
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('回撤深度 60%');
     expect(html).toContain('60 日历史成功率 68.00%（n=25）');
     expect(html).toContain('含熊市样本：是');
-  });
-
-  it('renders a held-only sell selector and the server-authored repair window', () => {
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="AAPL" />,
-    );
-
-    expect(html).toContain('aria-label="卖出持仓标的"');
-    expect(html).toContain('value="MSFT"');
-    expect(html).toContain('value="MSFU"');
-    expect(html).toContain('value="TQQQ"');
-    expect(html).not.toContain('value="SGOV"');
-    expect(html).toContain('卖出窗口未开启：深跌修复期内，耐心持有（基准日 2026-03-30）');
-    expect(html).toContain('量化剧本参考比例 50%');
-    expect(html).toContain('市场亢奋·量化剧本参考：清仓杠杆品种或调仓 SGOV');
-    expect(html).toContain('止盈阶梯参考 · 剧本：个股');
-    expect(html).toContain('（观察期，未正式生效）');
-    expect(html).toContain('触发依据：知足常乐');
-    expect(html).toContain('自基准日 +18.00% vs QQQ +20.00%');
-    expect(html).toContain('该判定来自量化系统的相对强弱口径（自反弹基准日涨幅 vs QQQ），与你的买入成本无关；是否盈利请看下方「本族当前盈亏」。');
-    expect(html).toContain('原始判定数据');
-    expect(html).toContain('&quot;trigger&quot;: &quot;知足常乐&quot;');
-    expect(html).toContain('&quot;detail&quot;: &quot;自基准日 +18.00% vs QQQ +20.00%&quot;');
-    expect(html).toContain('&quot;shadow&quot;: true');
-    expect(html).toContain('&quot;state&quot;: &quot;observation&quot;');
-    expect(html).toContain('&quot;playbook_label&quot;: &quot;个股&quot;');
-    expect(html).toContain('用于核对量化系统口径；若这里显示的族数与你的预期不符，请把本块内容反馈给量化系统维护方。');
-    expect(html).toContain('5日涨幅过热 2026-07-15');
-    expect(html).toContain('只提醒不下单；由你在券商 App 手动执行。');
-  });
-
-  it('shows the orange open-window label only for non-shadow evidence', () => {
-    const snapshot = {
-      ...quantAnalysisFixture,
-      sell: {
-        ...quantAnalysisFixture.sell,
-        shadow: false,
-      },
-      summary: {
-        ...quantAnalysisFixture.summary,
-        sell_ready: quantAnalysisFixture.summary.sell_ready.map((item) => ({ ...item, shadow: false })),
-      },
-    };
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={holdings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 卖出窗口开启</option>');
-    expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-buy');
-    expect(html).not.toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
-  });
-
-  it('explains module-level observation and never labels its signals as open windows', () => {
-    const snapshot = {
-      ...quantAnalysisFixture,
-      summary: {
-        ...quantAnalysisFixture.summary,
-        sell_ready: quantAnalysisFixture.summary.sell_ready.map((item) => ({ ...item, shadow: false })),
-      },
-    };
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={holdings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('量化卖出模块当前为观察期，全部信号均未正式生效');
-    expect(html).not.toContain('卖出窗口开启');
-    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
-  });
-
-  it('shows an explicit fallback when the quant playbook has no label', () => {
-    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
-    snapshot.sell!.symbols.MSFT.playbook.label = undefined;
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={holdings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('止盈阶梯参考 · 剧本：未标注');
-  });
-
-  it('discloses when a held symbol belongs to multiple families and shows the largest one', () => {
-    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
-    const base = structuredClone(snapshot.sell!.symbols.MSFT);
-    snapshot.sell!.symbols = {
-      SMALL: { ...structuredClone(base), family: 'SMALL', market_value: 1_000, held_symbols: ['SHARED'] },
-      LARGE: { ...structuredClone(base), family: 'LARGE', market_value: 5_000, held_symbols: ['SHARED'] },
-    };
-    snapshot.summary!.sell_ready = [{
-      symbol: 'LARGE', trigger: '知足常乐', detail: '量化系统原始依据', shadow: true,
-    }];
-    const sharedHoldings = [{ ...holdings[0], id: 'shared', symbol: 'SHARED' }];
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={sharedHoldings} initialSymbol="SHARED" />,
-    );
-
-    expect(html).toContain('该标的同时属于多个族，已按市值最大者展示');
-    expect(html).toContain('&quot;family&quot;: &quot;LARGE&quot;');
-  });
-
-  it('shows family loss and disables profit-taking ladder emphasis', () => {
-    const losingHoldings = [
-      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 80 },
-    ];
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} holdings={losingHoldings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('本族当前盈亏');
-    expect(html).toContain('市值 $800.00');
-    expect(html).toContain('成本 $1,000.00');
-    expect(html).toContain('浮盈亏 -$200.00（-20.00%）');
-    expect(html).toContain('当前为浮亏 −20.00%，止盈阶梯（最低档 +5.00%）尚未适用');
-    expect(html).not.toContain('仅含已知成本部分');
-    expect(html).not.toContain('止盈阶梯参考请以券商实际成本为准');
-    expect(html).not.toContain('data-active="true"');
-  });
-
-  it('uses the backend profit gate and keeps a repaired losing family non-actionable', () => {
-    const snapshot = {
-      ...quantAnalysisFixture,
-      sell: {
-        ...quantAnalysisFixture.sell,
-        symbols: {
-          ...quantAnalysisFixture.sell.symbols,
-          MSFT: {
-            ...quantAnalysisFixture.sell.symbols.MSFT,
-            profit_gate: {
-              available: true,
-              market_value: 800,
-              cost: 1_000,
-              unrealized_pnl_usd: -200,
-              unrealized_pnl_pct: -20,
-              in_profit: false,
-              min_ladder_gain_pct: 5,
-              reaches_first_ladder: false,
-              verdict: 'hold_loss',
-              verdict_text: '当前浮亏 -20.00%，按你的规则继续持有，不减仓',
-            },
-            repair: {
-              ...quantAnalysisFixture.sell.symbols.MSFT.repair,
-              status: 'complete',
-              window_open: true,
-              actionable: false,
-              display_text: '市场已修复，但你的仓位仍浮亏 -20.00%，按你的规则继续持有',
-            },
-          },
-        },
-      },
-    } as unknown as QuantAnalysisSnapshot;
-    const losingHoldings = [
-      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 80 },
-    ];
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={losingHoldings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('当前浮亏 -20.00%，按你的规则继续持有，不减仓');
-    expect(html).toContain('市场已修复，但你的仓位仍浮亏 -20.00%，按你的规则继续持有');
-    expect(html).toContain('这是市场维度（相对 QQQ 强弱），与你的买入成本无关');
-    expect(html).toContain('只在浮盈达到最低档 +5.00% 后适用');
-    expect(html).toContain('data-profit-actionable="false"');
-    expect(html).not.toContain('修复完成，可开始分批减仓');
-    expect(html.indexOf('本族当前盈亏')).toBeLessThan(html.indexOf('当前浮亏 -20.00%'));
-  });
-
-  it('qualifies partial family pnl and lists option holdings with unknown costs', () => {
-    const partialHoldings = [
-      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 80 },
-      {
-        id: 'msft-call-unknown', symbol: 'MSFT', name: 'MSFT Call',
-        shares: 1, buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
-        sector: '科技', currency: 'USD' as const, assetType: 'option' as const,
-        broker: 'FUTU',
-        option: {
-          underlying: 'MSFT', optionType: 'call' as const, strike: 500,
-          expiration: '2028-01-21', contractMultiplier: 100,
-          delta: 0.4, theta: null, gamma: null, vega: null,
-          impliedVolatility: null, underlyingPrice: 400,
-        },
-      },
-    ];
-    const snapshot = {
-      ...quantAnalysisFixture,
-      holding_costs: {
-        ...quantAnalysisFixture.holding_costs,
-        MSFT: {
-          weighted_average_cost: 100, currency: 'USD' as const,
-          coverage: 'complete' as const, auto_fill_allowed: true,
-        },
-      },
-    };
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={partialHoldings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('其中已计成本 $800.00 · 未计成本 $200.00');
-    expect(html).toContain('基于已计成本部分 $800.00');
-    expect(html).toContain('1 个持仓成本未知（期权成本需用「补充期权详情」导入），未计入本次盈亏：MSFT（期权）');
-    expect(html).toContain('已知成本部分为浮亏 −20.00%（另有 1 个持仓成本未知）。止盈阶梯参考请以券商实际成本为准。');
-    expect(html).not.toContain('当前为浮亏 −20.00%，止盈阶梯（最低档 +5.00%）尚未适用');
-  });
-
-  it('renders a reconcilable market-value split for partial family pnl', () => {
-    const partialHoldings = [
-      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 80 },
-      {
-        id: 'msft-call-uncosted', symbol: 'MSFT', name: 'MSFT Call',
-        shares: 1, buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
-        sector: '科技', currency: 'USD' as const, assetType: 'option' as const,
-        option: {
-          underlying: 'MSFT', optionType: 'call' as const, strike: 500,
-          expiration: '2028-01-21', contractMultiplier: 100,
-          delta: 0.4, theta: null, gamma: null, vega: null,
-          impliedVolatility: null, underlyingPrice: 400,
-        },
-      },
-    ];
-    const snapshot = {
-      ...quantAnalysisFixture,
-      holding_costs: {
-        ...quantAnalysisFixture.holding_costs,
-        MSFT: {
-          weighted_average_cost: 100, currency: 'USD' as const,
-          coverage: 'complete' as const, auto_fill_allowed: true,
-        },
-      },
-    };
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={partialHoldings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('市值 $1,000.00');
-    expect(html).toContain('其中已计成本 $800.00 · 未计成本 $200.00');
-    expect(html).toContain('浮盈亏 -$200.00（-20.00% · 基于已计成本部分 $800.00）');
-  });
-
-  it('highlights the matching profit ladder band for a profitable family', () => {
-    const snapshot = {
-      ...quantAnalysisFixture,
-      sell: {
-        ...quantAnalysisFixture.sell,
-        symbols: {
-          ...quantAnalysisFixture.sell.symbols,
-          MSFT: {
-            ...quantAnalysisFixture.sell.symbols.MSFT,
-            playbook: {
-              ...quantAnalysisFixture.sell.symbols.MSFT.playbook,
-              sell_steps: [
-                { gain_min_pct: 10, gain_max_pct: 20, sell_position_pct: 2 },
-                { gain_min_pct: 20, gain_max_pct: 30, sell_position_pct: 3 },
-                { gain_min_pct: 30, gain_max_pct: 999, sell_position_pct: 4 },
-              ],
-            },
-          },
-        },
-      },
-    };
-    const profitableHoldings = [{ ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 125 }];
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={profitableHoldings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('浮盈亏 $250.00（+25.00%）');
-    expect(html).toContain('data-active="true"');
-    expect(html).toContain('盈利 20.00%–30.00%：减总仓 3.00%');
-  });
-
-  it('qualifies an active profit tier when family cost coverage is partial', () => {
-    const partialGainHoldings = [
-      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 125 },
-      {
-        id: 'msft-call-partial-gain', symbol: 'MSFT', name: 'MSFT Call',
-        shares: 1, buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
-        sector: '科技', currency: 'USD' as const, assetType: 'option' as const,
-      },
-    ];
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} holdings={partialGainHoldings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('data-active="true"');
-    expect(html).toContain('该档位基于已计成本部分（另有 1 个持仓成本未知），实际盈利可能不同；减仓比例请以券商实际成本为准。');
-  });
-
-  it('does not qualify an active profit tier when family cost coverage is complete', () => {
-    const html = renderToStaticMarkup(
-      <ConditionLookup
-        snapshot={quantAnalysisFixture}
-        holdings={[{ ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 110 }]}
-        initialSymbol="MSFT"
-      />,
-    );
-
-    expect(html).toContain('data-active="true"');
-    expect(html).not.toContain('该档位基于已计成本部分');
-  });
-
-  it('qualifies the distance to the first tier when partial known-cost pnl is below it', () => {
-    const partialBelowFirstHoldings = [
-      { ...holdings[0], shares: 10, buyPrice: 100, currentPrice: 102 },
-      {
-        id: 'msft-call-partial-below', symbol: 'MSFT', name: 'MSFT Call',
-        shares: 1, buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
-        sector: '科技', currency: 'USD' as const, assetType: 'option' as const,
-      },
-    ];
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} holdings={partialBelowFirstHoldings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('距第一档 +5.00% 还差 3.00 点（基于已计成本部分）');
-  });
-
-  it('shows only market value and unknown cost when family costs are unavailable', () => {
-    const missingCostHoldings = [{ ...holdings[0], shares: 10, buyPrice: 0, currentPrice: 80 }];
-    const snapshot = { ...quantAnalysisFixture, holding_costs: {} };
-    const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={missingCostHoldings} initialSymbol="MSFT" />,
-    );
-
-    expect(html).toContain('市值 $800.00');
-    expect(html).toContain('成本未知');
-    expect(html).not.toContain('浮盈亏');
-    expect(html).not.toMatch(/成本未知[^<]*%/);
-  });
-
-  it('tells users to fill the holdings table when only non-option costs are unknown', () => {
-    const snapshot = { ...quantAnalysisFixture, holding_costs: {} };
-    const html = renderToStaticMarkup(
-      <ConditionLookup
-        snapshot={snapshot}
-        holdings={[{ ...holdings[0], buyPrice: 0 }]}
-        initialSymbol="MSFT"
-      />,
-    );
-
-    expect(html).toContain('请在持仓表补填买入价');
-    expect(html).not.toContain('期权成本需用「补充期权详情」导入');
-  });
-
-  it('shows both cost instructions when option and non-option costs are unknown', () => {
-    const snapshot = { ...quantAnalysisFixture, holding_costs: {} };
-    const html = renderToStaticMarkup(
-      <ConditionLookup
-        snapshot={snapshot}
-        holdings={[
-          { ...holdings[0], id: 'msft-stock-unknown', buyPrice: 0 },
-          {
-            ...holdings[0], id: 'msft-option-unknown', name: 'MSFT Call',
-            buyPrice: 0, currentPrice: 2, marketValueOverride: 200,
-            assetType: 'option' as const,
-          },
-        ]}
-        initialSymbol="MSFT"
-      />,
-    );
-
-    expect(html).toContain('期权成本需用「补充期权详情」导入');
-    expect(html).toContain('请在持仓表补填买入价');
   });
 
 });
@@ -909,7 +527,7 @@ describe('entry evidence shows price and valuation only', () => {
     } as unknown as QuantAnalysisSnapshot;
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="AVGO" />,
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="AVGO" />,
     );
 
     expect(html).not.toContain('六关');
@@ -922,7 +540,7 @@ describe('entry evidence shows price and valuation only', () => {
 describe('quant evidence is not collapsed away', () => {
   it('renders the panic window without the 量化原始证据 disclosure wrapper', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(html).not.toContain('量化原始证据（不单独构成结论）');
@@ -942,7 +560,7 @@ describe('quant evidence is not collapsed away', () => {
     ];
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="SOXL" />,
     );
 
     expect(html).toContain('回撤条件已满足，卡在均线：MA100 还差 0.24%');
@@ -958,7 +576,7 @@ describe('historical sample block', () => {
     };
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="AAPL" />,
     );
 
     expect(html).not.toContain('当前没有可展示的历史事件样本');
@@ -971,7 +589,7 @@ describe('historical sample block', () => {
     snapshot.symbols.AAPL.depth_stats = null;
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="AAPL" />,
     );
 
     expect(html).toContain('当前没有可展示的历史事件样本');
@@ -984,7 +602,7 @@ describe('valuation price source', () => {
     (snapshot.symbols.AAPL.depth_window as unknown as Record<string, unknown>).current_price = 308.91;
 
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={snapshot} holdings={[]} monitoredQuotes={new Map()} initialSymbol="AAPL" />,
+      <BuyDecisionSection snapshot={snapshot} holdings={[]} monitoredQuotes={new Map()} initialSymbol="AAPL" />,
     );
 
     expect(html).not.toContain('data-valuation-field="price">股价 暂无');
@@ -996,7 +614,7 @@ describe('valuation price source', () => {
 describe('verdict panel removed', () => {
   it('no longer renders the final-verdict block', () => {
     const html = renderToStaticMarkup(
-      <ConditionLookup snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
     expect(html).not.toContain('最终裁决');

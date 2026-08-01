@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import app from './App.tsx?raw';
-import conditionLookup from './components/ConditionLookup.tsx?raw';
+import buyDecisionSection from './components/BuyDecisionSection.tsx?raw';
 import kimi from './kimi.ts?raw';
 
 describe('removed analysis surfaces stay removed', () => {
@@ -45,8 +45,14 @@ describe('removed analysis surfaces stay removed', () => {
   });
 
   it('has no raw buy-condition evidence block', () => {
-    expect(conditionLookup).not.toContain('原始条件证据');
-    expect(conditionLookup).not.toContain('市场条件满足');
-    expect(conditionLookup).not.toContain('估值位置（参考，不参与开窗）');
+    expect(buyDecisionSection).not.toContain('原始条件证据');
+    expect(buyDecisionSection).not.toContain('市场条件满足');
+    expect(buyDecisionSection).not.toContain('估值位置（参考，不参与开窗）');
+  });
+
+  it('has no conditions tab', () => {
+    expect(app).not.toContain("'conditions'");
+    expect(app).not.toContain('条件查询');
+    expect(app).not.toContain('ConditionLookup');
   });
 });

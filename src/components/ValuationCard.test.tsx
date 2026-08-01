@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PeHistoryPayload, PeSnapshot } from '../peData';
 import type { AppSettings, Holding, QuantAnalysisSnapshot } from '../types';
 import { quantAnalysisFixture } from '../testFixtures/quantAnalysis';
-import { ConditionLookup } from './ConditionLookup';
+import { BuyDecisionSection } from './BuyDecisionSection';
 import { ValuationCard } from './ValuationCard';
 
 const settings: AppSettings = {
@@ -368,7 +368,7 @@ describe('ValuationCard', () => {
   });
 });
 
-describe('ConditionLookup valuation integration', () => {
+describe('BuyDecisionSection valuation integration', () => {
   it('renders the selected symbol valuation card from the same quant snapshot', () => {
     const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
     snapshot.pe_history = history('AAPL', 20, [
@@ -378,7 +378,7 @@ describe('ConditionLookup valuation integration', () => {
     ]);
 
     const html = renderToStaticMarkup(
-      <ConditionLookup
+      <BuyDecisionSection
         snapshot={snapshot}
         initialSymbol="AAPL"
         valuationSettings={settings}
@@ -418,7 +418,7 @@ describe('ConditionLookup valuation integration', () => {
     const monitored = new Map([['AAPL', 199]]);
 
     const holdingHtml = renderToStaticMarkup(
-      <ConditionLookup
+      <BuyDecisionSection
         snapshot={snapshot}
         initialSymbol="AAPL"
         holdings={holdings}
@@ -427,7 +427,7 @@ describe('ConditionLookup valuation integration', () => {
       />,
     );
     const monitoredHtml = renderToStaticMarkup(
-      <ConditionLookup
+      <BuyDecisionSection
         snapshot={snapshot}
         initialSymbol="AAPL"
         monitoredQuotes={monitored}

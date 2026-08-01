@@ -1,4 +1,7 @@
 import type {
+  DisplayCurrency,
+  ExchangeRates,
+  Holding,
   QuantAnalysisSnapshot,
   QuantValuationDistance,
   QuantValuationTab,
@@ -7,17 +10,28 @@ import type {
 import { staleDaysFrom } from '../staleDays';
 import { dateText } from '../format';
 import { buildValuationSummary } from '../valuationPlan';
+import type { DepthQuote } from '../depthQuotePrice';
+import { BuyDecisionSection } from './BuyDecisionSection';
 import { BuyPlanSection } from './BuyPlanSection';
 import { RegimeSection } from './RegimeSection';
 import { ValuationCharts } from './ValuationCharts';
+import type { ValuationSettings } from './ValuationCard';
 import { VixStudySection } from './VixStudySection';
 
 interface ValuationPanelProps {
   snapshot: QuantAnalysisSnapshot | null;
   onDirtyChange: (dirty: boolean) => void;
+  holdings?: Holding[];
+  monitoredQuotes?: ReadonlyMap<string, DepthQuote>;
+  quantLoading?: boolean;
+  quantError?: string;
+  onRefreshQuant?: () => void;
+  displayCurrency?: DisplayCurrency;
+  rates?: ExchangeRates;
+  valuationSettings?: ValuationSettings;
 }
 
-export function ValuationPanel({ snapshot, onDirtyChange }: ValuationPanelProps) {
+export function ValuationPanel({ snapshot, onDirtyChange, holdings, monitoredQuotes, quantLoading, quantError, onRefreshQuant, displayCurrency, rates, valuationSettings }: ValuationPanelProps) {
   if (!snapshot) return <PreparingState />;
   const valuation = snapshot.valuation_tab;
   if (!valuation) {
@@ -38,6 +52,17 @@ export function ValuationPanel({ snapshot, onDirtyChange }: ValuationPanelProps)
         <p className="mt-3 text-xs leading-relaxed text-ink-muted">冷静时定规则，市场恐慌时执行规则。这里只做证据与计划展示，不自动下单。</p>
       </section>
       <CurrentIndicators valuation={valuation} vix={vixContext(snapshot)} />
+      <BuyDecisionSection
+        snapshot={snapshot}
+        holdings={holdings}
+        monitoredQuotes={monitoredQuotes}
+        loading={quantLoading}
+        error={quantError}
+        onRefresh={onRefreshQuant}
+        displayCurrency={displayCurrency}
+        rates={rates}
+        valuationSettings={valuationSettings}
+      />
       <VixStudySection study={snapshot.vix_study} context={vixContext(snapshot)} />
       <RegimeSection regime={snapshot.regime_status} />
       <ValuationCharts
