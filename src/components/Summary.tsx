@@ -172,6 +172,7 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
         </Card>
       )}
       <RiskOverview snapshot={analysisSnapshot} displayCurrency={displayCurrency} rates={rates} />
+      <ServerRiskFields snapshot={analysisSnapshot} />
       <div className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 text-xs md:col-span-4">
         <label className="font-medium text-ink-primary">
           显示货币：
@@ -237,6 +238,78 @@ export function Summary({ metrics, rates, displayCurrency, onDisplayCurrencyChan
           {quantStatus.loading ? '同步中' : '从量化系统同步'}
         </button>
       </div>
+    </div>
+  );
+}
+
+const EXPOSURE_LEVEL_CLASS: Record<string, string> = {
+  safe: 'text-ink-secondary',
+  caution: 'text-trim',
+  warning: 'text-loss',
+  danger: 'text-loss',
+};
+
+function usdAmount(value: number | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '暂无';
+}
+
+/**
+ * Fields the backend already emits and the site never showed. Everything here
+ * is printed as delivered — no band is recomputed and no default is filled in
+ * for a missing block.
+ */
+function ServerRiskFields({ snapshot }: { snapshot?: QuantAnalysisSnapshot | null }) {
+  const bands = snapshot?.exposure_bands;
+  const delta = snapshot?.total_effective_delta_assumption;
+  const brokers = snapshot?.broker_health;
+  const options = snapshot?.option_expiry_watch;
+  if (!bands && !brokers?.length && !options?.length) return null;
+  const thresholds = bands?.thresholds;
+  return (
+    <div className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 md:col-span-4">
+      {bands && (
+        <div>
+          <div className="flex flex-wrap items-baseline gap-2">
+            <strong className="text-xl tabular-nums">等效敞口 {typeof bands.effective_pct === 'number' ? `${bands.effective_pct.toFixed(2)}%` : '暂无'}</strong>
+            {bands.level && <span className={`text-sm font-semibold ${EXPOSURE_LEVEL_CLASS[bands.level] ?? 'text-ink-secondary'}`}>⚠ {bands.level}</span>}
+          </div>
+          {thresholds && (
+            <div className="mt-1 text-xs tabular-nums text-ink-muted">
+              安全 ≤{thresholds.safe_max_pct}% · 注意 ≤{thresholds.caution_max_pct}% · 警戒 ≤{thresholds.warning_max_pct}%
+            </div>
+          )}
+          {delta?.message && <div className="mt-1 text-xs text-trim">{delta.message}</div>}
+          {snapshot?.sleeve_denominators?.note && <div className="mt-1 text-xs text-ink-muted">{snapshot.sleeve_denominators.note}</div>}
+        </div>
+      )}
+      {brokers && brokers.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {brokers.map((broker) => (
+            <span
+              key={broker.broker}
+              data-broker-available={broker.available === false ? 'false' : 'true'}
+              className={`rounded-full px-2 py-1 text-xs tabular-nums ${broker.available === false || broker.error_code ? 'bg-loss/15 text-loss' : 'bg-neutral/25 text-ink-secondary'}`}
+            >
+              {broker.broker} {broker.as_of ?? '日期未提供'}{broker.error_code ? ` · ${broker.error_code}` : ''}
+            </span>
+          ))}
+        </div>
+      )}
+      {options && options.length > 0 && (
+        <details className="mt-3 rounded-lg border border-neutral/40 p-3">
+          <summary className="cursor-pointer text-sm font-semibold">期权到期观察（{options.length}）</summary>
+          <ul className="mt-2 space-y-1 text-xs tabular-nums text-ink-secondary">
+            {options.map((option) => (
+              <li key={`${option.symbol}-${option.family ?? ''}`}>
+                {option.symbol} · {option.family ?? '族未提供'} · delta 名义 {usdAmount(option.delta_notional_usd)} · premium {usdAmount(option.premium_usd)} · {option.status ?? '状态未提供'}
+                {typeof option.days_to_expiry === 'number' ? ` · 剩余 ${option.days_to_expiry} 天` : ' · 到期日未提供'}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

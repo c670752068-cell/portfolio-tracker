@@ -964,6 +964,34 @@ export interface QuantAnalysisSnapshot {
   sleeve_status?: QuantPortfolioRisk['sleeve_status'];
   allocation_plan?: QuantPortfolioRisk['allocation_plan'];
   dip_status?: QuantPortfolioRisk['dip_status'];
+  /** Server-owned exposure bands; the site must never invent these thresholds. */
+  exposure_bands?: {
+    basis?: string;
+    effective_pct?: number;
+    enforcement?: string;
+    level?: 'safe' | 'caution' | 'warning' | 'danger' | string;
+    thresholds?: { safe_max_pct?: number; caution_max_pct?: number; warning_max_pct?: number };
+  };
+  total_effective_delta_assumption?: { value?: number; message?: string };
+  sleeve_denominators?: { cash?: string; effective?: string; note?: string };
+  broker_health?: ReadonlyArray<{
+    broker: string;
+    as_of?: string | null;
+    available?: boolean;
+    error_code?: string | null;
+  }>;
+  option_expiry_watch?: ReadonlyArray<{
+    symbol: string;
+    family?: string;
+    sleeve?: string;
+    delta?: number;
+    delta_source?: string;
+    delta_notional_usd?: number;
+    premium_usd?: number;
+    moneyness?: string;
+    days_to_expiry?: number | null;
+    status?: string;
+  }>;
   /** Dual-basis risk summary emitted by the backend. */
   total_effective_pct?: number;
   total_cash_pct?: number;

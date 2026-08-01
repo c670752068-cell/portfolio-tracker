@@ -491,3 +491,75 @@ describe('Summary cards', () => {
     expect(html.indexOf('今日涨跌（USD）')).toBeLessThan(html.indexOf('一键刷新全部'));
   });
 });
+
+describe('server-owned risk fields', () => {
+  const riskSnapshot = {
+    exposure_bands: {
+      basis: 'effective', effective_pct: 234.26, enforcement: 'warn_only', level: 'danger',
+      thresholds: { safe_max_pct: 90, caution_max_pct: 110, warning_max_pct: 130 },
+    },
+    total_effective_delta_assumption: { value: 0.5, message: 'Delta 为统一假设 0.50，非真实 Delta' },
+    sleeve_denominators: { cash: 'invested_cash', effective: 'nav', note: '等效敞口以净值为分母；实付现金以已投现金为分母。' },
+    broker_health: [
+      { broker: 'IBKR', as_of: '2026-07-30', available: true, error_code: null },
+      { broker: 'LONGPORT', as_of: '2026-07-31', available: true, error_code: null },
+      { broker: 'FUTU', as_of: '2026-07-31', available: false, error_code: 'AUTH' },
+    ],
+    option_expiry_watch: [
+      { symbol: 'METU', family: 'META', delta_notional_usd: 115252, premium_usd: 1152.52, days_to_expiry: null, status: 'normal' },
+    ],
+  } as unknown as QuantAnalysisSnapshot;
+
+  function render(snapshot: QuantAnalysisSnapshot | null) {
+    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: '2026-07-30' }, rates);
+    return renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        analysisSnapshot={snapshot}
+        {...quantProps}
+      />,
+    );
+  }
+
+  it('shows the effective exposure with the server-owned band thresholds', () => {
+    const html = render(riskSnapshot);
+
+    expect(html).toContain('等效敞口 234.26%');
+    expect(html).toContain('danger');
+    expect(html).toContain('安全 ≤90% · 注意 ≤110% · 警戒 ≤130%');
+    expect(html).toContain('等效敞口以净值为分母；实付现金以已投现金为分母。');
+  });
+
+  it('states that the delta behind the number is an assumption', () => {
+    expect(render(riskSnapshot)).toContain('Delta 为统一假设 0.50，非真实 Delta');
+  });
+
+  it('dates every broker and flags the unavailable one', () => {
+    const html = render(riskSnapshot);
+
+    expect(html).toContain('IBKR 2026-07-30');
+    expect(html).toContain('LONGPORT 2026-07-31');
+    expect(html).toContain('FUTU 2026-07-31');
+    expect(html).toContain('data-broker-available="false"');
+    expect(html).toContain('AUTH');
+  });
+
+  it('lists the option delta exposure and admits a missing expiry', () => {
+    const html = render(riskSnapshot);
+
+    expect(html).toContain('METU');
+    expect(html).toContain('META');
+    expect(html).toContain('$115,252.00');
+    expect(html).toContain('$1,152.52');
+    expect(html).toContain('到期日未提供');
+  });
+
+  it('renders nothing rather than a default when the fields are absent', () => {
+    const html = render({} as unknown as QuantAnalysisSnapshot);
+
+    expect(html).not.toContain('等效敞口');
+    expect(html).not.toContain('券商数据');
+  });
+});
