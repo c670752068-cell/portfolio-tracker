@@ -4,6 +4,7 @@ import { AlertRulesPanel } from './components/AlertRulesPanel';
 import { ConditionLookup } from './components/ConditionLookup';
 import { BehaviorMirrorCard } from './components/BehaviorMirrorCard';
 import { CashEditor } from './components/CashEditor';
+import { DecisionStatusBar } from './components/DecisionStatusBar';
 import { HoldingsTable } from './components/HoldingsTable';
 import { ImageImportPanel } from './components/ImageImportPanel';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -566,6 +567,7 @@ export default function App() {
       </header>
       {tab === 'dashboard' && (
         <section className="space-y-5">
+          {quantAnalysis && <DecisionStatusBar snapshot={quantAnalysis} />}
           {latestAlert && (
             <div className="rounded-2xl border border-trim/40 border-l-4 border-l-trim bg-trim/10 p-4 text-sm leading-relaxed text-ink-primary">
               <strong><span className="tabular-nums">{latestAlert.symbol}</span> 目标提醒已触发</strong> · <span className="tabular-nums">{latestAlert.last_reminder_at}</span>。只提醒不下单，请在券商 App 手动执行。
