@@ -104,4 +104,10 @@ describe('MaSlopeExplorer', () => {
     expect(maSlopeSource).toContain('withSingleRetry');
     expect(maSlopeSource).not.toContain('setResult(null)');
   });
+
+  it('还有上一份完整数据时优先显示图表，没有旧数据才显示错误态', () => {
+    expect(maSlopeSource).not.toContain('{error ? <ErrorState');
+    expect(maSlopeSource).toContain(') : error ? <ErrorState message={error} /> : <LoadingState />}');
+    expect(maSlopeSource).toContain('result.dashboard.slope_window_sessions === slopeWindow');
+  });
 });

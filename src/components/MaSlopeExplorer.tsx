@@ -225,9 +225,9 @@ export function MaSlopeExplorer({ snapshot, holdings = EMPTY_HOLDINGS, selectedS
         {compact && <div className="decision-mode"><button type="button" aria-pressed={displayMode === 'closed'} onClick={() => onDisplayModeChange?.('closed')}>完整收盘 · {result?.symbol === selected ? result.dashboard.latest_closed_as_of ?? '待更新' : '加载中'}</button><button type="button" aria-pressed={displayMode === 'preview'} onClick={() => onDisplayModeChange?.('preview')}>盘中预览 · 未收盘确认</button></div>}
       </header>
       <div className="p-4 sm:p-5" aria-live="polite" aria-busy={loading}>
-        {error ? <ErrorState message={error} /> : result && result.symbol === selected && result.dashboard.range === range && result.dashboard.slope_window_sessions === slopeWindow ? (
+        {result && result.symbol === selected && result.dashboard.range === range && result.dashboard.slope_window_sessions === slopeWindow ? (
           <SlopeDashboard key={`${result.symbol}:${result.dashboard.range}:${displayMode}`} result={result} showVolume={showVolume} logScale={logScale} compact={compact} displayMode={displayMode} linked={linked} breakoutEvents={breakoutEvents?.filter(event => event.symbol === result.symbol)} />
-        ) : <LoadingState />}
+        ) : error ? <ErrorState message={error} /> : <LoadingState />}
       </div>
     </section>
   );
