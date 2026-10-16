@@ -7,6 +7,8 @@ export interface LeverageInfo {
 
 export const LEVERAGE_MAP: Readonly<Record<string, LeverageInfo>> = {
   TSLL: { factor: 2, underlying: 'TSLA' },
+  // Direxion Daily AVGO Bull 2X Shares（已核对发行商产品页，不是猜的）
+  AVL: { factor: 2, underlying: 'AVGO' },
   MSFU: { factor: 2, underlying: 'MSFT' },
   METU: { factor: 2, underlying: 'META' },
   NVDL: { factor: 2, underlying: 'NVDA' },
@@ -21,6 +23,7 @@ export const LEVERAGE_MAP: Readonly<Record<string, LeverageInfo>> = {
   SOXL: { factor: 3, underlying: null },
   TECL: { factor: 3, underlying: null },
   TNA: { factor: 3, underlying: null },
+  NAIL: { factor: 3, underlying: null },
   NVDU: { factor: 2, underlying: 'NVDA' },
   AAPU: { factor: 2, underlying: 'AAPL' },
 };

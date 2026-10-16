@@ -9,6 +9,7 @@ import {
   type AllocationSlice,
   type OptionBudgetLine,
 } from '../allocation';
+import { buildLeverageBudget, type LeverageBudgetSummary } from '../leverageBudget';
 import { formatDisplayMoney } from '../displayCurrency';
 
 const COLORS = [
@@ -41,6 +42,7 @@ export function AllocationChart({ metrics, displayCurrency, rates, analysisSnaps
   const totalExposurePct = metrics.totalValue > 0 ? totalExposure / metrics.totalValue : 0;
   const hasEstimatedOptions = effective && slices.some((slice) => slice.estimated);
   const optionBudget = buildOptionBudget(metrics);
+  const leverageBudget = buildLeverageBudget(metrics);
 
   if (slices.length === 0) {
     return (
@@ -88,6 +90,12 @@ export function AllocationChart({ metrics, displayCurrency, rates, analysisSnaps
       </div>
       <OptionBudgetPanel
         budget={optionBudget}
+        nav={metrics.totalValue}
+        displayCurrency={displayCurrency}
+        rates={rates}
+      />
+      <LeverageBudgetPanel
+        budget={leverageBudget}
         nav={metrics.totalValue}
         displayCurrency={displayCurrency}
         rates={rates}
@@ -168,6 +176,104 @@ export function AllocationChart({ metrics, displayCurrency, rates, analysisSnaps
         </p>
       )}
     </div>
+  );
+}
+
+function LeverageBudgetPanel({
+  budget,
+  nav,
+  displayCurrency,
+  rates,
+}: {
+  budget: LeverageBudgetSummary;
+  nav: number;
+  displayCurrency: DisplayCurrency;
+  rates: ExchangeRates;
+}) {
+  const usage = budget.cap > 0 ? Math.min(1, budget.weight / budget.cap) : 0;
+  const tone = budget.overLimit ? 'loss' : budget.nearLimit ? 'trim' : null;
+  return (
+    <section
+      className="my-3 rounded-xl border border-neutral/40 bg-surface-overlay/35 p-3"
+      aria-label="杠杆 ETF 预算"
+      data-leverage-budget="true"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-xs font-semibold text-ink-primary sm:text-sm">杠杆 ETF 预算</h3>
+          <p className="mt-1 text-[10px] leading-relaxed text-ink-muted sm:text-xs">
+            按总资产 {formatDisplayMoney(nav, displayCurrency, rates)} 计算当前杠杆 ETF 市值；杠杆 ETF 总计最多 {formatPct(budget.cap)}。期权不算在这里，有自己的 5% 预算。仅作仓位提醒，不自动交易。
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-neutral/25 px-2 py-1 text-[10px] font-medium text-ink-secondary">当前市值口径</span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="col-span-2 sm:col-span-1">
+          <div
+            className={`rounded-lg border p-2.5 ${tone === 'loss' ? 'border-loss/55 bg-loss/10' : tone === 'trim' ? 'border-trim/55 bg-trim/10' : 'border-neutral/35 bg-surface-raised/70'}`}
+            data-leverage-limit="total"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className={`text-[11px] font-semibold ${tone === 'loss' ? 'text-loss' : tone === 'trim' ? 'text-trim' : 'text-ink-secondary'}`}>杠杆 ETF 总计</span>
+              {budget.overLimit && <span className="rounded-full bg-loss/15 px-1.5 py-0.5 text-[9px] font-bold text-loss">超限</span>}
+              {!budget.overLimit && budget.nearLimit && <span className="rounded-full bg-trim/15 px-1.5 py-0.5 text-[9px] font-bold text-trim">接近上限</span>}
+            </div>
+            <p className={`mt-1 text-base font-bold tabular-nums ${tone === 'loss' ? 'text-loss' : 'text-ink-primary'}`}>
+              {formatDisplayMoney(budget.value, displayCurrency, rates)}
+            </p>
+            <p className="mt-0.5 text-[10px] tabular-nums text-ink-secondary">
+              占总资产 {formatPct(budget.weight)} · 上限 {formatPct(budget.cap)}
+            </p>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral/30" aria-hidden="true">
+              <span
+                className={`block h-full rounded-full ${tone === 'loss' ? 'bg-loss' : tone === 'trim' ? 'bg-trim' : 'bg-gain'}`}
+                style={{ width: `${Math.round(usage * 100)}%` }}
+              />
+            </div>
+            <p className="mt-1.5 text-[10px] tabular-nums text-ink-muted">
+              {budget.overLimit
+                ? `超出 ${formatDisplayMoney(budget.overByValue, displayCurrency, rates)}`
+                : `剩余额度 ${formatDisplayMoney(budget.remainingValue, displayCurrency, rates)}`}
+            </p>
+          </div>
+        </div>
+        <div className="col-span-2 rounded-lg border border-neutral/35 bg-surface-raised/70 p-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-semibold text-ink-secondary">合计等效敞口</span>
+            <span className="text-[10px] tabular-nums text-ink-muted">占总资产 {formatPct(budget.exposureWeight)}</span>
+          </div>
+          <p className="mt-1 text-base font-bold tabular-nums text-ink-primary">
+            {formatDisplayMoney(budget.exposure, displayCurrency, rates)}
+          </p>
+          {budget.rows.length === 0 ? (
+            <p className="mt-1 text-[10px] text-ink-muted">当前没有杠杆 ETF 持仓。</p>
+          ) : (
+            <ul className="mt-1.5 space-y-1">
+              {budget.rows.map((row) => (
+                <li key={row.symbol} className="flex items-baseline justify-between gap-2 text-[10px] tabular-nums text-ink-secondary sm:text-xs">
+                  <span className="min-w-0 truncate font-semibold text-ink-primary">
+                    {row.symbol}
+                    <span className="ml-1 rounded bg-neutral/30 px-1 py-0.5 text-[9px] font-medium text-ink-muted">{row.factor < 0 ? '反向 ' : ''}{Math.abs(row.factor)}×</span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="block">{formatDisplayMoney(row.marketValue, displayCurrency, rates)}</span>
+                    <span className="block text-[10px] font-normal text-ink-muted">等效 {formatDisplayMoney(row.exposure, displayCurrency, rates)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
+        按市值算 50% 的 3 倍 ETF，相当于约 150% 的股票敞口。参考 2022 年，TQQQ / TECL / SOXL 跌了 76%～90%；按 -80% 估算，当前杠杆仓可能让总资产少约 {formatPct(budget.crashLossWeight)}。
+      </p>
+      {budget.overLimit && (
+        <div className="mt-3 rounded-lg border border-loss/55 bg-loss/10 px-3 py-2 text-xs font-semibold leading-relaxed text-loss" role="alert">
+          杠杆预算超限：暂停新增杠杆 ETF，先把杠杆仓降回总资产的 50% 以内。
+        </div>
+      )}
+    </section>
   );
 }
 
