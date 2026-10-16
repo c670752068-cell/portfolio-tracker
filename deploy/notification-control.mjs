@@ -2,6 +2,7 @@
 // Public preference editing is intentional; relay credentials never leave the server.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mergeRealtimeSettings, realtimeDefaults } from './realtime-push.mjs';
 import { join } from 'node:path';
 
 export const TIME_ZONES = ['Asia/Shanghai', 'America/New_York', 'America/Los_Angeles', 'UTC'];
@@ -42,6 +43,8 @@ export function defaultNotificationSettings() {
     breakout: { enabled: false, up: false, down: false },
     zExtreme: defaultExtremeSettings(),
     eventWindows: Object.fromEntries(WINDOW_KEYS.map(key => [key, defaultDeliveryWindow()])),
+    // 第三阶段新增的实时提醒开关，全部默认关闭，由用户自己打开。
+    realtime: realtimeDefaults(),
     schedules: structuredClone(SCHEDULE_TEMPLATES) };
 }
 const validTime = value => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
@@ -89,7 +92,10 @@ export function validateNotificationSettings(input, previous, now = new Date()) 
     deliveryEpoch: now.toISOString(), quietHours: { enabled: q.enabled, start: q.start, end: q.end, timeZone: q.timeZone },
     events: Object.fromEntries(EVENT_TYPES.map(item => [item.id, input.events[item.id]])),
     breakout: { enabled: breakout.enabled, up: breakout.up, down: breakout.down },
-    zExtreme: { enabled: zExtreme.enabled, positive: zExtreme.positive, negative: zExtreme.negative, positiveThreshold: zExtreme.positiveThreshold, negativeThreshold: zExtreme.negativeThreshold }, eventWindows, schedules };
+    zExtreme: { enabled: zExtreme.enabled, positive: zExtreme.positive, negative: zExtreme.negative, positiveThreshold: zExtreme.positiveThreshold, negativeThreshold: zExtreme.negativeThreshold },
+    // 缺字段时补默认值（全关），不会动用户已有的其他设置
+    realtime: mergeRealtimeSettings({ realtime: input.realtime }).realtime,
+    eventWindows, schedules };
 }
 export function zonedParts(date, timeZone) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short' }).formatToParts(date).map(p => [p.type, p.value]));

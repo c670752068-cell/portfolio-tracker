@@ -27,7 +27,7 @@ import {
 } from './channel-review.mjs';
 import { createRefreshRequestRoute } from './refresh-request-route.mjs';
 import { deliverQuantDecisionAlerts } from './quant-decision-alerts.mjs';
-import { createNotificationControl, scheduleDue, zonedParts } from './notification-control.mjs';
+import { createNotificationControl, inQuietHours, scheduleDue, zonedParts } from './notification-control.mjs';
 import { classifyMarketSession } from './market-session.mjs';
 import { buildYahooChartUrl, parseYahooChartQuote } from './yahoo-quote.mjs';
 import { createLastGoodCache } from './last-good-cache.mjs';
@@ -48,6 +48,9 @@ import {
   readAlertLog,
   writeAlertLog,
 } from './alert-log.mjs';
+import { SESSION_CADENCE_MS } from './realtime-alerts.mjs';
+import { intradayZFromDashboard, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
+import { quietSummaryEvent, realtimeDefaults } from './realtime-push.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
   buildYahooSlopeChartUrl,
@@ -924,6 +927,28 @@ async function captureDecisionLogFromSnapshot(snapshot) {
     // 一对伪影可能跨两次抓取才凑齐，抓完再清一遍已存的。
     const next = dropStoredSnapshotArtifacts(withNav);
     if (next.revision !== current.revision) await writeDecisionLog(PORTFOLIO_ALERTS_ROOT, next);
+    // 新抓到的成交同时写一条持仓变化提醒
+    const freshTrades = next.trades.filter((trade) => !current.trades.some((item) => item.id === trade.id));
+    if (freshTrades.length) {
+      try {
+        const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+        const updated = appendAlerts(store, freshTrades.map((trade) => ({
+          dedupe_key: `holdings:${trade.key}`,
+          category: 'position',
+          symbol: trade.symbol,
+          icon: '🧾',
+          text: `${trade.broker || '券商'} · ${trade.side === 'BUY' ? '买入' : '卖出'} ${trade.symbol} ${trade.qty} ${
+            trade.price === null ? '（价格待补）' : `@ $${Number(trade.price).toFixed(2)}`
+          } · 已同步到决策日志，待补充理由`,
+          value: trade.price,
+          pushed: false,
+          occurred_at: trade.trade_time,
+        })));
+        if (updated !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, updated);
+      } catch (error) {
+        console.warn(`holdings alert failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   } catch (error) {
     // 抓日志失败绝不能让快照上传失败。
     console.warn(`decision log capture failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -1122,11 +1147,108 @@ server.listen(PORT, HOST, () => {
   console.log(`portfolio-ai-gateway listening on ${HOST}:${PORT}${STATIC_ROOT ? `; static=${STATIC_ROOT}` : ''}`);
 });
 
+// 实时监控：盘中 1 分钟、盘前盘后 2 分钟、夜盘 5 分钟，休市 15 分钟。
+// 新提醒默认只写日志不推送（开关在设置里，默认全关）。
+const REALTIME_STATE = { lastTickAt: 0, lastCnn: null, quietQueue: [], wasQuiet: false, running: false };
+const REALTIME_TICK_MS = 30 * 1000;
+
+async function runRealtimeMonitorCycle() {
+  if (REALTIME_STATE.running) return;
+  const now = new Date();
+  const session = classifyMarketSession(now, { hasMinuteSeries: true });
+  const cadence = SESSION_CADENCE_MS[session] ?? SESSION_CADENCE_MS.closed;
+  if (+now - REALTIME_STATE.lastTickAt < cadence) return;
+  REALTIME_STATE.running = true;
+  REALTIME_STATE.lastTickAt = +now;
+  try {
+    const settings = await notificationControl.settings();
+    const realtime = settings?.realtime || realtimeDefaults();
+    const quiet = inQuietHours(settings, now);
+
+    let snapshot = null;
+    try {
+      snapshot = JSON.parse(await readFile(join(PORTFOLIO_ANALYSIS_ROOT, 'latest.json'), 'utf8'));
+    } catch { snapshot = null; }
+    const positions = await readFile(join(PORTFOLIO_POSITIONS_ROOT, 'latest.json'), 'utf8')
+      .then((raw) => JSON.parse(raw)?.payload?.positions || []).catch(() => []);
+    const held = [...new Set(positions
+      .filter((item) => item?.asset_type !== 'option')
+      .map((item) => String(item?.symbol || '').toUpperCase().replace(/^US\./, ''))
+      .filter(Boolean))];
+    const symbols = monitorSymbols({ held, decision: Object.keys(snapshot?.symbols || {}) });
+
+    const quotes = {};
+    for (const symbol of symbols) {
+      try {
+        const quote = await fetchFreeQuote(symbol === 'VIX' ? '^VIX' : symbol);
+        if (quote) quotes[symbol] = quote;
+      } catch { /* 单个标的取价失败不影响其他 */ }
+    }
+
+    const qqqSeries = await closedDailySeries('QQQ');
+    const peak = qqqSeries.reduce((best, point) => (!best || point.close > best.close ? point : best), null);
+
+    const intradayZ = {};
+    for (const symbol of ['QQQ', ...held].slice(0, 8)) {
+      const cached = maSlopeCache.lastGood(`dashboard:${symbol}:5y:8`);
+      const reading = intradayZFromDashboard(cached, quotes[symbol]?.price);
+      if (reading) intradayZ[symbol] = reading;
+    }
+
+    const sellLines = {};
+    for (const [symbol, family] of Object.entries(snapshot?.sell?.symbols || {})) {
+      const plan = family?.sell_price_plan || {};
+      const trigger = Number(plan.trigger_price ?? plan.sell_price);
+      if (Number.isFinite(trigger) && trigger > 0) {
+        sellLines[symbol] = { trigger, label: plan.action_stage_key === 'trim_stock' ? '正股分批' : '开始降风险' };
+      }
+    }
+
+    const cnnScore = Number(snapshot?.context?.cnn_fear_greed?.score);
+    const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    const result = await runRealtimeTick({
+      now,
+      session,
+      store,
+      quotes,
+      intradayZ,
+      sellLines,
+      heldSymbols: held,
+      qqqPreviousHigh: peak?.close ?? null,
+      qqqPeakDate: peak?.date ?? null,
+      cnnScore: Number.isFinite(cnnScore) ? cnnScore : null,
+      previousCnnScore: REALTIME_STATE.lastCnn,
+      settings: realtime,
+      quiet,
+      dispatch: (event) => notificationControl.dispatch(event),
+    });
+    if (Number.isFinite(cnnScore)) REALTIME_STATE.lastCnn = cnnScore;
+    if (result.store !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, result.store);
+    if (result.quietQueue.length) REALTIME_STATE.quietQueue.push(...result.quietQueue);
+
+    // 免打扰刚结束：把期间攒下的重要提醒合成一条发出去
+    if (REALTIME_STATE.wasQuiet && !quiet && REALTIME_STATE.quietQueue.length && realtime.enabled && realtime.quietSummary) {
+      const summary = quietSummaryEvent(REALTIME_STATE.quietQueue, now);
+      REALTIME_STATE.quietQueue = [];
+      if (summary) await notificationControl.dispatch(summary);
+    } else if (!quiet) {
+      REALTIME_STATE.quietQueue = [];
+    }
+    REALTIME_STATE.wasQuiet = quiet;
+  } catch (error) {
+    console.warn(`realtime monitor failed: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    REALTIME_STATE.running = false;
+  }
+}
+
+const realtimeMonitorTimer = setInterval(runRealtimeMonitorCycle, REALTIME_TICK_MS);
 const quantDecisionTimer = setInterval(runStoredQuantDecisionCycle, QUANT_DECISION_INTERVAL_MS);
 const channelReviewTimer = setInterval(runStoredChannelReviewCycle, CHANNEL_REVIEW_INTERVAL_MS);
 void runStoredQuantDecisionCycle();
 void runStoredChannelReviewCycle();
 server.on('close', () => {
+  clearInterval(realtimeMonitorTimer);
   clearInterval(quantDecisionTimer);
   clearInterval(channelReviewTimer);
 });

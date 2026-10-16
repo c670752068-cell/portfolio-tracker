@@ -113,11 +113,32 @@ describe('提醒日志上线所需', () => {
     const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
     expect(gateway).toContain("from './alert-log.mjs'");
     expect(gateway).toContain('handleAlertLogRoute(url, req, res)');
-    // 所有手机推送都经过同一个出口，写日志也挂在那里：
-    // notificationControl.dispatch 全文只能出现一次，就是那个出口里面
+    // 原有的推送都走 dispatchAndLogAlert 这个出口（推一条记一行）；
+    // 实时提醒自己在 runRealtimeTick 里写日志，所以另外两处调用是它和免打扰汇总。
     expect(gateway).toContain('dispatchAndLogAlert(');
-    expect(gateway.match(/notificationControl\.dispatch\(/g)).toHaveLength(1);
+    expect(gateway).toContain('notify: event => dispatchAndLogAlert(event)');
+    expect(gateway.match(/notificationControl\.dispatch\(/g)).toHaveLength(3);
     expect(gateway).toContain('qqqDrawdownEvents(');
     expect(gateway).toContain('applyStateAlerts(');
+  });
+});
+
+describe('实时监控上线所需', () => {
+  it('三个实时模块都要上传并语法检查', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    for (const name of ['realtime-alerts', 'realtime-push', 'realtime-monitor']) {
+      expect(script).toContain(`deploy/${name}.mjs "\${SERVER}:\${REMOTE_RELEASE_APP}/${name}.mjs"`);
+      expect(script).toContain(`node --check '\${REMOTE_RELEASE_APP}/${name}.mjs'`);
+    }
+  });
+
+  it('网关常驻实时监控，按时段节奏跑，并把持仓变化写进提醒日志', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('runRealtimeMonitorCycle');
+    expect(gateway).toContain('setInterval(runRealtimeMonitorCycle');
+    expect(gateway).toContain('SESSION_CADENCE_MS');
+    expect(gateway).toContain('inQuietHours(settings, now)');
+    expect(gateway).toContain('quietSummaryEvent(');
+    expect(gateway).toContain("icon: '🧾'");
   });
 });
