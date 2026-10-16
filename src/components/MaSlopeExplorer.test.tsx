@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { QuantAnalysisSnapshot } from '../types';
 import { MaSlopeExplorer } from './MaSlopeExplorer';
+import maSlopeSource from './MaSlopeExplorer.tsx?raw';
 
 function snapshot(): QuantAnalysisSnapshot {
   return {
@@ -97,5 +98,10 @@ describe('MaSlopeExplorer', () => {
     expect(html).toContain('对数价格轴');
     expect(html).not.toContain('绿柱向上，红柱向下');
     expect(html).toContain('不进入买入裁决');
+  });
+
+  it('查询失败时保留上一份完整数据，并自动重试一次', () => {
+    expect(maSlopeSource).toContain('withSingleRetry');
+    expect(maSlopeSource).not.toContain('setResult(null)');
   });
 });

@@ -14,6 +14,7 @@ import type {
   ZBreakoutEvent,
 } from '../types';
 import { createChartDateStore, createChartScrollGroup, tradingDateIndex } from '../chartDateSync';
+import { withSingleRetry } from '../requestRetry';
 import { CHANNEL_FILTERS, heldTechnicalSymbols, matchesChannelFilter, technicalPresetSymbols, technicalSymbolName, type ChannelFilter } from '../technicalSymbols';
 import { zBarColor } from '../decisionSignals';
 import { breakoutDescription } from '../breakoutSignals';
@@ -108,9 +109,9 @@ export function MaSlopeExplorer({ snapshot, holdings = EMPTY_HOLDINGS, selectedS
       setError('');
       try {
         const endpoint = getServerMaSlopeUrl() || '/api/portfolio/ma-slope';
-        const next = await fetchMaSlopeDashboard(endpoint, selected, {
+        const next = await withSingleRetry(() => fetchMaSlopeDashboard(endpoint, selected, {
           range, slopeWindow, refresh: bypassCache, signal: controller.signal,
-        });
+        }), { isAborted: () => controller.signal.aborted });
         if (!controller.signal.aborted) {
           setResult(next);
           onDashboard?.(next);
@@ -124,7 +125,7 @@ export function MaSlopeExplorer({ snapshot, holdings = EMPTY_HOLDINGS, selectedS
         }
       } catch (caught) {
         if (controller.signal.aborted) return;
-        setResult(null);
+        // 重试过一次仍失败：上一份完整数据不作废，只记错误，不清空结果。
         setError(caught instanceof Error ? caught.message : 'K 线斜率查询失败');
       } finally {
         if (request.current === controller) setLoading(false);
