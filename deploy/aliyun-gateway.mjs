@@ -35,6 +35,7 @@ import {
   captureNav,
   captureTrades,
   createDecisionLogRoute,
+  dropStoredSnapshotArtifacts,
   readDecisionLog,
   writeDecisionLog,
 } from './decision-log.mjs';
@@ -790,7 +791,9 @@ async function captureDecisionLogFromSnapshot(snapshot) {
     const review = await readChannelReview(PORTFOLIO_ALERTS_ROOT).catch(() => null);
     const current = await readDecisionLog(PORTFOLIO_ALERTS_ROOT);
     const withTrades = captureTrades(current, snapshot, { channelReview: review });
-    const next = captureNav(withTrades, snapshot);
+    const withNav = captureNav(withTrades, snapshot);
+    // 一对伪影可能跨两次抓取才凑齐，抓完再清一遍已存的。
+    const next = dropStoredSnapshotArtifacts(withNav);
     if (next.revision !== current.revision) await writeDecisionLog(PORTFOLIO_ALERTS_ROOT, next);
   } catch (error) {
     // 抓日志失败绝不能让快照上传失败。

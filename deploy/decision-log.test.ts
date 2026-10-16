@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  applyCashFlow, applyTradeNote, captureNav, captureTrades, createDecisionLogRoute, emptyDecisionLog,
-  readDecisionLog, removeCashFlow, sameSiteWrite, tradeKey, writeDecisionLog,
+  addManualTrade, applyCashFlow, applyTradeNote, captureNav, captureTrades, createDecisionLogRoute,
+  dropStoredSnapshotArtifacts, emptyDecisionLog, readDecisionLog, removeCashFlow, sameSiteWrite,
+  tradeKey, writeDecisionLog,
 } from './decision-log.mjs';
 
 const roots: string[] = [];
@@ -277,5 +278,90 @@ describe('决策日志接口', () => {
 
     await call('GET', '/api/portfolio/decision-log/whatever');
     expect(sent[0].status).toBe(404);
+  });
+});
+
+describe('快照伪影过滤', () => {
+  // 线上实测：量化侧某次把持仓读空，差分出「全部卖出」，4 秒后恢复又差分出「全部买回」。
+  const artifactEvents = [
+    { broker: 'IBKR', symbol: 'TSLA', side: 'SELL', quantity: 17, price: null, price_source: 'unavailable', estimated: true, asset_type: 'stock', recorded_at: '2026-10-11T20:26:13.000-04:00' },
+    { broker: 'IBKR', symbol: 'AVGO', side: 'SELL', quantity: 40, price: null, price_source: 'unavailable', estimated: true, asset_type: 'stock', recorded_at: '2026-10-11T20:26:13.000-04:00' },
+    { broker: 'IBKR', symbol: 'TSLA', side: 'BUY', quantity: 17, price: 380.29, price_source: 'broker_cost_delta', estimated: false, asset_type: 'stock', recorded_at: '2026-10-11T20:26:17.000-04:00' },
+    { broker: 'IBKR', symbol: 'AVGO', side: 'BUY', quantity: 40, price: 354.1, price_source: 'broker_cost_delta', estimated: false, asset_type: 'stock', recorded_at: '2026-10-11T20:26:17.000-04:00' },
+  ];
+
+  it('同标的同数量、方向相反、10 分钟内的两条都不入日志', () => {
+    const store = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: artifactEvents } }, {
+      now: new Date('2026-10-16T08:00:00Z'),
+    });
+
+    expect(store.trades).toEqual([]);
+    expect(store.revision).toBe(0);
+  });
+
+  it('间隔超过 10 分钟的来回算真交易，照常入账', () => {
+    const real = [
+      { ...artifactEvents[0], recorded_at: '2026-10-11T20:00:00.000-04:00' },
+      { ...artifactEvents[2], recorded_at: '2026-10-11T20:11:00.000-04:00' },
+    ];
+    const store = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: real } }, {
+      now: new Date('2026-10-16T08:00:00Z'),
+    });
+
+    expect(store.trades.map((trade) => [trade.symbol, trade.side])).toEqual([['TSLA', 'SELL'], ['TSLA', 'BUY']]);
+  });
+
+  it('数量不同或标的不同都不算伪影', () => {
+    const mixed = [
+      artifactEvents[0],
+      { ...artifactEvents[2], quantity: 10 },
+      { ...artifactEvents[1], symbol: 'MCD' },
+    ];
+    const store = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: mixed } }, {
+      now: new Date('2026-10-16T08:00:00Z'),
+    });
+
+    expect(store.trades).toHaveLength(3);
+  });
+
+  it('一买一卖只抵消一对，多出来的那条留下', () => {
+    const triple = [
+      artifactEvents[0],
+      { ...artifactEvents[0], recorded_at: '2026-10-11T20:26:14.000-04:00' },
+      artifactEvents[2],
+    ];
+    const store = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: triple } }, {
+      now: new Date('2026-10-16T08:00:00Z'),
+    });
+
+    expect(store.trades.map((trade) => trade.side)).toEqual(['SELL']);
+  });
+
+  it('清理已经存进去的伪影，但不碰填过理由的和手动补录的', async () => {
+    const stored = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: artifactEvents } }, {
+      now: new Date('2026-10-16T08:00:00Z'), keepArtifacts: true,
+    });
+    expect(stored.trades).toHaveLength(4);
+
+    const annotated = applyTradeNote(stored, stored.trades[0].id, { note: '这条我写过理由' }, new Date('2026-10-16T09:00:00Z'));
+    const manual = addManualTrade(annotated, {
+      trade_time: '2026-10-11T20:26:13.000-04:00', symbol: 'AVGO', side: 'SELL', qty: 40,
+    }, new Date('2026-10-16T09:10:00Z'));
+
+    const cleaned = dropStoredSnapshotArtifacts(manual, new Date('2026-10-16T10:00:00Z'));
+
+    const kept = cleaned.trades.map((trade) => `${trade.symbol}|${trade.side}|${trade.recorded_by}`);
+    expect(kept).toContain('TSLA|SELL|position_ledger');
+    expect(kept).toContain('AVGO|SELL|manual');
+    expect(kept).not.toContain('AVGO|SELL|position_ledger');
+    expect(cleaned.revision).toBe(manual.revision + 1);
+  });
+
+  it('没有伪影可清时原样返回', () => {
+    const store = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: [artifactEvents[0]] } }, {
+      now: new Date('2026-10-16T08:00:00Z'),
+    });
+
+    expect(dropStoredSnapshotArtifacts(store, new Date('2026-10-16T10:00:00Z'))).toBe(store);
   });
 });

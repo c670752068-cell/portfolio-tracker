@@ -90,9 +90,78 @@ export function indicatorSnapshot(snapshot, symbol, channelReview) {
   };
 }
 
-export function captureTrades(store, snapshot, { now = new Date(), channelReview = null } = {}) {
+// 券商快照偶尔读空再恢复，差分出来就是「同一刻全部卖掉、几秒后全部买回」。
+// 这种同标的、同数量、方向相反且间隔很短的两条是快照伪影，不是真交易，
+// 一对一抵消后都不入日志；多出来的那条仍然保留。
+export const SNAPSHOT_ARTIFACT_WINDOW_MS = 10 * 60 * 1000;
+
+function artifactPairIndexes(entries, { symbolOf, sideOf, qtyOf, timeOf }) {
+  const dropped = new Set();
+  const ordered = entries
+    .map((entry, index) => ({ index, time: Date.parse(timeOf(entry)) }))
+    .filter((item) => Number.isFinite(item.time))
+    .sort((left, right) => left.time - right.time);
+  for (const item of ordered) {
+    if (dropped.has(item.index)) continue;
+    const entry = entries[item.index];
+    const match = ordered.find((candidate) => (
+      candidate.index !== item.index
+      && !dropped.has(candidate.index)
+      && Math.abs(candidate.time - item.time) <= SNAPSHOT_ARTIFACT_WINDOW_MS
+      && symbolOf(entries[candidate.index]) === symbolOf(entry)
+      && qtyOf(entries[candidate.index]) === qtyOf(entry)
+      && sideOf(entries[candidate.index]) !== sideOf(entry)
+    ));
+    if (match) {
+      dropped.add(item.index);
+      dropped.add(match.index);
+    }
+  }
+  return dropped;
+}
+
+function withoutSnapshotArtifacts(events) {
+  const dropped = artifactPairIndexes(events, {
+    symbolOf: (event) => String(record(event).symbol || '').toUpperCase().replace(/^US\./, ''),
+    sideOf: (event) => String(record(event).side || '').toUpperCase(),
+    qtyOf: (event) => numeric(record(event).quantity),
+    timeOf: (event) => String(record(event).recorded_at || ''),
+  });
+  return events.filter((_event, index) => !dropped.has(index));
+}
+
+/** 清掉已经存进去的伪影。只动自动抓来、还没填过理由的那些。 */
+export function dropStoredSnapshotArtifacts(store, now = new Date()) {
   const current = normalizeDecisionLog(store);
-  const events = rows(record(record(snapshot).position_ledger).recent_events);
+  const candidates = current.trades
+    .map((trade, index) => ({ trade, index }))
+    .filter(({ trade }) => (
+      trade.recorded_by === 'position_ledger'
+      && trade.status === 'pending_note'
+      && (trade.trigger || []).length === 0
+      && !trade.prediction
+      && !trade.note
+    ));
+  const dropped = artifactPairIndexes(candidates.map((item) => item.trade), {
+    symbolOf: (trade) => String(trade.symbol || '').toUpperCase(),
+    sideOf: (trade) => String(trade.side || '').toUpperCase(),
+    qtyOf: (trade) => numeric(trade.qty),
+    timeOf: (trade) => String(trade.trade_time || ''),
+  });
+  if (dropped.size === 0) return store;
+  const removeIds = new Set([...dropped].map((index) => candidates[index].trade.id));
+  return {
+    ...current,
+    trades: current.trades.filter((trade) => !removeIds.has(trade.id)),
+    revision: current.revision + 1,
+    updated_at: now.toISOString(),
+  };
+}
+
+export function captureTrades(store, snapshot, { now = new Date(), channelReview = null, keepArtifacts = false } = {}) {
+  const current = normalizeDecisionLog(store);
+  const allEvents = rows(record(record(snapshot).position_ledger).recent_events);
+  const events = keepArtifacts ? allEvents : withoutSnapshotArtifacts(allEvents);
   const known = new Set(current.trades.map((trade) => trade.key));
   const added = [];
   for (const event of events) {

@@ -97,5 +97,7 @@ describe('决策日志模块上线所需', () => {
     expect(gateway).toContain('handleDecisionLogRoute(url, req, res)');
     expect(gateway).toContain('captureTrades(');
     expect(gateway).toContain('captureNav(');
+    // 伪影可能跨两次抓取才凑成一对，所以抓完再清一遍
+    expect(gateway).toContain('dropStoredSnapshotArtifacts(');
   });
 });
