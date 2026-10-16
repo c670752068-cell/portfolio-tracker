@@ -29,7 +29,11 @@ async function fakeCli(root: string, analysisStdoutBytes = 0): Promise<{
   await writeFile(cli, `#!/bin/sh
 printf '%s\\n' "$1" >> "$FAKE_CLI_LOG"
 if [ "$1" = "positions-status" ]; then
-  if [ "$FAKE_BROKER_MODE" = "ibkr-stale" ] && [ ! -f "$FAKE_IBKR_FIXED" ]; then
+  if [ "$FAKE_BROKER_MODE" = "no-broker-health" ]; then
+    printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":1000,"positions":[{"symbol":"MSFT","broker":"IBKR","asset_type":"stock","qty":2,"market_value":800}]}'
+  elif [ "$FAKE_BROKER_MODE" = "ibkr-down" ]; then
+    printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":200,"broker_health":[{"broker":"IBKR","available":false,"error_code":"IBKR_UNAVAILABLE"},{"broker":"FUTU","available":true}],"positions":[{"symbol":"NVDA","broker":"FUTU","asset_type":"stock","qty":1,"market_value":200}]}'
+  elif [ "$FAKE_BROKER_MODE" = "ibkr-stale" ] && [ ! -f "$FAKE_IBKR_FIXED" ]; then
     printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":200,"broker_health":[{"broker":"IBKR","available":false,"error_code":"IBKR_SNAPSHOT_STALE"},{"broker":"FUTU","available":true}],"positions":[{"symbol":"NVDA","broker":"FUTU","asset_type":"stock","qty":1,"market_value":200}]}'
   elif [ "$FAKE_BROKER_MODE" = "ibkr-decision-stale" ] && [ ! -f "$FAKE_IBKR_FIXED" ]; then
     printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":1000,"decision_freshness":{"data_stale":true,"stale_days":3,"max_stale_days":2,"stale_sources":["positions"]},"broker_health":[{"broker":"IBKR","available":true,"as_of":"2026-07-15"},{"broker":"FUTU","available":true,"as_of":"2026-07-18"}],"positions":[{"symbol":"MSFT","broker":"IBKR","asset_type":"stock","qty":2,"market_value":800},{"symbol":"NVDA","broker":"FUTU","asset_type":"stock","qty":1,"market_value":200}]}'
@@ -278,7 +282,7 @@ describe('portfolio Mac push chain', () => {
 
   it('reuses an on-demand site-refresh export for NDX fallback without refreshing again', async () => {
     const fixture = await setup(200);
-    vi.stubEnv('FAKE_BROKER_MODE', 'longport-down');
+    vi.stubEnv('FAKE_BROKER_MODE', 'no-broker-health');
     await writeFile(fixture.analysis, JSON.stringify({
       source: 'futu-assistant',
       generated_at: '2026-07-23T10:32:11-04:00',
@@ -301,7 +305,7 @@ describe('portfolio Mac push chain', () => {
       await expect(pushPositions({
         reuseAnalysisSnapshot: true,
         now: new Date('2026-07-23T10:35:00-04:00'),
-      })).rejects.toThrow('LONGPORT');
+      })).rejects.toThrow('券商健康状态');
       expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n')).toEqual([
         'positions-status',
       ]);
@@ -384,23 +388,30 @@ describe('portfolio Mac push chain', () => {
     }
   });
 
-  it('refuses to overwrite the server when any broker snapshot is still unavailable', async () => {
+  it('持仓只认 IBKR：长桥不可用时照常上传 IBKR 持仓，只写一条日志', async () => {
     const fixture = await setup(200);
     vi.stubEnv('FAKE_BROKER_MODE', 'longport-down');
     try {
-      await expect(pushPositions()).rejects.toThrow('LONGPORT');
+      await expect(pushPositions()).resolves.toEqual(expect.objectContaining({ count: 1 }));
+      expect(fixture.requests).toEqual(expect.arrayContaining([
+        expect.objectContaining({ method: 'POST', url: '/api/portfolio/positions' }),
+      ]));
+      const log = await readFile(fixture.log, 'utf8');
+      expect(log).toContain('status=broker_degraded');
+      expect(log).toContain('LONGPORT');
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('持仓只认 IBKR：IBKR 自己不可用时仍然拒绝覆盖服务器', async () => {
+    const fixture = await setup(200);
+    vi.stubEnv('FAKE_BROKER_MODE', 'ibkr-down');
+    try {
+      await expect(pushPositions()).rejects.toThrow('IBKR');
       expect(fixture.requests).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ method: 'POST', url: '/api/portfolio/positions' }),
       ]));
-      const analysisWrite = fixture.requests.find((item) => (
-        item.method === 'POST' && item.url === '/api/portfolio/quant-analysis'
-      ));
-      if (analysisWrite) {
-        expect(analysisWrite.body).toEqual(expect.objectContaining({
-          final_verdict: { decision: 'PRODUCTION_HOLD' },
-          symbols: { MSFT: { decision: 'PRODUCTION_WAIT' } },
-        }));
-      }
       expect(await readFile(fixture.log, 'utf8')).toContain('status=failure');
     } finally {
       await fixture.close();
@@ -428,15 +439,18 @@ describe('portfolio Mac push chain', () => {
     }
   });
 
-  it('bounds LongPort retries and never publishes partial holdings after a persistent SDK failure', async () => {
+  it('长桥 SDK 持续失败时只重读一次，然后照常上传 IBKR 持仓', async () => {
     const fixture = await setup(200);
     vi.stubEnv('FAKE_BROKER_MODE', 'longport-sdk-down');
     try {
-      await expect(pushPositions()).rejects.toThrow('LONGPORT_SDK');
+      await expect(pushPositions()).resolves.toEqual(expect.objectContaining({ count: 1 }));
       expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n').filter((call) => call === 'positions-status')).toHaveLength(2);
-      expect(fixture.requests).not.toEqual(expect.arrayContaining([
+      expect(fixture.requests).toEqual(expect.arrayContaining([
         expect.objectContaining({ method: 'POST', url: '/api/portfolio/positions' }),
       ]));
+      const log = await readFile(fixture.log, 'utf8');
+      expect(log).toContain('status=broker_degraded');
+      expect(log).toContain('LONGPORT_SDK');
     } finally {
       await fixture.close();
     }
@@ -444,11 +458,11 @@ describe('portfolio Mac push chain', () => {
 
   it('publishes only fresh NDX after a scheduled holdings failure and still reports that failure', async () => {
     const fixture = await setup(200);
-    vi.stubEnv('FAKE_BROKER_MODE', 'longport-down');
+    vi.stubEnv('FAKE_BROKER_MODE', 'no-broker-health');
     try {
       await expect(pushPositions({
         now: new Date('2026-07-23T10:35:00-04:00'),
-      })).rejects.toThrow('LONGPORT');
+      })).rejects.toThrow('券商健康状态');
       expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n')).toEqual([
         'positions-status',
         'site-refresh',

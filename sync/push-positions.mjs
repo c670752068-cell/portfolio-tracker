@@ -51,13 +51,26 @@ function unavailableBrokers(payload) {
   return payload.broker_health.filter((item) => item?.available !== true);
 }
 
-function assertCompleteBrokerSnapshot(payload) {
-  const unavailable = unavailableBrokers(payload);
-  if (unavailable.length === 0) return;
-  const details = unavailable
+function brokerDetails(brokers) {
+  return brokers
     .map((item) => `${String(item?.broker || '未知券商')}${item?.error_code ? `(${String(item.error_code)})` : ''}`)
     .join('、');
-  throw new Error(`持仓快照不完整：${details}；已拒绝覆盖服务器上一份完整持仓`);
+}
+
+// 持仓、现金、成本只认 IBKR（用户 2026-10 起只在 IBKR 交易）。IBKR 读不到就
+// 拒绝覆盖服务器上一份完整持仓；长桥、富途读不到只记一条日志，不再因为它们
+// 把整个看板冻住——2026-09-26 起的一周数据停更就是长桥 SDK 报错卡住的。
+const POSITIONS_SOURCE_BROKER = 'IBKR';
+
+function assertPositionsSourceAvailable(payload) {
+  const unavailable = unavailableBrokers(payload);
+  const source = unavailable.filter(
+    (item) => String(item?.broker || '').toUpperCase() === POSITIONS_SOURCE_BROKER,
+  );
+  if (source.length > 0) {
+    throw new Error(`IBKR 持仓快照不可用：${brokerDetails(source)}；已拒绝覆盖服务器上一份完整持仓`);
+  }
+  return unavailable;
 }
 
 function positionsAreTooStaleForDecision(payload) {
@@ -91,7 +104,10 @@ async function loadCompletePositionsPayload(cliPath) {
     await runIbkrSync(cliPath);
     payload = parsePositionsPayload(await runPositionsStatus(cliPath));
   }
-  assertCompleteBrokerSnapshot(payload);
+  const degraded = assertPositionsSourceAvailable(payload);
+  if (degraded.length > 0) {
+    await appendSyncLog('broker_degraded', 0, `${brokerDetails(degraded)}；行情券商不可用，不影响 IBKR 持仓上传`);
+  }
   assertDecisionFreshPositions(payload);
   return payload;
 }
