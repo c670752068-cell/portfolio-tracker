@@ -40,6 +40,14 @@ import {
   writeDecisionLog,
 } from './decision-log.mjs';
 import { resolveDecisionLog, resolveSymbols } from './decision-log-resolve.mjs';
+import {
+  appendAlerts,
+  applyStateAlerts,
+  createAlertLogRoute,
+  qqqDrawdownEvents,
+  readAlertLog,
+  writeAlertLog,
+} from './alert-log.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
   buildYahooSlopeChartUrl,
@@ -496,6 +504,7 @@ async function handlePortfolioAnalysisRoute(url, req, res) {
     await rm(temporaryPath, { force: true });
   }
   await captureDecisionLogFromSnapshot(snapshot);
+  await captureAlertsFromSnapshot(snapshot);
   sendJson(res, 200, {
     ok: true,
     symbol_count: Object.keys(snapshot.symbols).length,
@@ -732,6 +741,10 @@ const handleChannelReviewRoute = createChannelReviewRoute({
   alertsRoot: PORTFOLIO_ALERTS_ROOT,
   sendJson,
 });
+const handleAlertLogRoute = createAlertLogRoute({
+  root: PORTFOLIO_ALERTS_ROOT,
+  sendJson,
+});
 const handleDecisionLogRoute = createDecisionLogRoute({
   root: PORTFOLIO_ALERTS_ROOT,
   sendJson,
@@ -740,6 +753,40 @@ const handleDecisionLogRoute = createDecisionLogRoute({
 
 // 量化快照一上传就把推算成交和当日净值抓进决策日志：recent_events 只留最近
 // 50 条，不落盘就会滚掉；每日净值也只有从现在开始攒才有时间加权收益率可算。
+// 手机推送的唯一出口：推一条就在提醒日志里记一行，推送开关关掉也照样记，
+// 只是标「未推送」。
+async function dispatchAndLogAlert(event, extra = {}) {
+  const result = await notificationControl.dispatch(event);
+  try {
+    const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    const next = appendAlerts(store, [{
+      dedupe_key: `push:${String(event?.dedupeKey || event?.key || '')}`,
+      category: alertCategoryForEvent(event),
+      symbol: typeof event?.symbol === 'string' ? event.symbol : null,
+      icon: '🔔',
+      text: [event?.title, event?.body].filter(Boolean).join(' · ') || '推送',
+      pushed: result?.status === 'sent',
+      occurred_at: typeof event?.createdAt === 'string' ? event.createdAt : undefined,
+      ...extra,
+    }]);
+    if (next !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
+  } catch (error) {
+    console.warn(`alert log write failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return result;
+}
+
+function alertCategoryForEvent(event) {
+  const key = `${String(event?.key || '')} ${String(event?.title || '')}`;
+  if (/drawdown|回撤|深回撤/.test(key)) return 'drawdown';
+  if (/cnn|vix|恐慌|情绪/i.test(key)) return 'sentiment';
+  if (/pe|估值/i.test(key)) return 'valuation';
+  if (/z|通道|露头/i.test(key)) return 'zscore';
+  if (/sell|卖出|止盈/i.test(key)) return 'sell_line';
+  if (/仓位|预算|杠杆|期权/.test(key)) return 'position';
+  return 'other';
+}
+
 // 取某个标的的完整收盘日线：先用缓存（含过期兜底），没有再抓一次 Yahoo。
 async function closedDailySeries(symbol) {
   const cacheKey = `dashboard:${symbol}:5y:8`;
@@ -786,6 +833,88 @@ async function runDecisionLogResolveCycle(today) {
   }
 }
 
+function alertNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+// 快照一上传就把「回撤档位、警戒线、卖出军令」这三类写进提醒日志。
+// 回撤档位默认只记日志、不推手机（用户要的默认值）。
+async function captureAlertsFromSnapshot(snapshot) {
+  try {
+    const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    const series = await closedDailySeries('QQQ');
+    const oneYearAgo = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
+    const today = etDateString(new Date());
+    const drawdowns = qqqDrawdownEvents(series, { from: oneYearAgo }).map((event) => ({
+      dedupe_key: event.dedupe_key,
+      category: event.category,
+      symbol: event.symbol,
+      icon: event.icon,
+      text: event.text,
+      value: event.value,
+      threshold: event.threshold,
+      session: 'closed',
+      // 今天之前的都是用历史行情补的，标「回填」，也不算推送过
+      backfilled: event.date < today,
+      pushed: false,
+      occurred_at: `${event.date}T20:30:00.000Z`,
+    }));
+    const withDrawdowns = appendAlerts(store, drawdowns);
+
+    const context = snapshot?.context || {};
+    const cnn = alertNumber(context?.cnn_fear_greed?.score);
+    const vix = alertNumber(context?.vix?.value);
+    const ndxPe = alertNumber(snapshot?.valuation_tab?.ndx?.current_pe);
+    const readings = [];
+    if (cnn !== null) {
+      readings.push({
+        key: 'cnn', state: cnn < 30 ? 'triggered' : 'normal', category: 'sentiment', symbol: 'CNN',
+        icon: cnn < 30 ? '😨' : '🙂', value: cnn, threshold: 30,
+        text: cnn < 30 ? `CNN 恐惧贪婪 ${cnn.toFixed(0)} < 30 · 到达开仓线` : `CNN 恐惧贪婪 ${cnn.toFixed(0)} 回到 30 以上 · 离开开仓线`,
+      });
+    }
+    if (vix !== null) {
+      readings.push({
+        key: 'vix', state: vix > 23 ? 'triggered' : 'normal', category: 'sentiment', symbol: 'VIX',
+        icon: vix > 23 ? '⚡' : '🙂', value: vix, threshold: 23,
+        text: vix > 23 ? `VIX ${vix.toFixed(2)} > 23 · 超过警戒线` : `VIX ${vix.toFixed(2)} 回到 23 以下 · 离开警戒线`,
+      });
+    }
+    if (ndxPe !== null) {
+      readings.push({
+        key: 'ndx-pe', state: ndxPe >= 35 ? 'triggered' : 'normal', category: 'valuation', symbol: 'NDX',
+        icon: ndxPe >= 35 ? '⚠️' : '🙂', value: ndxPe, threshold: 35,
+        text: ndxPe >= 35 ? `纳指100 PE ${ndxPe.toFixed(2)} ≥ 35 · 到达警戒线` : `纳指100 PE ${ndxPe.toFixed(2)} 回到 35 以下 · 离开警戒线`,
+      });
+    }
+    for (const [symbol, family] of Object.entries(snapshot?.sell?.symbols || {})) {
+      const decision = family?.decision || {};
+      const ready = decision.verdict === 'SELL' && decision.notification_state === 'sell';
+      const plan = family?.sell_price_plan || {};
+      const trigger = alertNumber(plan.trigger_price) ?? alertNumber(plan.sell_price);
+      readings.push({
+        key: `sell:${symbol}`, state: ready ? 'triggered' : 'normal', category: 'sell_line', symbol,
+        icon: ready ? '💰' : '🙂', threshold: trigger,
+        text: ready
+          ? `${symbol} 卖出军令变为可执行${trigger === null ? '' : ` · 卖出线 ${trigger.toFixed(2)}`}${decision.reason ? ` · ${decision.reason}` : ''}`
+          : `${symbol} 卖出军令退回等待`,
+      });
+    }
+    const next = applyStateAlerts(withDrawdowns, readings);
+    if (next !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
+  } catch (error) {
+    console.warn(`alert log capture failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function etDateString(date) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 async function captureDecisionLogFromSnapshot(snapshot) {
   try {
     const review = await readChannelReview(PORTFOLIO_ALERTS_ROOT).catch(() => null);
@@ -821,7 +950,7 @@ async function runStoredQuantDecisionCycle() {
       const slot = `${zonedParts(now, schedule.timeZone).date}:${schedule.id}`;
       await deliverQuantDecisionAlerts({ snapshot, alertsRoot: PORTFOLIO_ALERTS_ROOT, now, notificationSlot: slot,
         notify: async event => {
-          const result = await notificationControl.dispatch({ ...event, scheduleId: schedule.id,
+          const result = await dispatchAndLogAlert({ ...event, scheduleId: schedule.id,
             dedupeKey: `${slot}:${event.key}`, createdAt: now.toISOString() });
           return result.status === 'sent';
         },
@@ -848,7 +977,7 @@ async function runStoredChannelReviewCycle() {
       snapshot,
       positions: Array.isArray(positions) ? positions : [],
       alertsRoot: PORTFOLIO_ALERTS_ROOT,
-      notify: event => notificationControl.dispatch(event),
+      notify: event => dispatchAndLogAlert(event),
       extremeRule: (await notificationControl.settings()).zExtreme,
       fetchDashboard: async (symbol, now) => {
         const data = await getJsonOverIpv4(
@@ -963,6 +1092,7 @@ const server = createServer(async (req, res) => {
   if (await handleMaSlopeQueryRoute(url, req, res)) return;
   if (await handleChannelReviewRoute(url, req, res)) return;
   if (await handleDecisionLogRoute(url, req, res)) return;
+  if (await handleAlertLogRoute(url, req, res)) return;
   try {
     if (await handleAlertRulesRoute(url, req, res)) return;
   } catch (error) {

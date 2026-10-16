@@ -51,6 +51,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
 "${SCP_CMD[@]}" deploy/last-good-cache.mjs "${SERVER}:${REMOTE_RELEASE_APP}/last-good-cache.mjs"
 "${SCP_CMD[@]}" deploy/decision-log.mjs "${SERVER}:${REMOTE_RELEASE_APP}/decision-log.mjs"
 "${SCP_CMD[@]}" deploy/decision-log-resolve.mjs "${SERVER}:${REMOTE_RELEASE_APP}/decision-log-resolve.mjs"
+"${SCP_CMD[@]}" deploy/alert-log.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-log.mjs"
 "${SCP_CMD[@]}" deploy/notification-copy.mjs "${SERVER}:${REMOTE_RELEASE_APP}/notification-copy.mjs"
 "${SCP_CMD[@]}" deploy/notification-control.mjs "${SERVER}:${REMOTE_RELEASE_APP}/notification-control.mjs"
 "${SCP_CMD[@]}" deploy/market-session.mjs "${SERVER}:${REMOTE_RELEASE_APP}/market-session.mjs"
@@ -71,6 +72,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
   node --check '${REMOTE_RELEASE_APP}/last-good-cache.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/decision-log.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/decision-log-resolve.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/alert-log.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/notification-control.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/ma-slope-query.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/sector-rotation.mjs' && \

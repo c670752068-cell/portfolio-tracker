@@ -101,3 +101,23 @@ describe('决策日志模块上线所需', () => {
     expect(gateway).toContain('dropStoredSnapshotArtifacts(');
   });
 });
+
+describe('提醒日志上线所需', () => {
+  it('上传并语法检查 alert-log.mjs', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/alert-log.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-log.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/alert-log.mjs'");
+  });
+
+  it('网关挂上提醒日志路由，推送时同步写一行，快照上传时记回撤档位与阈值线', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain("from './alert-log.mjs'");
+    expect(gateway).toContain('handleAlertLogRoute(url, req, res)');
+    // 所有手机推送都经过同一个出口，写日志也挂在那里：
+    // notificationControl.dispatch 全文只能出现一次，就是那个出口里面
+    expect(gateway).toContain('dispatchAndLogAlert(');
+    expect(gateway.match(/notificationControl\.dispatch\(/g)).toHaveLength(1);
+    expect(gateway).toContain('qqqDrawdownEvents(');
+    expect(gateway).toContain('applyStateAlerts(');
+  });
+});
