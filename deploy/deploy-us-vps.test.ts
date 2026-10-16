@@ -72,3 +72,19 @@ describe('新增的网关模块必须一起上传', () => {
     expect(gateway).toContain('channel review kept the previous complete close');
   });
 });
+
+describe('决策日志模块上线所需', () => {
+  it('上传并语法检查 decision-log.mjs', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/decision-log.mjs "${SERVER}:${REMOTE_RELEASE_APP}/decision-log.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/decision-log.mjs'");
+  });
+
+  it('网关挂上决策日志路由，并在量化快照上传时抓成交与每日净值', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain("from './decision-log.mjs'");
+    expect(gateway).toContain('handleDecisionLogRoute(url, req, res)');
+    expect(gateway).toContain('captureTrades(');
+    expect(gateway).toContain('captureNav(');
+  });
+});

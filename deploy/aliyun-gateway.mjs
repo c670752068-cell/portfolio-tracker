@@ -22,6 +22,7 @@ import {
 import {
   CHANNEL_REVIEW_INTERVAL_MS,
   createChannelReviewRoute,
+  readChannelReview,
   runChannelReviewCycle,
 } from './channel-review.mjs';
 import { createRefreshRequestRoute } from './refresh-request-route.mjs';
@@ -30,6 +31,13 @@ import { createNotificationControl, scheduleDue, zonedParts } from './notificati
 import { classifyMarketSession } from './market-session.mjs';
 import { buildYahooChartUrl, parseYahooChartQuote } from './yahoo-quote.mjs';
 import { createLastGoodCache } from './last-good-cache.mjs';
+import {
+  captureNav,
+  captureTrades,
+  createDecisionLogRoute,
+  readDecisionLog,
+  writeDecisionLog,
+} from './decision-log.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
   buildYahooSlopeChartUrl,
@@ -485,6 +493,7 @@ async function handlePortfolioAnalysisRoute(url, req, res) {
   } finally {
     await rm(temporaryPath, { force: true });
   }
+  await captureDecisionLogFromSnapshot(snapshot);
   sendJson(res, 200, {
     ok: true,
     symbol_count: Object.keys(snapshot.symbols).length,
@@ -721,6 +730,26 @@ const handleChannelReviewRoute = createChannelReviewRoute({
   alertsRoot: PORTFOLIO_ALERTS_ROOT,
   sendJson,
 });
+const handleDecisionLogRoute = createDecisionLogRoute({
+  root: PORTFOLIO_ALERTS_ROOT,
+  sendJson,
+  readBody: readPositionsBody,
+});
+
+// 量化快照一上传就把推算成交和当日净值抓进决策日志：recent_events 只留最近
+// 50 条，不落盘就会滚掉；每日净值也只有从现在开始攒才有时间加权收益率可算。
+async function captureDecisionLogFromSnapshot(snapshot) {
+  try {
+    const review = await readChannelReview(PORTFOLIO_ALERTS_ROOT).catch(() => null);
+    const current = await readDecisionLog(PORTFOLIO_ALERTS_ROOT);
+    const withTrades = captureTrades(current, snapshot, { channelReview: review });
+    const next = captureNav(withTrades, snapshot);
+    if (next.revision !== current.revision) await writeDecisionLog(PORTFOLIO_ALERTS_ROOT, next);
+  } catch (error) {
+    // 抓日志失败绝不能让快照上传失败。
+    console.warn(`decision log capture failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 const handleRefreshRequestRoute = createRefreshRequestRoute({
   token: PORTFOLIO_SYNC_TOKEN,
   filePath: PORTFOLIO_REFRESH_REQUEST_PATH,
@@ -880,6 +909,7 @@ const server = createServer(async (req, res) => {
   }
   if (await handleMaSlopeQueryRoute(url, req, res)) return;
   if (await handleChannelReviewRoute(url, req, res)) return;
+  if (await handleDecisionLogRoute(url, req, res)) return;
   try {
     if (await handleAlertRulesRoute(url, req, res)) return;
   } catch (error) {
