@@ -38,6 +38,7 @@ import {
   readDecisionLog,
   writeDecisionLog,
 } from './decision-log.mjs';
+import { resolveDecisionLog, resolveSymbols } from './decision-log-resolve.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
   buildYahooSlopeChartUrl,
@@ -738,6 +739,52 @@ const handleDecisionLogRoute = createDecisionLogRoute({
 
 // 量化快照一上传就把推算成交和当日净值抓进决策日志：recent_events 只留最近
 // 50 条，不落盘就会滚掉；每日净值也只有从现在开始攒才有时间加权收益率可算。
+// 取某个标的的完整收盘日线：先用缓存（含过期兜底），没有再抓一次 Yahoo。
+async function closedDailySeries(symbol) {
+  const cacheKey = `dashboard:${symbol}:5y:8`;
+  const cached = readMaSlopeCache(cacheKey, MA_SLOPE_DASHBOARD_CACHE_TTL_MS) || maSlopeCache.lastGood(cacheKey);
+  let result = cached;
+  if (!result) {
+    try {
+      const data = await getJsonOverIpv4(
+        buildYahooSlopeChartUrl(symbol, '5y'),
+        { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+        15_000,
+      );
+      if (!data?.chart?.result?.[0]) throw new Error('no chart result');
+      result = parseYahooSlopeDashboard(symbol, data, { range: '5y', slopeWindow: 8 });
+      writeMaSlopeCache(cacheKey, result);
+    } catch (error) {
+      console.warn(`decision log resolve could not load ${symbol}: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
+  }
+  return (result.dashboard?.series || [])
+    .filter((point) => point && point.is_partial !== true && Number.isFinite(point.close))
+    .map((point) => ({ date: point.date, close: point.close }));
+}
+
+// 每天收盘审查之后判定一次预判结果：只读行情，不碰阈值，也不发通知。
+async function runDecisionLogResolveCycle(today) {
+  try {
+    const store = await readDecisionLog(PORTFOLIO_ALERTS_ROOT);
+    const symbols = resolveSymbols(store);
+    if (symbols.length === 0) return;
+    const series = new Map();
+    for (const symbol of symbols) series.set(symbol, await closedDailySeries(symbol));
+    const next = resolveDecisionLog(store, {
+      seriesFor: (symbol) => series.get(String(symbol).toUpperCase()) || [],
+      today,
+    });
+    if (next !== store) {
+      await writeDecisionLog(PORTFOLIO_ALERTS_ROOT, next);
+      console.warn(`decision log resolved predictions on ${today}`);
+    }
+  } catch (error) {
+    console.warn(`decision log resolve failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 async function captureDecisionLogFromSnapshot(snapshot) {
   try {
     const review = await readChannelReview(PORTFOLIO_ALERTS_ROOT).catch(() => null);
@@ -810,6 +857,9 @@ async function runStoredChannelReviewCycle() {
         return parseYahooSlopeDashboard(symbol, data, { range: '5y', slopeWindow: 8, now });
       },
     });
+    if (review && review.skipped !== true && review.review_date) {
+      await runDecisionLogResolveCycle(review.review_date);
+    }
     // 刷新失败只记日志，服务器上保留的仍是上一份完整收盘审查。
     if (review?.failed_symbols?.length) {
       console.warn(
