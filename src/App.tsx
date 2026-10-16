@@ -14,6 +14,7 @@ import { Summary } from './components/Summary';
 import { ThemeControl } from './components/ThemeControl';
 import { ValuationPanel, MarketIndicators } from './components/ValuationPanel';
 import { SectorRotation } from './components/SectorRotation';
+import { DecisionJournal } from './components/DecisionJournal';
 import { NotificationCenter } from './components/NotificationCenter';
 import { ALERT_RULES_REFRESH_MS, deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
@@ -41,7 +42,7 @@ import type { AppSettings, CashPosition, DisplayCurrency, ExchangeRates, Holding
 import { loadValueHistory, recordDailyValue, saveValueHistory, type ValuePoint } from './valueHistory';
 import './App.css';
 
-type Tab = 'dashboard' | 'rotation' | 'valuation' | 'calculator' | 'settings';
+type Tab = 'dashboard' | 'rotation' | 'valuation' | 'calculator' | 'journal' | 'settings';
 type QuoteRefreshReason = 'manual' | 'daily' | 'session';
 
 const DAILY_QUOTE_SYNC_KEY = 'portfolio-tracker:daily-quote-sync-key-v1';
@@ -552,7 +553,7 @@ export default function App() {
     setTab(next);
   }
 
-  const tabIndex = ['dashboard', 'rotation', 'valuation', 'calculator', 'settings'].indexOf(tab);
+  const tabIndex = ['dashboard', 'rotation', 'valuation', 'calculator', 'journal', 'settings'].indexOf(tab);
   const headerSyncBusy = quoteStatus.loading
     || quantStatus.loading
     || quantAnalysisStatus.loading
@@ -630,17 +631,18 @@ export default function App() {
         <div className="flex w-full items-center gap-2 xl:w-auto">
           <NotificationCenter snapshot={quantAnalysis} />
           <nav
-            className="relative grid w-full grid-cols-5 rounded-xl bg-surface-raised/80 p-0.5 text-[11px] shadow-sm ring-1 ring-neutral/20 backdrop-blur-xl sm:rounded-2xl sm:p-1 sm:text-sm xl:w-[26rem]"
+            className="relative grid w-full grid-cols-6 rounded-xl bg-surface-raised/80 p-0.5 text-[11px] shadow-sm ring-1 ring-neutral/20 backdrop-blur-xl sm:rounded-2xl sm:p-1 sm:text-sm xl:w-[26rem]"
           >
             <span
               aria-hidden="true"
-              className="absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%_-_0.25rem)/5)] rounded-[0.65rem] bg-buy shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] sm:bottom-1 sm:left-1 sm:top-1 sm:w-[calc((100%_-_0.5rem)/5)] sm:rounded-xl"
+              className="absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%_-_0.25rem)/6)] rounded-[0.65rem] bg-buy shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] sm:bottom-1 sm:left-1 sm:top-1 sm:w-[calc((100%_-_0.5rem)/6)] sm:rounded-xl"
               style={{ transform: `translateX(${tabIndex * 100}%)` }}
             />
             <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => changeTab('dashboard')} />
             <TabBtn label="板块轮动" active={tab === 'rotation'} onClick={() => changeTab('rotation')} />
             <TabBtn label="决策" active={tab === 'valuation'} onClick={() => changeTab('valuation')} />
             <TabBtn label="卖出" active={tab === 'calculator'} onClick={() => changeTab('calculator')} />
+            <TabBtn label="日志" active={tab === 'journal'} onClick={() => changeTab('journal')} />
             <TabBtn label="设置" active={tab === 'settings'} onClick={() => changeTab('settings')} />
           </nav>
         </div>
@@ -738,6 +740,9 @@ export default function App() {
         </section>
       )}
 
+      {tab === 'journal' && privateDataState === 'ready' && (
+        <DecisionJournal displayCurrency={settings.displayCurrency} rates={rates} />
+      )}
       {tab === 'settings' && (
         <section className="space-y-4">
           <SettingsPanel

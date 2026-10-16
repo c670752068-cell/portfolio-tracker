@@ -218,6 +218,53 @@ function validatePrediction(value) {
   return { type, trailing_pct: trailing, fixed_gain_pct: fixed };
 }
 
+// 支持手动补录过去的交易（推算成交只保留最近 50 条，更早的只能自己补）。
+export function addManualTrade(store, input, now = new Date()) {
+  const current = normalizeDecisionLog(store);
+  const item = record(input);
+  const symbol = String(item.symbol || '').trim().toUpperCase().replace(/^US\./, '');
+  const side = String(item.side || '').toUpperCase();
+  const qty = numeric(item.qty);
+  const price = numeric(item.price);
+  const tradeTime = String(item.trade_time || '');
+  if (!/^[A-Z][A-Z0-9.-]{0,10}$/.test(symbol)) throw Object.assign(new Error('代码格式不正确'), { status: 400 });
+  if (!['BUY', 'SELL'].includes(side)) throw Object.assign(new Error('方向只能是买入或卖出'), { status: 400 });
+  if (qty === null || qty <= 0) throw Object.assign(new Error('数量要大于 0'), { status: 400 });
+  if (Number.isNaN(Date.parse(tradeTime))) throw Object.assign(new Error('成交时间格式不正确'), { status: 400 });
+  if (current.trades.length >= TRADE_LIMIT) throw Object.assign(new Error('日志条数已达上限'), { status: 400 });
+  const trade = {
+    id: `trade-${randomBytes(6).toString('hex')}`,
+    key: `MANUAL|${symbol}|${side}|${qty}|${tradeTime}`,
+    trade_time: new Date(tradeTime).toISOString(),
+    recorded_by: 'manual',
+    symbol,
+    side,
+    asset_type: null,
+    broker: null,
+    qty,
+    price,
+    amount: price === null ? null : price * qty,
+    price_source: price === null ? null : 'manual',
+    price_estimated: false,
+    // 补录的交易没有当时的指标快照，留空不补造。
+    indicators: indicatorSnapshot(null, symbol, null),
+    trigger: [],
+    prediction: null,
+    note: typeof item.note === 'string' ? item.note.slice(0, 2000) : '',
+    status: 'pending_note',
+    resolved_at: null,
+    resolved_price: null,
+    result_pct: null,
+    qqq_result_pct: null,
+    vs_hold_pct: null,
+  };
+  if (current.trades.some((existing) => existing.key === trade.key)) {
+    throw Object.assign(new Error('这笔交易已经记过了'), { status: 400 });
+  }
+  const trades = [...current.trades, trade].sort((left, right) => String(left.trade_time).localeCompare(String(right.trade_time)));
+  return { ...current, trades, revision: current.revision + 1, updated_at: now.toISOString() };
+}
+
 export function applyCashFlow(store, input, now = new Date()) {
   const current = normalizeDecisionLog(store);
   const item = record(input);
@@ -290,9 +337,14 @@ export function createDecisionLogRoute({ root, sendJson, readBody, now = () => n
   };
   const deny = (res) => sendJson(res, 403, { error: { code: 'forbidden', message: '请从本网站的日志页面修改' } });
 
-  async function mutate(res, req, change, { requireJson = true } = {}) {
+  async function mutate(res, req, change, { requireJson = true, url = null } = {}) {
     if (!sameSiteWrite(req, { requireJson })) { deny(res); return; }
     let input = {};
+    if (!requireJson && url) {
+      // DELETE 没有请求体，版本号从查询串里取，并发保护和其他写操作一致。
+      const revision = url.searchParams.get('revision');
+      if (revision !== null) input = { revision };
+    }
     if (requireJson) {
       try {
         input = JSON.parse((await readBody(req)).toString('utf8') || '{}');
@@ -329,13 +381,17 @@ export function createDecisionLogRoute({ root, sendJson, readBody, now = () => n
       await mutate(res, req, (store, input, at) => applyTradeNote(store, tradeMatch[1], input, at));
       return true;
     }
+    if (url.pathname === '/api/portfolio/decision-log/trades' && req.method === 'POST') {
+      await mutate(res, req, (store, input, at) => addManualTrade(store, input, at));
+      return true;
+    }
     if (url.pathname === '/api/portfolio/decision-log/cash-flows' && req.method === 'POST') {
       await mutate(res, req, (store, input, at) => applyCashFlow(store, input, at));
       return true;
     }
     const flowMatch = url.pathname.match(/^\/api\/portfolio\/decision-log\/cash-flows\/([A-Za-z0-9_-]{1,64})$/);
     if (flowMatch && req.method === 'DELETE') {
-      await mutate(res, req, (store, _input, at) => removeCashFlow(store, flowMatch[1], at), { requireJson: false });
+      await mutate(res, req, (store, _input, at) => removeCashFlow(store, flowMatch[1], at), { requireJson: false, url });
       return true;
     }
     sendJson(res, 404, { error: { code: 'not_found', message: '未知接口' } });

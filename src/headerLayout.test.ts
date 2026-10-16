@@ -33,8 +33,8 @@ describe('header stays compact on a phone', () => {
     expect(themeSource).toContain('shrink-0');
   });
 
-  it('adds sector rotation as the fifth destination without restoring retired pages', () => {
-    expect(appSource.match(/<TabBtn/g)).toHaveLength(5);
+  it('六个标签：日志排在卖出和设置之间，退役页面没有回来', () => {
+    expect(appSource.match(/<TabBtn/g)).toHaveLength(6);
     expect(appSource).not.toContain('label="条件查询"');
     expect(appSource).not.toContain('label={<>持仓');
 
@@ -42,12 +42,22 @@ describe('header stays compact on a phone', () => {
     const rotation = appSource.indexOf('label="板块轮动"');
     const valuation = appSource.indexOf('label="决策"');
     const calculator = appSource.indexOf('label="卖出"');
+    const journal = appSource.indexOf('label="日志"');
     const settings = appSource.indexOf('label="设置"');
     expect(dashboard).toBeGreaterThan(-1);
     expect(rotation).toBeGreaterThan(dashboard);
     expect(valuation).toBeGreaterThan(rotation);
     expect(calculator).toBeGreaterThan(valuation);
-    expect(settings).toBeGreaterThan(calculator);
+    expect(journal).toBeGreaterThan(calculator);
+    expect(settings).toBeGreaterThan(journal);
+  });
+
+  it('导航格子跟着标签数量一起改成 6 列，滑块宽度也是 1/6', () => {
+    const nav = appSource.slice(appSource.indexOf('<nav'), appSource.indexOf('</nav>'));
+    expect(nav).toContain('grid-cols-6');
+    expect(nav).not.toContain('grid-cols-5');
+    expect(nav).toContain('w-[calc((100%_-_0.25rem)/6)]');
+    expect(nav).toContain('sm:w-[calc((100%_-_0.5rem)/6)]');
   });
 
   it('moves manual holdings maintenance into a collapsed section at the bottom of settings', () => {

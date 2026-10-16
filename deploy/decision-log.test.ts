@@ -232,6 +232,45 @@ describe('决策日志接口', () => {
     expect((sent[0].body as { log: { cash_flows: unknown[] } }).log.cash_flows).toHaveLength(1);
   });
 
+  it('手动补录过去的交易，重复补录会被拒绝', async () => {
+    const dir = await root();
+    const { sent, call } = harness(dir);
+
+    await call('POST', '/api/portfolio/decision-log/trades', {
+      trade_time: '2026-09-01T14:30:00Z', symbol: 'TQQQ', side: 'BUY', qty: 100, price: 80, note: '回撤 11% 买入',
+    });
+    expect(sent[0].status).toBe(200);
+    const stored = await readDecisionLog(dir);
+    expect(stored.trades).toEqual([expect.objectContaining({
+      symbol: 'TQQQ', side: 'BUY', qty: 100, price: 80, amount: 8_000, recorded_by: 'manual', status: 'pending_note',
+    })]);
+    expect(stored.trades[0].indicators.cnn_fear_greed).toBeNull();
+
+    await call('POST', '/api/portfolio/decision-log/trades', {
+      revision: stored.revision, trade_time: '2026-09-01T14:30:00Z', symbol: 'TQQQ', side: 'BUY', qty: 100, price: 80,
+    });
+    expect(sent[1].status).toBe(400);
+    expect((sent[1].body as { error: { message: string } }).error.message).toContain('已经记过');
+
+    await call('POST', '/api/portfolio/decision-log/trades', { trade_time: '不是时间', symbol: 'TQQQ', side: 'BUY', qty: 1 });
+    expect(sent[2].status).toBe(400);
+  });
+
+  it('删出入金时版本号过期也要 409', async () => {
+    const dir = await root();
+    await writeDecisionLog(dir, applyCashFlow(emptyDecisionLog(), { date: '2026-10-15', amount: 1 }));
+    const stored = await readDecisionLog(dir);
+    const { sent, call } = harness(dir);
+
+    await call('DELETE', `/api/portfolio/decision-log/cash-flows/${stored.cash_flows[0].id}?revision=0`, undefined, { 'content-type': undefined });
+    expect(sent[0].status).toBe(409);
+    expect((await readDecisionLog(dir)).cash_flows).toHaveLength(1);
+
+    await call('DELETE', `/api/portfolio/decision-log/cash-flows/${stored.cash_flows[0].id}?revision=${stored.revision}`, undefined, { 'content-type': undefined });
+    expect(sent[1].status).toBe(200);
+    expect((await readDecisionLog(dir)).cash_flows).toEqual([]);
+  });
+
   it('未知路径返回 404', async () => {
     const dir = await root();
     const { sent, call } = harness(dir);
