@@ -120,14 +120,57 @@ function artifactPairIndexes(entries, { symbolOf, sideOf, qtyOf, timeOf }) {
   return dropped;
 }
 
+// 券商整个读空时，同一时间戳上会一次性差分出一大批「整仓卖出」，而且全都
+// 没有成交价；恢复后又全部买回。这一整批连同对应的买回都不是真交易。
+export const READ_EMPTY_MIN_SYMBOLS = 5;
+
+function readEmptyBatchIndexes(entries, { symbolOf, sideOf, qtyOf, timeOf, priceOf }) {
+  const dropped = new Set();
+  const groups = new Map();
+  entries.forEach((entry, index) => {
+    if (sideOf(entry) !== 'SELL') return;
+    const key = timeOf(entry);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(index);
+  });
+  for (const [, indexes] of groups) {
+    const symbols = new Set(indexes.map((index) => symbolOf(entries[index])));
+    const everyPriceMissing = indexes.every((index) => priceOf(entries[index]) === null);
+    if (symbols.size <= READ_EMPTY_MIN_SYMBOLS || !everyPriceMissing) continue;
+    for (const index of indexes) {
+      dropped.add(index);
+      // 找这一笔对应的买回：同标的、同数量、时间在它之后、最早的一条。
+      const sellTime = Date.parse(timeOf(entries[index]));
+      const buyBack = entries
+        .map((entry, position) => ({ entry, position, time: Date.parse(timeOf(entry)) }))
+        .filter((item) => (
+          !dropped.has(item.position)
+          && sideOf(item.entry) === 'BUY'
+          && symbolOf(item.entry) === symbolOf(entries[index])
+          && qtyOf(item.entry) === qtyOf(entries[index])
+          && Number.isFinite(item.time)
+          && item.time >= sellTime
+        ))
+        .sort((left, right) => left.time - right.time)[0];
+      if (buyBack) dropped.add(buyBack.position);
+    }
+  }
+  return dropped;
+}
+
 function withoutSnapshotArtifacts(events) {
-  const dropped = artifactPairIndexes(events, {
+  const accessors = {
     symbolOf: (event) => String(record(event).symbol || '').toUpperCase().replace(/^US\./, ''),
     sideOf: (event) => String(record(event).side || '').toUpperCase(),
     qtyOf: (event) => numeric(record(event).quantity),
     timeOf: (event) => String(record(event).recorded_at || ''),
-  });
-  return events.filter((_event, index) => !dropped.has(index));
+    priceOf: (event) => numeric(record(event).price),
+  };
+  const paired = artifactPairIndexes(events, accessors);
+  const remaining = events.filter((_event, index) => !paired.has(index));
+  const batched = readEmptyBatchIndexes(remaining, accessors);
+  return remaining.filter((_event, index) => !batched.has(index));
 }
 
 /** 清掉已经存进去的伪影。只动自动抓来、还没填过理由的那些。 */
@@ -142,14 +185,23 @@ export function dropStoredSnapshotArtifacts(store, now = new Date()) {
       && !trade.prediction
       && !trade.note
     ));
-  const dropped = artifactPairIndexes(candidates.map((item) => item.trade), {
+  const accessors = {
     symbolOf: (trade) => String(trade.symbol || '').toUpperCase(),
     sideOf: (trade) => String(trade.side || '').toUpperCase(),
     qtyOf: (trade) => numeric(trade.qty),
     timeOf: (trade) => String(trade.trade_time || ''),
-  });
-  if (dropped.size === 0) return store;
-  const removeIds = new Set([...dropped].map((index) => candidates[index].trade.id));
+    priceOf: (trade) => numeric(trade.price),
+  };
+  const trades = candidates.map((item) => item.trade);
+  const paired = artifactPairIndexes(trades, accessors);
+  const remaining = candidates.filter((_item, index) => !paired.has(index));
+  const batched = readEmptyBatchIndexes(remaining.map((item) => item.trade), accessors);
+  const dropped = [
+    ...[...paired].map((index) => candidates[index].trade.id),
+    ...[...batched].map((index) => remaining[index].trade.id),
+  ];
+  if (dropped.length === 0) return store;
+  const removeIds = new Set(dropped);
   return {
     ...current,
     trades: current.trades.filter((trade) => !removeIds.has(trade.id)),

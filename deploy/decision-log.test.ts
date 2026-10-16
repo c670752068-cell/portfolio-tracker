@@ -365,3 +365,79 @@ describe('快照伪影过滤', () => {
     expect(dropStoredSnapshotArtifacts(store, new Date('2026-10-16T10:00:00Z'))).toBe(store);
   });
 });
+
+describe('整批读空伪影', () => {
+  // 线上实测：2026-10-12 20:02:54 一次把 11 个标的整仓卖出、全部没有成交价，
+  // 4 小时 35 分后 2026-10-13 00:37:24 又全部买回。
+  const sellAt = '2026-10-12T20:02:54.000-04:00';
+  const buyAt = '2026-10-13T00:37:24.000-04:00';
+  const batch = [
+    ['TSLA', 17], ['MCD', 15], ['AVL', 50], ['AVGO', 40], ['PDD', 1],
+    ['NKE', 2], ['NKE', 3], ['MCD', 1], ['UDOW', 170], ['TSLL', 230], ['NAIL', 60], ['GDX', 26], ['FAS', 35],
+  ] as [string, number][];
+  const sells = batch.map(([symbol, quantity]) => ({
+    broker: 'IBKR', symbol, side: 'SELL', quantity, price: null, price_source: 'unavailable',
+    estimated: true, asset_type: 'stock', recorded_at: sellAt,
+  }));
+  const buys = batch.map(([symbol, quantity]) => ({
+    broker: 'IBKR', symbol, side: 'BUY', quantity, price: 100 + quantity, price_source: 'broker_cost_delta',
+    estimated: false, asset_type: 'stock', recorded_at: buyAt,
+  }));
+
+  it('同一时间戳 5 个以上标的整仓卖出且都没成交价，连对应的买回一起不入日志', () => {
+    const store = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: [...sells, ...buys] } }, {
+      now: new Date('2026-10-16T08:00:00Z'),
+    });
+
+    expect(store.trades).toEqual([]);
+  });
+
+  it('只有三个标的的批次不算读空，照常入账', () => {
+    const small = sells.slice(0, 3);
+    const store = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: small } }, {
+      now: new Date('2026-10-16T08:00:00Z'),
+    });
+
+    expect(store.trades).toHaveLength(3);
+  });
+
+  it('批次里只要有一条带成交价，就不当读空处理', () => {
+    const withPrice = [...sells];
+    withPrice[0] = { ...withPrice[0], price: 380.29, price_source: 'broker_cost_delta', estimated: false };
+    const store = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: withPrice } }, {
+      now: new Date('2026-10-16T08:00:00Z'),
+    });
+
+    expect(store.trades).toHaveLength(sells.length);
+  });
+
+  it('只清掉数量对得上的买回，数量不同的买入留下', () => {
+    const changed = [...buys];
+    changed[0] = { ...changed[0], quantity: 5 };
+    const store = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: [...sells, ...changed] } }, {
+      now: new Date('2026-10-16T08:00:00Z'),
+    });
+
+    expect(store.trades.map((trade) => [trade.symbol, trade.side, trade.qty])).toEqual([['TSLA', 'BUY', 5]]);
+  });
+
+  it('清库存时同样生效，但手动补录和填过理由的不碰', () => {
+    const stored = captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: [...sells, ...buys] } }, {
+      now: new Date('2026-10-16T08:00:00Z'), keepArtifacts: true,
+    });
+    expect(stored.trades).toHaveLength(26);
+
+    const noted = applyTradeNote(stored, stored.trades[0].id, { note: '这条我写过' }, new Date('2026-10-16T09:00:00Z'));
+    const manual = addManualTrade(noted, { trade_time: sellAt, symbol: 'UDOW', side: 'SELL', qty: 170 }, new Date('2026-10-16T09:05:00Z'));
+
+    const cleaned = dropStoredSnapshotArtifacts(manual, new Date('2026-10-16T10:00:00Z'));
+
+    expect(cleaned.trades.filter((trade) => trade.recorded_by === 'manual')).toHaveLength(1);
+    expect(cleaned.trades.filter((trade) => trade.note === '这条我写过')).toHaveLength(1);
+    // 被用户写过理由的那条卖出不进清理范围，于是它对应的那笔买回也留着——
+    // 宁可多留一条，也不删用户声明过的交易的对手单。
+    const leftovers = cleaned.trades.filter((trade) => trade.recorded_by === 'position_ledger' && !trade.note);
+    expect(leftovers).toHaveLength(1);
+    expect(leftovers[0]).toMatchObject({ side: 'BUY', symbol: stored.trades[0].symbol, qty: stored.trades[0].qty });
+  });
+});
