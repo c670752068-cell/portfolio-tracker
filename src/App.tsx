@@ -14,7 +14,7 @@ import { Summary } from './components/Summary';
 import { ThemeControl } from './components/ThemeControl';
 import { ValuationPanel, MarketIndicators } from './components/ValuationPanel';
 import { SectorRotation } from './components/SectorRotation';
-import { DecisionJournal } from './components/DecisionJournal';
+import { JournalPage } from './components/JournalPage';
 import { NotificationCenter } from './components/NotificationCenter';
 import { ALERT_RULES_REFRESH_MS, deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
@@ -741,7 +741,7 @@ export default function App() {
       )}
 
       {tab === 'journal' && privateDataState === 'ready' && (
-        <DecisionJournal displayCurrency={settings.displayCurrency} rates={rates} />
+        <JournalPage displayCurrency={settings.displayCurrency} rates={rates} />
       )}
       {tab === 'settings' && (
         <section className="space-y-4">

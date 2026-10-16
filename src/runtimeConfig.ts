@@ -55,6 +55,10 @@ export function getServerChannelAlertsUrl(): string {
   return apiUrl('/api/portfolio/channel-alerts');
 }
 
+export function getServerAlertLogUrl(): string {
+  return apiUrl('/api/portfolio/alert-log');
+}
+
 export function getServerDecisionLogUrl(): string {
   return apiUrl('/api/portfolio/decision-log');
 }

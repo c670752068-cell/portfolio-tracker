@@ -60,6 +60,8 @@ export interface DecisionLog {
   version: number;
   revision: number;
   updated_at: string | null;
+  /** 起算点：这个时刻（含）之前的推算成交不再入账 */
+  trades_from: string | null;
   trades: DecisionTrade[];
   nav_series: DecisionNavPoint[];
   cash_flows: DecisionCashFlow[];

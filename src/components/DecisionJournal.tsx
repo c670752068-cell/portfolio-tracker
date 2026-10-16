@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  addCashFlow, addManualTrade, fetchDecisionLog, removeCashFlow, saveTradeNote,
-  type DecisionLog, type DecisionPrediction, type DecisionTrade, type DecisionTrigger,
+import { useMemo, useState } from 'react';
+import type {
+  DecisionLog, DecisionPrediction, DecisionTrade, DecisionTrigger,
 } from '../decisionLog';
 import { buildDecisionStats, MIN_RELIABLE_SAMPLES, type DecisionStatGroup } from '../decisionLogStats';
-import { blendedBenchmarkReturn, buildTwr, buyAndHoldReturn, type ClosePoint } from '../twr';
-import { fetchMaSlopeDashboard } from '../maSlopeQuery';
-import { getServerDecisionLogUrl, getServerMaSlopeUrl } from '../runtimeConfig';
+import {
+  blendedBenchmarkReturn, blendedMaxDrawdownPct, buildTwr, buyAndHoldReturn, maxDrawdownPct,
+  type ClosePoint,
+} from '../twr';
 import { formatDisplayMoney } from '../displayCurrency';
 import { formatPct } from '../format';
 import type { DisplayCurrency, ExchangeRates } from '../types';
@@ -34,36 +34,21 @@ function signedPct(value: number | null, digits = 2): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(digits)}%`;
 }
 
-export function DecisionJournalView({
-  log, qqqSeries, sgovSeries, displayCurrency, rates, error, loading, onSaveNote, onAddFlow, onRemoveFlow, onAddTrade,
+export function DecisionLogSection({
+  log, displayCurrency, rates, error, loading, onSaveNote, onAddTrade,
 }: {
   log: DecisionLog | null;
-  qqqSeries: ClosePoint[];
-  sgovSeries: ClosePoint[];
   displayCurrency: DisplayCurrency;
   rates: ExchangeRates;
   error?: string;
   loading?: boolean;
   onSaveNote?: (trade: DecisionTrade, note: { trigger: DecisionTrigger[]; prediction: DecisionPrediction | null; note: string; price?: number }) => void;
-  onAddFlow?: (draft: { date: string; amount: number; note: string }) => void;
-  onRemoveFlow?: (id: string) => void;
   onAddTrade?: (draft: { trade_time: string; symbol: string; side: 'BUY' | 'SELL'; qty: number; price?: number }) => void;
 }) {
   const stats = useMemo(() => buildDecisionStats(log?.trades ?? []), [log]);
-  const twr = useMemo(() => buildTwr(log?.nav_series ?? [], log?.cash_flows ?? []), [log]);
-  const ytd = useMemo(
-    () => buildTwr(log?.nav_series ?? [], log?.cash_flows ?? [], { from: `${new Date().getUTCFullYear()}-01-01` }),
-    [log],
-  );
-  const benchmark = twr.start && twr.end
-    ? {
-      qqq: buyAndHoldReturn(qqqSeries, twr.start, twr.end),
-      blended: blendedBenchmarkReturn(qqqSeries, sgovSeries, twr.start, twr.end, 0.6),
-    }
-    : { qqq: null, blended: null };
 
   return (
-    <section className="space-y-3 md:space-y-5" aria-label="决策日志">
+    <div className="space-y-3 md:space-y-5">
       <div className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -101,44 +86,6 @@ export function DecisionJournalView({
       </div>
 
       <div className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5">
-        <h3 className="text-sm font-bold sm:text-base">时间加权收益率 vs QQQ</h3>
-        <p className="mt-1 text-xs text-ink-muted">
-          每日净值由本机同步时写入，出入金由你手工登记后剔除。净值序列从 {twr.start ?? '—'} 开始，
-          在那之前没有数据，算不出来的区间一律显示暂无。
-        </p>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Metric label="今年以来 TWR" value={signedPct(ytd.returnPct)} />
-          <Metric label="自开始以来 TWR" value={signedPct(twr.returnPct)} />
-          <Metric label="同期满仓 QQQ" value={signedPct(benchmark.qqq)} />
-          <Metric label="同期 60% QQQ + 40% SGOV" value={signedPct(benchmark.blended)} />
-        </div>
-        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Metric label="账户最大回撤" value={signedPct(twr.maxDrawdownPct)} />
-          <Metric label="净值样本天数" value={`${log?.nav_series.length ?? 0} 天`} />
-        </div>
-        {twr.monthly.length > 0 && (
-          <table className="mt-3 w-full text-left text-xs tabular-nums">
-            <thead className="text-ink-muted"><tr><th className="py-1 font-medium">月份</th><th className="py-1 font-medium">TWR</th></tr></thead>
-            <tbody>
-              {twr.monthly.map((row) => (
-                <tr key={row.month} className="border-t border-neutral/25">
-                  <td className="py-1">{row.month}</td>
-                  <td className={`py-1 ${row.returnPct >= 0 ? 'text-gain' : 'text-loss'}`}>{signedPct(row.returnPct)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <CashFlowEditor
-          flows={log?.cash_flows ?? []}
-          displayCurrency={displayCurrency}
-          rates={rates}
-          onAdd={onAddFlow}
-          onRemove={onRemoveFlow}
-        />
-      </div>
-
-      <div className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-bold sm:text-base">交易记录</h3>
           <span className="text-[10px] text-ink-muted">{log?.trades.length ?? 0} 笔</span>
@@ -160,7 +107,81 @@ export function DecisionJournalView({
         )}
         <ManualTradeEditor onAdd={onAddTrade} />
       </div>
-    </section>
+    </div>
+  );
+}
+
+export function ReturnsSection({
+  log, qqqSeries, sgovSeries, displayCurrency, rates, onAddFlow, onRemoveFlow,
+}: {
+  log: DecisionLog | null;
+  qqqSeries: ClosePoint[];
+  sgovSeries: ClosePoint[];
+  displayCurrency: DisplayCurrency;
+  rates: ExchangeRates;
+  onAddFlow?: (draft: { date: string; amount: number; note: string }) => void;
+  onRemoveFlow?: (id: string) => void;
+}) {
+  const twr = useMemo(() => buildTwr(log?.nav_series ?? [], log?.cash_flows ?? []), [log]);
+  const ytd = useMemo(
+    () => buildTwr(log?.nav_series ?? [], log?.cash_flows ?? [], { from: `${new Date().getUTCFullYear()}-01-01` }),
+    [log],
+  );
+  const lastYear = useMemo(() => {
+    const from = new Date();
+    from.setUTCFullYear(from.getUTCFullYear() - 1);
+    return buildTwr(log?.nav_series ?? [], log?.cash_flows ?? [], { from: from.toISOString().slice(0, 10) });
+  }, [log]);
+  const benchmark = twr.start && twr.end
+    ? {
+      qqq: buyAndHoldReturn(qqqSeries, twr.start, twr.end),
+      blended: blendedBenchmarkReturn(qqqSeries, sgovSeries, twr.start, twr.end, 0.6),
+      qqqDrawdown: maxDrawdownPct(qqqSeries, twr.start, twr.end),
+      blendedDrawdown: blendedMaxDrawdownPct(qqqSeries, sgovSeries, twr.start, twr.end, 0.6),
+    }
+    : { qqq: null, blended: null, qqqDrawdown: null, blendedDrawdown: null };
+
+  return (
+    <div className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5">
+      <h3 className="text-sm font-bold sm:text-base">时间加权收益率 vs QQQ</h3>
+      <p className="mt-1 text-xs text-ink-muted">
+        口径是网站总资产（三家券商合计）。每日净值由本机同步时写入，出入金由你手工登记后剔除，
+        所以这里和长桥 App 的「简单加权」不是一回事。净值序列从 {twr.start ?? '—'} 开始，
+        在那之前没有数据，算不出来的区间一律显示暂无。
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Metric label="今年以来 TWR" value={signedPct(ytd.returnPct)} />
+        <Metric label="近 1 年 TWR" value={signedPct(lastYear.returnPct)} />
+        <Metric label="自开始以来 TWR" value={signedPct(twr.returnPct)} />
+        <Metric label="净值样本天数" value={`${log?.nav_series.length ?? 0} 天`} />
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Metric label="同期满仓 QQQ" value={signedPct(benchmark.qqq)} />
+        <Metric label="同期 60% QQQ + 40% SGOV" value={signedPct(benchmark.blended)} />
+        <Metric label="账户最大回撤" value={signedPct(twr.maxDrawdownPct)} />
+        <Metric label="QQQ / 60-40 最大回撤" value={`${signedPct(benchmark.qqqDrawdown)} / ${signedPct(benchmark.blendedDrawdown)}`} />
+      </div>
+      {twr.monthly.length > 0 && (
+        <table className="mt-3 w-full text-left text-xs tabular-nums">
+          <thead className="text-ink-muted"><tr><th className="py-1 font-medium">月份</th><th className="py-1 font-medium">TWR</th></tr></thead>
+          <tbody>
+            {twr.monthly.map((row) => (
+              <tr key={row.month} className="border-t border-neutral/25">
+                <td className="py-1">{row.month}</td>
+                <td className={`py-1 ${row.returnPct >= 0 ? 'text-gain' : 'text-loss'}`}>{signedPct(row.returnPct)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <CashFlowEditor
+        flows={log?.cash_flows ?? []}
+        displayCurrency={displayCurrency}
+        rates={rates}
+        onAdd={onAddFlow}
+        onRemove={onRemoveFlow}
+      />
+    </div>
   );
 }
 
@@ -461,60 +482,5 @@ function ManualTradeEditor({ onAdd }: {
         <button type="submit" className="col-span-2 min-h-9 rounded-lg bg-neutral/30 text-xs font-semibold">补录这笔交易</button>
       </form>
     </details>
-  );
-}
-
-export function DecisionJournal({ displayCurrency, rates }: { displayCurrency: DisplayCurrency; rates: ExchangeRates }) {
-  const endpoint = getServerDecisionLogUrl() || '/api/portfolio/decision-log';
-  const [log, setLog] = useState<DecisionLog | null>(null);
-  const [series, setSeries] = useState<{ qqq: ClosePoint[]; sgov: ClosePoint[] }>({ qqq: [], sgov: [] });
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const revision = useRef(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchDecisionLog(endpoint, controller.signal)
-      .then((next) => { revision.current = next.revision; setLog(next); setError(''); })
-      .catch((reason) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : '决策日志读取失败'); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    const slope = getServerMaSlopeUrl() || '/api/portfolio/ma-slope';
-    void Promise.all([
-      fetchMaSlopeDashboard(slope, 'QQQ', { range: '5y', slopeWindow: 8, signal: controller.signal }).catch(() => null),
-      fetchMaSlopeDashboard(slope, 'SGOV', { range: '5y', slopeWindow: 8, signal: controller.signal }).catch(() => null),
-    ]).then(([qqq, sgov]) => {
-      if (controller.signal.aborted) return;
-      const closes = (result: typeof qqq) => (result?.dashboard.series ?? [])
-        .filter((point) => !point.is_partial && typeof point.close === 'number')
-        .map((point) => ({ date: point.date, close: point.close }));
-      setSeries({ qqq: closes(qqq), sgov: closes(sgov) });
-    });
-    return () => controller.abort();
-  }, [endpoint]);
-
-  function apply(action: Promise<DecisionLog>) {
-    action
-      .then((next) => { revision.current = next.revision; setLog(next); setError(''); })
-      .catch((reason: unknown) => {
-        const conflict = reason as { log?: DecisionLog; message?: string };
-        if (conflict?.log) { revision.current = conflict.log.revision; setLog(conflict.log); }
-        setError(conflict?.message || '保存失败，请重试');
-      });
-  }
-
-  return (
-    <DecisionJournalView
-      log={log}
-      qqqSeries={series.qqq}
-      sgovSeries={series.sgov}
-      displayCurrency={displayCurrency}
-      rates={rates}
-      error={error}
-      loading={loading}
-      onSaveNote={(trade, note) => apply(saveTradeNote(endpoint, trade.id, note, revision.current))}
-      onAddFlow={(draft) => apply(addCashFlow(endpoint, draft, revision.current))}
-      onRemoveFlow={(id) => apply(removeCashFlow(endpoint, id, revision.current))}
-      onAddTrade={(draft) => apply(addManualTrade(endpoint, draft, revision.current))}
-    />
   );
 }

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { DecisionJournalView } from './DecisionJournal';
+import { DecisionLogSection, ReturnsSection } from './DecisionJournal';
 import type { DecisionLog, DecisionTrade } from '../decisionLog';
 import type { ExchangeRates } from '../types';
 
@@ -24,11 +24,17 @@ function trade(overrides: Partial<DecisionTrade> = {}): DecisionTrade {
 }
 
 function log(overrides: Partial<DecisionLog> = {}): DecisionLog {
-  return { version: 1, revision: 4, updated_at: '2026-10-16T08:00:00Z', trades: [], nav_series: [], cash_flows: [], ...overrides };
+  return {
+    version: 1, revision: 4, updated_at: '2026-10-16T08:00:00Z', trades_from: null,
+    trades: [], nav_series: [], cash_flows: [], ...overrides,
+  };
 }
 
 const render = (value: DecisionLog | null, qqq = [] as { date: string; close: number }[], sgov = [] as { date: string; close: number }[]) => renderToStaticMarkup(
-  <DecisionJournalView log={value} qqqSeries={qqq} sgovSeries={sgov} displayCurrency="USD" rates={rates} />,
+  <>
+    <DecisionLogSection log={value} displayCurrency="USD" rates={rates} />
+    <ReturnsSection log={value} qqqSeries={qqq} sgovSeries={sgov} displayCurrency="USD" rates={rates} />
+  </>,
 );
 
 describe('日志页', () => {

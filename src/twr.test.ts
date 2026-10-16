@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { blendedBenchmarkReturn, buildTwr, buyAndHoldReturn } from './twr';
+import {
+  blendedBenchmarkReturn, blendedMaxDrawdownPct, buildTwr, buyAndHoldReturn, maxDrawdownPct,
+} from './twr';
 
 const nav = (date: string, value: number) => ({ date, nav: value, captured_at: `${date}T20:00:00Z` });
 const flow = (date: string, amount: number) => ({ id: `f-${date}`, date, amount, note: '', created_at: `${date}T20:00:00Z` });
@@ -89,5 +91,28 @@ describe('基准对比', () => {
 
   it('缺少任一基准序列就返回空值', () => {
     expect(blendedBenchmarkReturn(qqq, [], '2026-09-30', '2026-11-30', 0.6)).toBeNull();
+  });
+});
+
+describe('基准的最大回撤', () => {
+  const series = [
+    { date: '2026-09-30', close: 100 }, { date: '2026-10-15', close: 120 },
+    { date: '2026-10-30', close: 90 }, { date: '2026-11-30', close: 110 },
+  ];
+  const flat = series.map((point) => ({ date: point.date, close: 100 }));
+
+  it('满仓基准按区间内的收盘序列算最大回撤', () => {
+    expect(maxDrawdownPct(series, '2026-09-30', '2026-11-30')).toBeCloseTo(-25, 6);
+    expect(maxDrawdownPct(flat, '2026-09-30', '2026-11-30')).toBeCloseTo(0, 6);
+    expect(maxDrawdownPct([], '2026-09-30', '2026-11-30')).toBeNull();
+  });
+
+  it('混合基准按每月再平衡后的净值序列算最大回撤', () => {
+    // 60/40：10 月 +20% 后再 -25% → 组合 +12% 后 -15%
+    const blended = blendedMaxDrawdownPct(series, flat, '2026-09-30', '2026-11-30', 0.6);
+
+    expect(blended).toBeLessThan(0);
+    expect(blended).toBeGreaterThan(-25);
+    expect(blendedMaxDrawdownPct(series, [], '2026-09-30', '2026-11-30', 0.6)).toBeNull();
   });
 });

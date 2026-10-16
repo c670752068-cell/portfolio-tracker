@@ -128,3 +128,68 @@ export function blendedBenchmarkReturn(
   }
   return moved ? (index - 1) * 100 : null;
 }
+
+function drawdownOf(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  let peak = values[0];
+  let worst = 0;
+  for (const value of values) {
+    peak = Math.max(peak, value);
+    if (peak > 0) worst = Math.min(worst, value / peak - 1);
+  }
+  return worst * 100;
+}
+
+/** 满仓基准在区间内的最大回撤。 */
+export function maxDrawdownPct(
+  series: readonly ClosePoint[], from: string, to: string,
+): number | null {
+  const closes = [...series]
+    .filter((point) => point.date >= from && point.date <= to && positive(point.close) !== null)
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .map((point) => point.close);
+  return drawdownOf(closes);
+}
+
+/** 每月再平衡的混合基准在区间内的最大回撤（按月末净值序列算）。 */
+export function blendedMaxDrawdownPct(
+  risky: readonly ClosePoint[],
+  safe: readonly ClosePoint[],
+  from: string,
+  to: string,
+  riskyWeight: number,
+): number | null {
+  const riskySorted = [...risky].sort((left, right) => left.date.localeCompare(right.date));
+  const safeSorted = [...safe].sort((left, right) => left.date.localeCompare(right.date));
+  if (riskySorted.length === 0 || safeSorted.length === 0) return null;
+  const dates = [...new Set(riskySorted
+    .filter((point) => point.date >= from && point.date <= to)
+    .map((point) => point.date))].sort();
+  if (dates.length === 0) return null;
+
+  const startRisky = closeAtOrAfter(riskySorted, from);
+  const startSafe = closeAtOrAfter(safeSorted, from);
+  if (!startRisky || !startSafe) return null;
+
+  let index = 1;
+  let riskyBase = startRisky.close;
+  let safeBase = startSafe.close;
+  let month = dates[0].slice(0, 7);
+  const values = [index];
+  for (const date of dates) {
+    const riskyPoint = closeAtOrBefore(riskySorted, date);
+    const safePoint = closeAtOrBefore(safeSorted, date);
+    if (!riskyPoint || !safePoint) continue;
+    const blended = riskyWeight * (riskyPoint.close / riskyBase) + (1 - riskyWeight) * (safePoint.close / safeBase);
+    if (!Number.isFinite(blended) || blended <= 0) continue;
+    values.push(index * blended);
+    // 跨月就按月末价格再平衡一次。
+    if (date.slice(0, 7) !== month) {
+      index *= blended;
+      riskyBase = riskyPoint.close;
+      safeBase = safePoint.close;
+      month = date.slice(0, 7);
+    }
+  }
+  return drawdownOf(values);
+}
