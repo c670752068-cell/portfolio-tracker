@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Holding, QuantAnalysisSnapshot } from '../types';
 import { getServerSectorRotationUrl } from '../runtimeConfig';
 import { technicalPresetSymbols, technicalSymbolName } from '../technicalSymbols';
+import { withSingleRetry } from '../requestRetry';
 import { fetchRotation, PERIODS, relativePerformance, ROTATION_COPY, ROTATION_LABELS, rotationTrail, SECTORS, signedPercent, signedPp, stockSector, type RelativePerformance, type RotationHistory, type RotationPayload, type RotationPoint, type RotationState, type SectorSymbol } from '../sectorRotation';
 import './SectorRotation.css';
 
@@ -27,7 +28,8 @@ export function SectorRotation({ snapshot, holdings, onOpenDecision }: Props) {
   const unmapped = symbols.filter(symbol => !stockSector(symbol));
   useEffect(() => {
     const controller = new AbortController();
-    void fetchRotation(ENDPOINT(), undefined, controller.signal).then(result => {
+    void withSingleRetry(() => fetchRotation(ENDPOINT(), undefined, controller.signal),
+      { isAborted: () => controller.signal.aborted }).then(result => {
       if (!controller.signal.aborted) { setPayload(result); setError(''); }
     }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : '行情暂不可用'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });

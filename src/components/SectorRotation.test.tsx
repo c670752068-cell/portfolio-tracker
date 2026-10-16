@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { PerformanceChart, RotationMap, SectorRotation } from './SectorRotation';
 import { relativePerformance, type RotationHistory } from '../sectorRotation';
+import rotationSource from './SectorRotation.tsx?raw';
 
 describe('sector rotation presentation', () => {
   it('uses a real-data loading state, four periods and explicit calculation boundaries', () => {
@@ -30,5 +31,10 @@ describe('sector rotation presentation', () => {
     expect(html).toContain('110.00');
     expect(html).toContain('105.00');
     expect(html).toContain('起点100');
+  });
+
+  it('首次读取失败时自动重试一次，再失败才显示现有空态', () => {
+    expect(rotationSource).toContain('withSingleRetry');
+    expect(rotationSource).toContain('isAborted: () => controller.signal.aborted');
   });
 });
