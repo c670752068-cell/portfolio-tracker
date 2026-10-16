@@ -73,4 +73,30 @@ describe('HoldingsTable responsive views', () => {
     expect(html.match(/成本待补/g)?.length).toBeGreaterThanOrEqual(2);
     expect(html.match(/aria-label="删除 IGV"/g)?.length).toBeGreaterThanOrEqual(2);
   });
+
+  it('rounds binary floating-point noise in editable price fields', () => {
+    const metrics = computeMetrics({
+      holdings: [{
+        id: 'mags', symbol: 'MAGS', name: 'MAGS', shares: 120,
+        buyPrice: 61.381543, currentPrice: 63.919999999999995,
+        sector: '科技', currency: 'USD', assetType: 'etf',
+      }],
+      cash: [],
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    }, rates).holdingsMetrics;
+
+    const html = renderToStaticMarkup(
+      <HoldingsTable
+        metrics={metrics}
+        displayCurrency="USD"
+        rates={rates}
+        onAdd={() => undefined}
+        onUpdate={() => undefined}
+        onDelete={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('value="63.92"');
+    expect(html).not.toContain('63.919999999999995');
+  });
 });

@@ -13,6 +13,7 @@ import {
 import type { PeHistoryEntry, PeHistoryPayload } from '../peData';
 import type { QuantForwardPeHistory, QuantValuationTab } from '../types';
 import { alignValuationHistoryAsOf } from '../valuationPlan';
+import { normalizedValuationAsOf } from '../valuationFreshness';
 
 type PeMetricView = 'ttm' | 'forward';
 type IndexKey = 'NDX' | 'SOX';
@@ -132,7 +133,7 @@ function PeHistoryChart({
 
 function ttmSeries(valuation: QuantValuationTab, history: PeHistoryPayload | undefined, index: IndexKey) {
   if (index === 'NDX') {
-    const points = alignValuationHistoryAsOf(valuation.ndx.history, valuation.ndx.as_of, valuation.ndx.current_pe, valuation.ndx.current_pb)
+    const points = alignValuationHistoryAsOf(valuation.ndx.history, normalizedValuationAsOf(valuation.ndx), valuation.ndx.current_pe, valuation.ndx.current_pb)
       .filter((item) => item.pe !== null)
       .map((item) => ({ date: item.date, pe: item.pe as number }));
     return { series: points, current: valuation.ndx.current_pe, percentile: valuation.ndx.pe_percentile_5y };

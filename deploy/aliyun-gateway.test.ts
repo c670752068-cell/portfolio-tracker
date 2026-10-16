@@ -50,6 +50,7 @@ beforeAll(async () => {
       PORTFOLIO_SYNC_TOKEN: 'unit-secret',
       PORTFOLIO_POSITIONS_ROOT: storageRoot,
       PORTFOLIO_ANALYSIS_ROOT: join(storageRoot, 'analysis'),
+      PORTFOLIO_ALERTS_ROOT: join(storageRoot, 'alerts'),
       PORTFOLIO_REFRESH_REQUEST_PATH: refreshRequestPath,
     },
     stdio: 'ignore',
@@ -141,11 +142,13 @@ describe('portfolio positions gateway', () => {
     });
   });
 
-  it('protects refresh requests with the bearer token', async () => {
-    const response = await fetch(`${origin}/api/refresh-request`, {
-      headers: { Authorization: 'Bearer wrong-value' },
-    });
-    expect(response.status).toBe(401);
+  it('allows the website to request and read refresh status without a browser token', async () => {
+    const post = await fetch(`${origin}/api/refresh-request`, { method: 'POST' });
+    expect(post.status).toBe(200);
+
+    const response = await fetch(`${origin}/api/refresh-request`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: 'pending' });
   });
 
   it('atomically stores a valid pushed snapshot and returns the same JSON', async () => {
@@ -167,9 +170,12 @@ describe('portfolio positions gateway', () => {
     });
     expect(post.status).toBe(200);
 
-    // Reading the latest shared snapshot must work on a second device without
-    // copying browser-local credentials from the first device.
-    const get = await fetch(`${origin}/api/portfolio/positions`);
+    const publicGet = await fetch(`${origin}/api/portfolio/positions`);
+    expect(publicGet.status).toBe(200);
+    expect(await publicGet.json()).toEqual(snapshot);
+    const get = await fetch(`${origin}/api/portfolio/positions`, {
+      headers: { Authorization: AUTHORIZATION },
+    });
     expect(get.status).toBe(200);
     expect(await get.json()).toEqual(snapshot);
     expect(JSON.parse(await readFile(join(storageRoot, 'latest.json'), 'utf8'))).toEqual(snapshot);
@@ -201,7 +207,15 @@ describe('portfolio positions gateway', () => {
     expect(await response.json()).toEqual(expect.objectContaining({ ok: true }));
   });
 
-  it('atomically stores and publicly returns a valid quant analysis snapshot', async () => {
+  it('exposes the fixed daily channel-review colors as a public read-only endpoint', async () => {
+    const response = await fetch(`${origin}/api/portfolio/channel-alerts`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(expect.objectContaining({
+      review_time: '16:20', timezone: 'America/New_York', symbols: expect.any(Object),
+    }));
+  });
+
+  it('atomically stores and returns a protected quant analysis snapshot', async () => {
     const snapshot = {
       source: 'futu-assistant',
       generated_at: '2026-07-15T16:00:00-04:00',
@@ -218,12 +232,42 @@ describe('portfolio positions gateway', () => {
       body: JSON.stringify(snapshot),
     });
     expect(post.status).toBe(200);
-    expect(await post.json()).toEqual({ ok: true, symbol_count: 1, generated_at: snapshot.generated_at });
+    expect(await post.json()).toEqual({
+      ok: true, symbol_count: 1, generated_at: snapshot.generated_at, alerts_sent: 0,
+    });
 
-    const get = await fetch(`${origin}/api/portfolio/quant-analysis`);
+    const publicGet = await fetch(`${origin}/api/portfolio/quant-analysis`);
+    expect(publicGet.status).toBe(200);
+    expect(await publicGet.json()).toEqual(snapshot);
+    const get = await fetch(`${origin}/api/portfolio/quant-analysis`, {
+      headers: { Authorization: AUTHORIZATION },
+    });
     expect(get.status).toBe(200);
     expect(await get.json()).toEqual(snapshot);
     expect(JSON.parse(await readFile(join(storageRoot, 'analysis', 'latest.json'), 'utf8'))).toEqual(snapshot);
+  });
+
+  it('compresses large protected analysis responses when the client accepts gzip', async () => {
+    const snapshot = {
+      source: 'futu-assistant',
+      generated_at: '2026-08-11T03:00:00-04:00',
+      rule_version: '2.2',
+      context: { audit_blob: 'x'.repeat(8_000) },
+      symbols: { AVGO: { gates: {}, gates_passed: 0, gates_total: 1 } },
+    };
+    const post = await fetch(`${origin}/api/portfolio/quant-analysis`, {
+      method: 'POST',
+      headers: { Authorization: AUTHORIZATION, 'Content-Type': 'application/json' },
+      body: JSON.stringify(snapshot),
+    });
+    expect(post.status).toBe(200);
+
+    const response = await fetch(`${origin}/api/portfolio/quant-analysis`, {
+      headers: { 'Accept-Encoding': 'gzip' },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-encoding')).toBe('gzip');
+    expect(await response.json()).toEqual(snapshot);
   });
 
   it('protects quant analysis writes and validates the export envelope', async () => {
@@ -241,6 +285,63 @@ describe('portfolio positions gateway', () => {
     });
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toEqual(expect.objectContaining({ error: expect.objectContaining({ code: 'invalid_envelope' }) }));
+  });
+
+  it('serves the stored Futu slope for configured symbols without contacting a public quote source', async () => {
+    const maSlope = {
+      available: true,
+      model: 'ma200_20d_annualized',
+      role: 'trend_context_only',
+      buy_veto: false,
+      ma_period: 200,
+      change_window_sessions: 20,
+      annualization_sessions: 252,
+      annualized_pct: 17.22,
+      current_ma: 341.8,
+      comparison_ma: 337.2,
+      direction: 'up',
+      regime: 'strong_up',
+      label: '强势上涨',
+      as_of: '2026-08-19',
+      price_adjustment: 'QFQ',
+      data_source: 'Futu OpenD closed daily bars',
+      formula: '(MA200_t / MA200_t-20 - 1) × 252 / 20 × 100',
+      reason: '趋势向上；不影响回撤买入判定。',
+      series: [{ date: '2026-08-19', annualized_pct: 17.22 }],
+    };
+    const snapshot = {
+      source: 'futu-assistant',
+      generated_at: '2026-08-20T09:16:00-04:00',
+      rule_version: '2.2',
+      symbols: { AVGO: { available: true, ma_slope: maSlope } },
+    };
+    const post = await fetch(`${origin}/api/portfolio/quant-analysis`, {
+      method: 'POST',
+      headers: { Authorization: AUTHORIZATION, 'Content-Type': 'application/json' },
+      body: JSON.stringify(snapshot),
+    });
+    expect(post.status).toBe(200);
+
+    const response = await fetch(`${origin}/api/portfolio/ma-slope?symbol=avgo`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ...maSlope,
+      symbol: 'AVGO',
+      decision_use: false,
+      query_source: 'decision_snapshot',
+    });
+
+    const invalid = await fetch(`${origin}/api/portfolio/ma-slope?symbol=AAPL%2F..%2Fsecret`);
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual(expect.objectContaining({
+      error: expect.objectContaining({ code: 'invalid_symbol' }),
+    }));
+
+    const invalidChart = await fetch(`${origin}/api/portfolio/ma-slope?symbol=AVGO&view=dashboard&range=forever&slope_window=5`);
+    expect(invalidChart.status).toBe(400);
+    expect(await invalidChart.json()).toEqual(expect.objectContaining({
+      error: expect.objectContaining({ code: 'invalid_chart_options' }),
+    }));
   });
 
   it('keeps the gateway alive when quant analysis storage fails', async () => {
@@ -295,7 +396,7 @@ describe('portfolio positions gateway', () => {
       await waitUntilReady(disabledOrigin);
       const response = await fetch(`${disabledOrigin}/api/portfolio/positions`);
       expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({ error: { code: 'not_found', message: '未知接口' } });
+      expect(await response.json()).toEqual({ error: { code: 'no_data', message: '尚无量化系统持仓数据' } });
       const refresh = await fetch(`${disabledOrigin}/api/refresh-request`);
       expect(refresh.status).toBe(404);
       expect(await refresh.json()).toEqual({ error: { code: 'not_found', message: '未知接口' } });
@@ -310,10 +411,13 @@ describe('portfolio positions gateway', () => {
     expect(script).toContain('${PORTFOLIO_SYNC_ENV}');
   });
 
-  it('deploys the alert tracker, backs up the gateway, and passes Bark only when explicitly supplied', async () => {
+  it('deploys the alert tracker in the versioned release and passes Bark only when explicitly supplied', async () => {
     const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
-    expect(script).toContain('portfolio-gateway.mjs.bak-');
-    expect(script).toContain('scp deploy/alert-tracker.mjs');
+    expect(script).toContain('REMOTE_RELEASE_ROOT=');
+    expect(script).toContain('deploy/alert-tracker.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-tracker.mjs"');
+    expect(script).toContain('deploy/quant-decision-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/quant-decision-alerts.mjs"');
+    expect(script).toContain('deploy/ma-slope-query.mjs "${SERVER}:${REMOTE_RELEASE_APP}/ma-slope-query.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/ma-slope-query.mjs'");
     expect(script).toContain("printf -v BARK_ENV 'BARK_DEVICE_KEY=%q '");
     expect(script).toContain('${BARK_ENV}');
     expect(script).not.toContain('BARK_DEVICE_KEY=${BARK_DEVICE_KEY:-}');

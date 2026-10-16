@@ -1,4 +1,16 @@
 import type { QuantAnalysisSnapshot, QuantSellFamily } from './types';
+import type { PeHistoryPayload } from './peData';
+
+/** Shared display guard: the decision summary and sell page must agree. */
+export function hasSellValuationConflict(item: QuantSellFamily | null, history?: PeHistoryPayload): boolean {
+  if (!item || history?.metric !== 'ttm_pe' || item.decision?.verdict !== 'SELL') return false;
+  if (item.decision.evidence.valuation.source === 'forward_pe_1bf') return false;
+  const decisionPe = item.decision.evidence.valuation.current_pe;
+  const canonicalPe = history.symbols[item.family]?.current;
+  return typeof decisionPe === 'number' && Number.isFinite(decisionPe)
+    && typeof canonicalPe === 'number' && Number.isFinite(canonicalPe)
+    && Math.abs(decisionPe - canonicalPe) > 0.05;
+}
 
 export type SellState = 'window_open' | 'observation' | 'none';
 

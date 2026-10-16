@@ -105,9 +105,8 @@ export async function runOneTapRefresh({
 }
 
 function authorizationHeaders(token: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${token.trim()}`,
-  };
+  const value = token.trim();
+  return value ? { Authorization: `Bearer ${value}` } : {};
 }
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {

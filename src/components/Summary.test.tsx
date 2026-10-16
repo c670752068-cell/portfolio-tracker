@@ -22,7 +22,7 @@ const quantProps = {
 };
 
 describe('Summary cards', () => {
-  it('limits the rendered exchange rate to three decimal places', () => {
+  it('does not duplicate the exchange-rate control that now lives in the header', () => {
     const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: '2026-07-30' }, rates);
     const html = renderToStaticMarkup(
       <Summary
@@ -33,8 +33,8 @@ describe('Summary cards', () => {
       />,
     );
 
-    expect(html).toContain('1 USD ≈ 6.778 CNY');
-    expect(html).not.toMatch(/\d\.\d{4,}/);
+    expect(html).not.toContain('显示货币');
+    expect(html).not.toContain('1 USD ≈');
   });
 
   it('explains that equity value includes cash-equivalent ETFs', () => {
@@ -55,7 +55,7 @@ describe('Summary cards', () => {
       />,
     );
 
-    expect(html).toContain('含现金类 ETF $10,000.00');
+    expect(html).toContain('现金类 ETF $10,000.00');
   });
 
   it('keeps a single-basis sleeve card strictly on that server-provided basis', () => {
@@ -83,6 +83,28 @@ describe('Summary cards', () => {
     expect(html).toContain('flex-col');
     expect(html).toContain('sm:flex-row');
     expect(html).toContain('min-w-0');
+  });
+
+  it('shows unlimited technology exposure without any cap or borrowing language', () => {
+    const html = renderToStaticMarkup(
+      <SleeveBar
+        name="tech"
+        displayBasis="both"
+        row={{
+          unlimited: true,
+          note: '不设仓位上限',
+          effective: { pct: 119.74, zone: 'unlimited' },
+          cash: { pct: 72.4, zone: 'unlimited' },
+        }}
+      />,
+    );
+
+    expect(html).toContain('不限');
+    expect(html).toContain('不设上限');
+    expect(html).not.toContain('基准');
+    expect(html).not.toContain('硬顶');
+    expect(html).not.toContain('借额');
+    expect(html).not.toContain('不建议新增科技');
   });
 
   it('renders a solid loss track and a distinct beyond-hard-cap segment for the selected basis', () => {
@@ -160,7 +182,7 @@ describe('Summary cards', () => {
     expect(cashHtml).not.toContain('data-sleeve-target="effective"');
   });
 
-  it('renders server risk, ammunition, sleeve, option, and dip data without inventing a buy amount', () => {
+  it('keeps only the collapsed option-risk details from the server risk payload', () => {
     const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
     const snapshot = {
       source: 'futu-assistant', generated_at: '2026-07-28T12:00:00Z', rule_version: 'test', disclaimer: 'test', context: {}, symbols: {},
@@ -188,25 +210,22 @@ describe('Summary cards', () => {
         analysisSnapshot={snapshot} {...quantProps}
       />,
     );
-    expect(html).toContain('等效敞口');
-    expect(html).toContain('实付现金');
-    expect(html).toContain('最大可损');
-    expect(html).toContain('有钱但没额度——杠杆已占满敞口');
-    expect(html).toContain('65/5/25/5');
-    expect(html).toContain('等效 91.22%');
-    expect(html).toContain('现金 54.03%');
-    expect(html).toContain('双显');
-    expect(html).toContain('硬顶 75.00%');
-    expect(html).toContain('超基准 $36,758');
-    expect(html).toContain('禁区，不可借');
-    expect(html).toContain('已被科技借走 10.00pp');
-    expect(html).toContain('现金目标 25%');
+    expect(html).not.toContain('风险总览');
+    expect(html).not.toContain('等效敞口');
+    expect(html).not.toContain('实付现金');
+    expect(html).not.toContain('最大可损');
+    expect(html).not.toContain('弹药总览');
+    expect(html).not.toContain('有钱但没额度——杠杆已占满敞口');
+    expect(html).not.toContain('目标配比 65/5/25/5');
+    expect(html).not.toContain('双显');
+    expect(html).not.toContain('查看双口径明细');
     expect(html).toContain('期权风险专区');
-    expect(html).toContain('不必猜最低点');
+    expect(html).not.toContain('不必猜最低点');
+    expect(html).not.toContain('计划剩余');
     expect(html).not.toContain('可以买入');
   });
 
-  it('keeps cash allocation on its server-provided invested-cash denominator and hides allocation sentinel priorities', () => {
+  it('keeps the risk facts while hiding all target-allocation guidance', () => {
     const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
     const snapshot = {
       source: 'futu-assistant', generated_at: '2026-07-30T12:00:00Z', rule_version: '2.7', disclaimer: 'test', context: {}, symbols: {},
@@ -248,14 +267,12 @@ describe('Summary cards', () => {
       />,
     );
 
-    expect(html).toContain('现金分母：已投现金合计 $95,011');
-    expect(html).toContain('超硬顶(双)');
-    expect(html).toContain('不建议新增科技');
-    expect(html).toContain('当前无可分配弹药（闸门放行 $0）');
-    expect(html).toContain('待补：宽基+道指（低配 24.29pp；总额度为 0，并非不应补）');
-    expect(html).toContain('已超目标配比，新增弹药不投向科技');
-    expect(html).toContain('不投：其他 —— 后端闸门未放行');
-    expect(html).toContain('Delta 为统一假设 0.5，不是网站真实 Delta 口径');
+    expect(html).not.toContain('现金分母：已投现金合计 $95,011');
+    expect(html).not.toContain('目标配比');
+    expect(html).not.toContain('不建议新增科技');
+    expect(html).not.toContain('当前无可分配弹药');
+    expect(html).not.toContain('待补：宽基+道指');
+    expect(html).toContain('Delta 包含估算值，不是全部来自实时行情');
     expect(html).not.toContain('优先 99');
     expect(html).not.toContain('缺口 $0');
   });
@@ -289,11 +306,11 @@ describe('Summary cards', () => {
 
     expect(html).not.toContain('总盈亏');
     expect(html).toContain('总资产（USD）');
-    expect(html).toContain('持仓市值（USD）');
+    expect(html).not.toContain('持仓市值（USD）');
     expect(html).toContain('已收盘');
   });
 
-  it('shows equivalent exposure decomposition, target, and uncomputable option warning', () => {
+  it('keeps equivalent exposure to only its amount and percentage', () => {
     const metrics = computeMetrics({
       holdings: [
         { id: 'msft', symbol: 'MSFT', name: 'Microsoft', shares: 10, buyPrice: 100, currentPrice: 100, sector: '科技', currency: 'USD', assetType: 'stock' },
@@ -316,15 +333,14 @@ describe('Summary cards', () => {
     );
 
     expect(html).toContain('等效正股暴露（USD）');
-    expect(html).toContain('目标 120%');
-    expect(html).toContain('正股');
-    expect(html).toContain('杠杆折算');
-    expect(html).toContain('期权Δ');
-    expect(html).toContain('网站口径：仅真实 Delta');
-    expect(html).toContain('1 个期权缺 Delta/标的价未计入');
+    expect(html).toContain('等效仓位');
+    expect(html).not.toContain('目标 120%');
+    expect(html).not.toContain('杠杆折算');
+    expect(html).not.toContain('网站口径：仅真实 Delta');
+    expect(html).not.toContain('期权缺 Delta/标的价未计入');
   });
 
-  it('labels the real-Delta and assumed-Delta exposures as different bases', () => {
+  it('labels server-estimated Delta without presenting it as live', () => {
     const metrics = computeMetrics({
       holdings: [{
         id: 'igv', symbol: 'IGV', name: 'IGV CALL', shares: 1, buyPrice: 10, currentPrice: 10,
@@ -346,9 +362,43 @@ describe('Summary cards', () => {
       />,
     );
 
-    expect(html).toContain('仅真实 Delta');
-    expect(html).toContain('下方期权风险专区的 0.5 假设口径');
-    expect(html).toContain('统一假设 0.5，不是网站真实 Delta 口径');
+    expect(html).not.toContain('期权按量化服务器 Delta 折算；其中包含估算值');
+    expect(html).toContain('Delta 包含估算值，不是全部来自实时行情');
+  });
+
+  it('uses OpenD option exposure in the summary instead of stale local option details', () => {
+    const metrics = computeMetrics({
+      holdings: [{
+        id: 'igv', symbol: 'IGV', name: 'IGV CALL', shares: 2, buyPrice: 10, currentPrice: 18.6,
+        sector: '科技', currency: 'USD', assetType: 'option',
+        option: { underlying: 'IGV', optionType: 'call', strike: 80, expiration: '2027-01-15', contractMultiplier: 100, delta: null, theta: null, gamma: null, vega: null, impliedVolatility: null, underlyingPrice: null },
+      }],
+      cash: [], updatedAt: 'old',
+    }, rates);
+    const snapshot = {
+      source: 'futu-assistant', generated_at: '2026-08-02', rule_version: 'test', disclaimer: '', context: {}, symbols: {},
+      option_exposure: {
+        delta_exposure_usd: 15_543.49,
+        items: [{
+          symbol: 'IGV', delta: 0.821711471, delta_source: 'opend', data_quality: 'live_greeks',
+          delta_notional_usd: 15_543.49, underlying_price: 94.58,
+        }],
+      },
+    } as unknown as QuantAnalysisSnapshot;
+    const html = renderToStaticMarkup(
+      <Summary
+        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
+        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
+        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
+        analysisSnapshot={snapshot} {...quantProps}
+      />,
+    );
+
+    expect(html).not.toContain('期权Δ $15,543.49');
+    expect(html).not.toContain('券商/OpenD Delta 折算');
+    expect(html).toContain('IGV · OpenD 实时 Delta');
+    expect(html).not.toContain('期权缺 Delta');
+    expect(html).not.toContain('Delta 包含估算值');
   });
 
   it('omits the tautological invested-cash percentage from its denominator label', () => {
@@ -369,58 +419,11 @@ describe('Summary cards', () => {
       />,
     );
 
-    expect(html).toContain('现金分母：已投现金合计 $93,827.72');
+    expect(html).not.toContain('现金分母：已投现金合计 $93,827.72');
     expect(html).not.toContain('$93,827.72 · 100.00%');
   });
 
-  it('does not repeat the one-tap refresh button label as the card title', () => {
-    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
-    const html = renderToStaticMarkup(
-      <Summary
-        metrics={metrics} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={() => undefined}
-        valueHistory={[]} rateError="" quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
-        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
-        {...quantProps}
-      />,
-    );
-
-    expect(html.match(/一键刷新全部/g)).toHaveLength(1);
-    expect(html).toContain('>刷新<');
-  });
-
-  it('explains the Pages limitation and renders stale quant timestamps without hiding prior data', () => {
-    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
-    const pagesHtml = renderToStaticMarkup(
-      <Summary
-        metrics={metrics} rates={rates} displayCurrency="USD"
-        onDisplayCurrencyChange={() => undefined} valueHistory={[]} rateError=""
-        quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
-        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
-        {...quantProps}
-      />,
-    );
-    const staleHtml = renderToStaticMarkup(
-      <Summary
-        metrics={metrics} rates={rates} displayCurrency="USD"
-        onDisplayCurrencyChange={() => undefined} valueHistory={[]} rateError=""
-        quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
-        canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
-        {...quantProps}
-        quantSyncEnabled
-        quantGatewayAvailable
-        quantTokenConfigured
-        quantStatus={{ loading: false, asOf: '2026-07-15', pushedAt: '2026-07-15T00:00:00.000Z', stale: true, error: '', summary: '已同步' }}
-      />,
-    );
-
-    expect(pagesHtml).toContain('量化同步仅在 VPS 入口可用');
-    expect(pagesHtml).toContain('一键刷新仅在 VPS 入口可用');
-    expect(pagesHtml).toContain('disabled');
-    expect(staleHtml).toContain('数据截至 2026-07-15（IBKR 快照日）');
-    expect(staleHtml).toContain('数据陈旧');
-  });
-
-  it('shows the unified refresh progress, cooldown, and push explanation', () => {
+  it('leaves currency and all manual sync controls to the compact header', () => {
     const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
     const html = renderToStaticMarkup(
       <Summary
@@ -429,36 +432,16 @@ describe('Summary cards', () => {
         quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
         canRefreshQuotes={false} onRefreshQuotes={() => undefined} exposureTargetPct={100}
         {...quantProps}
-        quantGatewayAvailable
-        quantSyncEnabled
-        quantTokenConfigured
-        oneTapRefreshState={{ phase: 'waiting', message: '正在计算（约 1 分钟）…' }}
-        oneTapCooldownSeconds={42}
       />,
     );
 
-    expect(html).toContain('>刷新<');
-    expect(html).toContain('正在计算（约 1 分钟）…');
-    expect(html).toContain('42 秒后可再次刷新');
-    expect(html).toContain('刷新会让量化系统重新检查一次，若有符合条件的标的会照常推送到手机');
+    expect(html).not.toContain('一键刷新全部');
+    expect(html).not.toContain('行情同步：');
+    expect(html).not.toContain('量化系统同步：');
+    expect(html).not.toContain('显示货币：');
   });
 
-  it('describes the 35-minute regular-session quote schedule', () => {
-    const metrics = computeMetrics({ holdings: [], cash: [], updatedAt: 'old' }, rates);
-    const html = renderToStaticMarkup(
-      <Summary
-        metrics={metrics} rates={rates} displayCurrency="USD"
-        onDisplayCurrencyChange={() => undefined} valueHistory={[]} rateError=""
-        quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
-        dayChangeStatusText="盘中"
-        canRefreshQuotes onRefreshQuotes={() => undefined} exposureTargetPct={100}
-        {...quantProps}
-      />,
-    );
-    expect(html).toContain('美股盘中每 35 分钟自动刷新');
-  });
-
-  it('puts the two decision metrics before the secondary refresh control in a single-column mobile layout', () => {
+  it('keeps the two decision metrics side by side on mobile without legacy control cards', () => {
     const metrics = computeMetrics({
       holdings: [{
         id: 'msft', symbol: 'MSFT', name: 'Microsoft', shares: 2, buyPrice: 100,
@@ -473,7 +456,10 @@ describe('Summary cards', () => {
         rates={rates}
         displayCurrency="USD"
         onDisplayCurrencyChange={() => undefined}
-        valueHistory={[]}
+        valueHistory={[
+          { date: '2026-07-14', totalValueUsd: 230 },
+          { date: '2026-07-15', totalValueUsd: 240 },
+        ]}
         rateError=""
         quoteStatus={{ loading: false, lastSyncedAt: null, error: '', summary: '' }}
         canRefreshQuotes={false}
@@ -483,16 +469,19 @@ describe('Summary cards', () => {
       />,
     );
 
-    expect(html).toContain('grid-cols-1');
+    expect(html).toContain('grid-cols-2');
     expect(html).toContain('md:grid-cols-4');
     expect(html).toContain('md:col-span-2');
-    expect(html).toContain('text-4xl');
-    expect(html.indexOf('总资产（USD）')).toBeLessThan(html.indexOf('一键刷新全部'));
-    expect(html.indexOf('今日涨跌（USD）')).toBeLessThan(html.indexOf('一键刷新全部'));
+    expect(html).toContain('text-xl md:text-4xl');
+    expect(html).toContain('hidden h-10 w-full md:block');
+    expect(html).not.toContain('grid grid-cols-1 gap-4');
+    expect(html).not.toContain('一键刷新全部');
+    expect(html).not.toContain('行情同步：');
+    expect(html).not.toContain('量化系统同步：');
   });
 });
 
-describe('server-owned risk fields', () => {
+describe('hidden redundant server risk fields', () => {
   const riskSnapshot = {
     exposure_bands: {
       basis: 'effective', effective_pct: 234.26, enforcement: 'warn_only', level: 'danger',
@@ -523,43 +512,13 @@ describe('server-owned risk fields', () => {
     );
   }
 
-  it('shows the effective exposure with the server-owned band thresholds', () => {
+  it('does not repeat exposure bands, broker dates, or option-expiry rows on the overview', () => {
     const html = render(riskSnapshot);
 
-    expect(html).toContain('等效敞口 234.26%');
-    expect(html).toContain('danger');
-    expect(html).toContain('安全 ≤90% · 注意 ≤110% · 警戒 ≤130%');
-    expect(html).toContain('等效敞口以净值为分母；实付现金以已投现金为分母。');
-  });
-
-  it('states that the delta behind the number is an assumption', () => {
-    expect(render(riskSnapshot)).toContain('Delta 为统一假设 0.50，非真实 Delta');
-  });
-
-  it('dates every broker and flags the unavailable one', () => {
-    const html = render(riskSnapshot);
-
-    expect(html).toContain('IBKR 2026-07-30');
-    expect(html).toContain('LONGPORT 2026-07-31');
-    expect(html).toContain('FUTU 2026-07-31');
-    expect(html).toContain('data-broker-available="false"');
-    expect(html).toContain('AUTH');
-  });
-
-  it('lists the option delta exposure and admits a missing expiry', () => {
-    const html = render(riskSnapshot);
-
-    expect(html).toContain('METU');
-    expect(html).toContain('META');
-    expect(html).toContain('$115,252.00');
-    expect(html).toContain('$1,152.52');
-    expect(html).toContain('到期日未提供');
-  });
-
-  it('renders nothing rather than a default when the fields are absent', () => {
-    const html = render({} as unknown as QuantAnalysisSnapshot);
-
-    expect(html).not.toContain('等效敞口');
-    expect(html).not.toContain('券商数据');
+    expect(html).not.toContain('等效敞口 234.26%');
+    expect(html).not.toContain('安全 ≤90% · 注意 ≤110% · 警戒 ≤130%');
+    expect(html).not.toContain('Delta 为统一假设 0.50，非真实 Delta');
+    expect(html).not.toContain('IBKR 2026-07-30');
+    expect(html).not.toContain('期权到期观察');
   });
 });

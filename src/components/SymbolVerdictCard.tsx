@@ -1,6 +1,6 @@
-import { finalVerdictWord } from '../finalVerdictWord';
 import { isHonestPass } from '../gateHonesty';
-import { finalVerdictSymbols } from '../quantAnalysis';
+import { isThreeXSymbol, type StockFamilyAllocation } from '../positionAllocation';
+import { depthConditionSatisfied, finalVerdictSymbols } from '../quantAnalysis';
 import { dedupeVerdictSentence, layerRequirements } from '../silenceBroadcast';
 import type { QuantAnalysisSnapshot, QuantFinalVerdictLayer } from '../types';
 
@@ -21,38 +21,65 @@ const LAYER_STATE_VIEW = {
   unknown: { icon: '○', className: 'text-ink-muted', note: '' },
 } as const;
 
-const VERDICT_BADGE = {
-  BUY: 'bg-gain/15 text-gain',
-  NO_BUY: 'bg-neutral/30 text-ink-secondary',
-} as const;
-
 function layerState(layer: QuantFinalVerdictLayer): LayerState {
   if (layer.state === 'passed') return isHonestPass(true, layer.reason) ? 'passed' : 'passed_on_missing_data';
   if (layer.state === 'failed' || layer.state === 'not_applicable') return layer.state;
   return 'unknown';
 }
 
-export function SymbolVerdictCard({ snapshot, symbol }: { snapshot: QuantAnalysisSnapshot | null; symbol: string }) {
+export function SymbolVerdictCard({
+  snapshot,
+  symbol,
+  allocation,
+  embedded = false,
+}: {
+  snapshot: QuantAnalysisSnapshot | null;
+  symbol: string;
+  allocation?: StockFamilyAllocation | null;
+  embedded?: boolean;
+}) {
   const verdict = snapshot ? finalVerdictSymbols(snapshot)[symbol] : undefined;
+  const hasDepthCondition = Boolean(
+    snapshot?.summary?.depth_states?.[symbol]
+    || snapshot?.symbols?.[symbol]?.depth_window?.applicable,
+  );
   const layers = verdict?.layers ?? [];
-  const sentence = verdict?.single_sentence ? dedupeVerdictSentence(verdict.single_sentence) : '';
-  const requirements = verdict ? layerRequirements(verdict) : [];
-  const badgeClass = verdict?.verdict === 'BUY'
-    ? VERDICT_BADGE.BUY
-    : verdict?.verdict === 'NO_BUY'
-      ? VERDICT_BADGE.NO_BUY
-      : 'bg-trim/10 text-trim';
+  const withoutSleeveQuota = layers.filter((layer) => layer.layer !== 'sleeve_borrow');
+  const visibleLayers = isThreeXSymbol(symbol)
+    ? withoutSleeveQuota
+    : withoutSleeveQuota.filter((layer) => !['entry_gate_1x', 'buy_plan_conditions', 'panic_window'].includes(layer.layer));
+  const satisfied = snapshot ? depthConditionSatisfied(snapshot, symbol) : false;
+  const depthOverridesVerdict = hasDepthCondition && satisfied && verdict?.verdict !== 'BUY';
+  const sentence = !depthOverridesVerdict && verdict?.single_sentence
+    ? dedupeVerdictSentence(verdict.single_sentence)
+    : '';
+  const requirements = verdict ? layerRequirements({ ...verdict, layers: visibleLayers }) : [];
+  const badgeClass = satisfied ? 'bg-gain/15 text-gain' : 'bg-loss/15 text-loss';
 
   return (
-    <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <strong className="text-lg">{symbol}</strong>
-        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>{finalVerdictWord(verdict)}</span>
-      </div>
+    <div
+      data-testid={embedded ? 'embedded-symbol-verdict' : 'standalone-symbol-verdict'}
+      className={embedded ? 'mt-4 border-t border-neutral/30 pt-4' : 'rounded-xl border border-neutral/40 bg-surface-raised p-4'}
+    >
+      {!embedded && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <strong className="text-lg">{symbol}</strong>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>{satisfied ? '满足' : '不满足'}</span>
+        </div>
+      )}
       {sentence && <p className="mt-2 text-sm text-ink-secondary" data-verdict-field="sentence">{sentence}</p>}
-      {layers.length > 0 && (
+      {depthOverridesVerdict && (
+        <p className="mt-2 text-sm text-gain">深度位置已满足；组合仓位限制不改变回撤深度判定。</p>
+      )}
+      {!hasDepthCondition && !sentence && verdict?.verdict === 'UNDECIDABLE' && (
+        <p className="mt-2 text-sm text-loss">数据缺失，当前不满足</p>
+      )}
+      {!hasDepthCondition && !verdict && (
+        <p className="mt-2 text-sm text-ink-muted">待更新，当前不满足</p>
+      )}
+      {(visibleLayers.length > 0 || allocation) && (
         <ul className="mt-3 space-y-2">
-          {layers.map((layer) => {
+          {visibleLayers.map((layer) => {
             const state = layerState(layer);
             const view = LAYER_STATE_VIEW[state];
             return (
@@ -66,6 +93,35 @@ export function SymbolVerdictCard({ snapshot, symbol }: { snapshot: QuantAnalysi
               </li>
             );
           })}
+          {allocation && (
+            <li className="flex gap-2 text-sm" data-position-allocation>
+              <span className="shrink-0 font-semibold text-gain">✓</span>
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">仓位配比</span>
+                <span className="ml-1 tabular-nums text-ink-muted">
+                  当前 {allocation.currentPct.toFixed(2)}% · 上限 {allocation.capPct.toFixed(2)}%
+                </span>
+                <span
+                  aria-label="个股族仓位进度"
+                  aria-valuemax={allocation.capPct}
+                  aria-valuemin={0}
+                  aria-valuenow={allocation.currentPct}
+                  className="mt-1 block h-1.5 overflow-hidden rounded-full bg-neutral/30"
+                  role="progressbar"
+                >
+                  <span
+                    className={`block h-full rounded-full ${allocation.currentPct > allocation.capPct ? 'bg-loss' : 'bg-gain'}`}
+                    style={{ width: `${Math.min(100, allocation.currentPct / allocation.capPct * 100)}%` }}
+                  />
+                </span>
+                <span className="mt-1 block text-xs text-ink-muted">
+                  {allocation.members.length > 0
+                    ? `${allocation.family} 家族合并：${allocation.members.join(' + ')}`
+                    : `${allocation.family} 家族当前未持有`}
+                </span>
+              </span>
+            </li>
+          )}
         </ul>
       )}
       {requirements.map((requirement) => (

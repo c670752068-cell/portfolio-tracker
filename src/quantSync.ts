@@ -1,3 +1,4 @@
+import { isDustQuantPosition } from './dustPosition';
 import { leverageInfoForSymbol } from './leverageMap';
 import type {
   AssetType,
@@ -22,8 +23,10 @@ export function mapQuantPositions(
   prior: PortfolioState,
 ): QuantMappedPortfolio {
   const issues: ImportIssue[] = [];
-  const holdings = payload.positions.map((position, index) => mapPosition(position, index, prior, issues));
-  const marketValue = payload.positions.reduce((sum, position) => sum + finite(position.market_value), 0);
+  // 零碎残值不进持仓列表；它那几美元留在下面推算出的现金里，总资产口径不变。
+  const tracked = payload.positions.filter((position) => !isDustQuantPosition(position));
+  const holdings = tracked.map((position, index) => mapPosition(position, index, prior, issues));
+  const marketValue = tracked.reduce((sum, position) => sum + finite(position.market_value), 0);
   const cashAmount = payload.net_liquidation - marketValue;
   const cash: CashPosition[] = [];
 
@@ -62,7 +65,7 @@ function mapPosition(
       : position.asset_type === 'etf'
         ? 'etf'
         : 'stock';
-  const candidates = prior.holdings.filter((holding) => enhancementCandidate(holding, symbol, assetType));
+  const candidates = prior.holdings.filter((holding) => enhancementCandidate(holding, position, symbol, assetType));
   let enhancement: Holding | undefined;
 
   if (assetType === 'option' && candidates.length > 1) {
@@ -75,9 +78,12 @@ function mapPosition(
     enhancement = candidates.sort((left, right) => nativeMarketValue(right) - nativeMarketValue(left))[0];
   }
 
-  const multiplier = assetType === 'option' ? enhancement?.option?.contractMultiplier ?? 100 : 1;
+  const multiplier = assetType === 'option'
+    ? finitePositive(position.contract_multiplier) ?? enhancement?.option?.contractMultiplier ?? 100
+    : 1;
   const shares = finite(position.qty);
   const marketValue = finite(position.market_value);
+  const positionCost = finitePositive(position.cost_basis);
   const inferredPrice = shares !== 0 ? marketValue / Math.abs(shares) / multiplier : 0;
   const broker = position.broker.trim().toUpperCase();
 
@@ -86,16 +92,33 @@ function mapPosition(
     symbol,
     name: assetType === 'leveraged_etf' && mappedLeverage
       ? `${symbol} ${mappedLeverage.factor}× 杠杆 ETF`
-      : enhancement?.name || symbol,
+      : assetType === 'option'
+        ? optionName(position, symbol) || enhancement?.name || symbol
+        : enhancement?.name || symbol,
     shares,
-    buyPrice: enhancement?.buyPrice ?? 0,
+    buyPrice: positionCost !== null && shares !== 0
+      ? positionCost / Math.abs(shares) / multiplier
+      : enhancement?.buyPrice ?? 0,
     currentPrice: inferredPrice,
     sector: enhancement?.sector ?? '',
     currency: 'USD',
     assetType,
-    option: assetType === 'option' ? enhancement?.option : undefined,
+    option: assetType === 'option' ? {
+      underlying: symbol,
+      contractCode: position.contract_code || enhancement?.option?.contractCode,
+      optionType: position.option_type || enhancement?.option?.optionType || 'call',
+      strike: finiteOrNull(position.strike) ?? enhancement?.option?.strike ?? null,
+      expiration: position.expiry || enhancement?.option?.expiration || null,
+      contractMultiplier: multiplier,
+      delta: enhancement?.option?.delta ?? null,
+      theta: enhancement?.option?.theta ?? null,
+      gamma: enhancement?.option?.gamma ?? null,
+      vega: enhancement?.option?.vega ?? null,
+      impliedVolatility: enhancement?.option?.impliedVolatility ?? null,
+      underlyingPrice: enhancement?.option?.underlyingPrice ?? null,
+    } : undefined,
     marketValueOverride: marketValue,
-    costOverride: enhancement?.costOverride,
+    costOverride: positionCost ?? enhancement?.costOverride,
     note: enhancement?.note,
     missingFields: enhancement?.missingFields,
     confidence: enhancement?.confidence,
@@ -110,13 +133,24 @@ function mapPosition(
   };
 }
 
-function enhancementCandidate(holding: Holding, symbol: string, assetType: AssetType): boolean {
+function enhancementCandidate(holding: Holding, position: QuantPosition, symbol: string, assetType: AssetType): boolean {
   if (assetType === 'option') {
     const underlying = holding.option?.underlying.trim().toUpperCase();
-    return holding.assetType === 'option' && (underlying === symbol || holding.symbol.trim().toUpperCase() === symbol);
+    const sameUnderlying = underlying === symbol || holding.symbol.trim().toUpperCase() === symbol;
+    const incomingCode = position.contract_code?.trim().toUpperCase();
+    const existingCode = holding.option?.contractCode?.trim().toUpperCase();
+    return holding.assetType === 'option'
+      && sameUnderlying
+      && (!incomingCode || !existingCode || incomingCode === existingCode);
   }
   return holding.symbol.trim().toUpperCase() === symbol
     && (holding.assetType ?? 'stock') === assetType;
+}
+
+function optionName(position: QuantPosition, symbol: string): string {
+  const strike = finiteOrNull(position.strike);
+  if (!position.expiry || strike === null || !position.option_type) return '';
+  return `${symbol} ${position.expiry} ${strike} ${position.option_type === 'put' ? 'Put' : 'Call'}`;
 }
 
 function nativeMarketValue(holding: Holding): number {
@@ -135,16 +169,30 @@ function addManualDuplicateIssues(synced: Holding[], prior: Holding[], issues: I
   for (const symbol of duplicates) {
     issues.push({
       field: `${symbol} 重复持仓`,
-      reason: `${symbol} 手动条目与同步持仓重复，请删除其一。`,
+      reason: `${symbol} 手动条目与同步持仓重复，已以三券商同步快照为准并自动排除手动重复项。`,
       priority: 'recommended',
     });
   }
 }
 
+function duplicatesSyncedHolding(holding: Holding, synced: readonly Holding[]): boolean {
+  if (holding.assetType === 'option') return false;
+  const symbol = holding.symbol.trim().toUpperCase();
+  if (!symbol) return false;
+  return synced.some((candidate) => (
+    candidate.assetType !== 'option'
+    && candidate.symbol.trim().toUpperCase() === symbol
+  ));
+}
+
 export function applyQuantSync(current: PortfolioState, mapped: QuantMappedPortfolio): PortfolioState {
   return {
     holdings: [
-      ...current.holdings.filter((holding) => holding.source !== 'quant-sync' && holding.source !== 'image-import'),
+      ...current.holdings.filter((holding) => (
+        holding.source !== 'quant-sync'
+        && holding.source !== 'image-import'
+        && !duplicatesSyncedHolding(holding, mapped.holdings)
+      )),
       ...mapped.holdings,
     ],
     cash: [
@@ -185,6 +233,7 @@ export async function fetchQuantPositions(url: string, token: string): Promise<Q
   const headers: Record<string, string> = {};
   if (token.trim()) headers.Authorization = `Bearer ${token.trim()}`;
   const response = await fetch(url, {
+    cache: 'no-store',
     headers,
   });
   const body = await response.json().catch(() => null) as QuantPositionsSnapshot | { error?: string } | null;
@@ -199,6 +248,15 @@ export async function fetchQuantPositions(url: string, token: string): Promise<Q
 
 function finite(value: number): number {
   return Number.isFinite(value) ? value : 0;
+}
+
+function finiteOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function finitePositive(value: unknown): number | null {
+  const parsed = finiteOrNull(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
 }
 
 function roundMoney(value: number): number {

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { formatTargetNotification } from './notification-copy.mjs';
 
 const NEW_YORK_TIME_ZONE = 'America/New_York';
 const REGULAR_OPEN_MINUTES = 9 * 60 + 30;
@@ -188,17 +189,7 @@ export function startAlertTracker({ runCycle, setIntervalImpl = setInterval, cle
 }
 
 export function formatAlertNotification(rule, event) {
-  const stage = event.type === 'approach' ? '接近目标' : '到达目标';
-  const title = `${rule.symbol} ${stage}`;
-  const priceText = `当前价 $${event.currentPrice.toFixed(2)}，目标 $${event.targetPrice.toFixed(2)}。`;
-  const action = rule.type === 'gain_pct'
-    ? '卖出 50% 仓位，留 50% 博弈。'
-    : '';
-  const reduceTo = finiteNumber(rule.reduce_to_pct) ?? 5;
-  return {
-    title,
-    body: `${priceText}${action}只提醒不下单；清仓或减到 ≤${reduceTo}% 由你在券商 App 手动执行。`,
-  };
+  return formatTargetNotification(rule, event);
 }
 
 export function buildBarkPushUrl({ baseUrl, deviceKey, title, body }) {
@@ -206,15 +197,20 @@ export function buildBarkPushUrl({ baseUrl, deviceKey, title, body }) {
   return `${base}/${encodeURIComponent(deviceKey)}/${encodeURIComponent(title)}/${encodeURIComponent(body)}?group=${encodeURIComponent('portfolio-alerts')}`;
 }
 
-export async function sendBarkNotification({ baseUrl, deviceKey, title, body, fetchImpl = fetch, logError = console.error }) {
+export async function sendBarkNotification({ baseUrl, deviceKey, title, body, presentation, fetchImpl = fetch, logError = console.error }) {
   if (!deviceKey) throw new Error('Bark 推送未配置');
-  const url = buildBarkPushUrl({ baseUrl, deviceKey, title, body });
+  const url = presentation ? `${String(baseUrl).replace(/\/+$/, '')}/push` : buildBarkPushUrl({ baseUrl, deviceKey, title, body });
+  // Keep workstation passive reports passive, including their group/sound.
+  // POST also avoids long Chinese report text overflowing a URL request line.
+  const request = presentation ? { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_key: deviceKey, title, body, group: presentation.group || 'portfolio-alerts',
+      ...(presentation.sound ? { sound: presentation.sound } : {}), ...(presentation.level ? { level: presentation.level } : {}) }) } : { method: 'GET' };
   let lastStatus = 0;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const response = await fetchImpl(url, { method: 'GET' });
+      const response = await fetchImpl(url, { ...request, signal: AbortSignal.timeout(5000) });
       lastStatus = response.status;
-      if (response.ok) return true;
+      if (response.ok && (await response.json()).code === 200) return true;
       logError(`Bark push attempt ${attempt} failed (HTTP ${response.status})`);
     } catch {
       logError(`Bark push attempt ${attempt} failed (network error)`);
@@ -293,13 +289,21 @@ async function listRulesWithState(alertsRoot) {
   }));
 }
 
-export function createAlertRulesRoute({ alertsRoot, sendJson }) {
+export function createAlertRulesRoute({ alertsRoot, sendJson, token = '' }) {
   return async function handleAlertRulesRoute(url, req, res) {
     const collection = url.pathname === '/api/portfolio/alert-rules';
     const itemMatch = url.pathname.match(/^\/api\/portfolio\/alert-rules\/([A-Za-z0-9_-]{1,64})$/);
     if (!collection && !itemMatch) return false;
     if (collection && req.method === 'GET') {
       sendJson(res, 200, { rules: await listRulesWithState(alertsRoot) });
+      return true;
+    }
+    if (!token) {
+      sendJson(res, 404, { error: { code: 'not_found', message: '未知接口' } });
+      return true;
+    }
+    if (req.headers.authorization !== `Bearer ${token}`) {
+      sendJson(res, 401, { error: { code: 'unauthorized', message: '认证失败' } });
       return true;
     }
     if (collection && req.method === 'POST') {

@@ -105,10 +105,12 @@ describe('alert-rules server CRUD', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(fetchAlertRules(endpoint)).resolves.toEqual([targetRule]);
+    await expect(fetchAlertRules(endpoint, 'unit-secret')).resolves.toEqual([targetRule]);
     expect(fetchMock).toHaveBeenCalledWith(endpoint, expect.objectContaining({
       method: 'GET',
-      headers: expect.objectContaining({ Accept: 'application/json' }),
+      headers: expect.objectContaining({
+        Accept: 'application/json', Authorization: 'Bearer unit-secret',
+      }),
     }));
   });
 
@@ -195,9 +197,22 @@ describe('alert cost and callback policy', () => {
       prices_at: '2026-07-30T15:28:00-04:00',
     };
 
-    expect(formatAlertCurrentPrice(pre)).toBe('盘前 $24.16 @ 08:49 ET');
-    expect(formatAlertCurrentPrice(regular)).toBe('盘中 $24.16 @ 15:28 ET');
-    expect(formatAlertCurrentPrice(regular)).not.toContain('收盘');
+    const duringSession = new Date('2026-07-30T15:30:00-04:00');
+    expect(formatAlertCurrentPrice(pre, duringSession)).toBe('盘前 $24.16 @ 08:49 ET');
+    expect(formatAlertCurrentPrice(regular, duringSession)).toBe('盘中 $24.16 @ 15:28 ET');
+    expect(formatAlertCurrentPrice(regular, duringSession)).not.toContain('收盘');
+  });
+
+  it('does not call an old regular-session quote live during a New York weekend', () => {
+    const fridayQuote = {
+      ...targetRule,
+      current_price: 63.39,
+      price_session: 'regular' as const,
+      prices_at: '2026-07-31T10:28:00-04:00',
+    };
+
+    expect(formatAlertCurrentPrice(fridayQuote, new Date('2026-08-01T15:20:00.000Z')))
+      .toBe('休市 $63.39 @ 10:28 ET');
   });
 
   it('auto-fills only a complete broker-weighted cost', () => {

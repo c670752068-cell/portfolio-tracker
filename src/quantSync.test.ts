@@ -11,7 +11,11 @@ const payload: QuantPositionsPayload = {
   positions: [
     { broker: 'ibkr', symbol: 'MSFT', asset_type: 'stock', qty: 20, market_value: 55_084.96 },
     { broker: 'longbridge', symbol: 'SGOV', asset_type: 'etf', qty: 77, market_value: 7_762 },
-    { broker: 'futu', symbol: 'IGV', asset_type: 'option', qty: 2, market_value: 3_616 },
+    {
+      broker: 'futu', symbol: 'IGV', asset_type: 'option', qty: 2, market_value: 3_616,
+      contract_code: 'US.IGV270115C80000', option_type: 'call', strike: 80,
+      expiry: '2027-01-15', contract_multiplier: 100,
+    },
   ],
 };
 
@@ -65,9 +69,11 @@ describe('mapQuantPositions', () => {
       reportedPnl: 200,
       option: { delta: 0.8024, expiration: '2027-01-15', contractMultiplier: 100 },
     });
+    expect(igv?.name).toBe('IGV 2027-01-15 80 Call');
+    expect(igv?.option?.contractCode).toBe('US.IGV270115C80000');
   });
 
-  it('does not guess which option enhancement to copy when one underlying has multiple contracts', () => {
+  it('keeps broker contract details without guessing which old Greeks to copy', () => {
     const oldOption = (id: string, strike: number) => ({
       id, symbol: 'IGV', name: `IGV ${strike} Call`, shares: 1, buyPrice: 10, currentPrice: 18,
       sector: '科技', currency: 'USD' as const, assetType: 'option' as const, source: 'image-import' as const,
@@ -80,7 +86,9 @@ describe('mapQuantPositions', () => {
     const mapped = mapQuantPositions(payload, prior({ holdings: [oldOption('a', 80), oldOption('b', 90)] }));
     const igv = mapped.holdings.find((holding) => holding.symbol === 'IGV');
 
-    expect(igv?.option).toBeUndefined();
+    expect(igv?.option).toMatchObject({
+      contractCode: 'US.IGV270115C80000', strike: 80, expiration: '2027-01-15', delta: null,
+    });
     expect(mapped.issues).toContainEqual(expect.objectContaining({ field: 'IGV 期权增强', priority: 'required' }));
   });
 
@@ -156,9 +164,9 @@ describe('mapQuantPositions', () => {
       ['futu', 'NVDA', 'stock'], ['futu', 'MSFU', 'option'], ['futu', 'MSFU', 'etf'],
       ['futu', 'MSFT', 'stock'], ['futu', 'IGV', 'option'],
     ].map(([broker, symbol, asset_type]) => ({
-      broker, symbol, asset_type: asset_type as 'stock' | 'etf' | 'option', qty: 1, market_value: 1,
+      broker, symbol, asset_type: asset_type as 'stock' | 'etf' | 'option', qty: 1, market_value: 1_000,
     }));
-    const mapped = mapQuantPositions({ ...payload, positions, net_liquidation: 25 }, prior());
+    const mapped = mapQuantPositions({ ...payload, positions, net_liquidation: 25_000 }, prior());
     const counts = mapped.holdings.reduce<Record<string, number>>((result, holding) => {
       const type = holding.assetType ?? 'stock';
       result[type] = (result[type] ?? 0) + 1;
@@ -171,15 +179,19 @@ describe('mapQuantPositions', () => {
 });
 
 describe('applyQuantSync', () => {
-  it('replaces prior synced and screenshot entries but preserves manual holdings and cash', () => {
+  it('removes manual holdings duplicated by the authoritative broker snapshot', () => {
     const manualHolding = {
       id: 'manual', symbol: 'MSFT', name: 'manual MSFT', shares: 1, buyPrice: 100,
       currentPrice: 200, sector: '科技', currency: 'USD' as const, source: 'manual' as const,
+    };
+    const manualOnlyHolding = {
+      ...manualHolding, id: 'manual-only', symbol: 'AAPL', name: 'manual AAPL',
     };
     const mapped = mapQuantPositions(payload, prior({ holdings: [manualHolding] }));
     const current = prior({
       holdings: [
         manualHolding,
+        manualOnlyHolding,
         { ...manualHolding, id: 'old-quant', symbol: 'OLD', source: 'quant-sync' },
         { ...manualHolding, id: 'old-image', symbol: 'IMAGE', source: 'image-import' },
       ],
@@ -191,7 +203,7 @@ describe('applyQuantSync', () => {
     });
     const next = applyQuantSync(current, mapped);
 
-    expect(next.holdings.map((holding) => holding.symbol)).toEqual(['MSFT', 'MSFT', 'SGOV', 'IGV']);
+    expect(next.holdings.map((holding) => holding.symbol)).toEqual(['AAPL', 'MSFT', 'SGOV', 'IGV']);
     expect(next.cash.map((cash) => cash.amount)).toEqual([100, 69_018.3]);
     expect(mapped.issues).toContainEqual(expect.objectContaining({ field: 'MSFT 重复持仓' }));
   });
@@ -264,16 +276,19 @@ describe('isQuantSnapshotStale', () => {
   });
 });
 
-describe('fetchQuantPositions cross-device access', () => {
+describe('fetchQuantPositions protected cross-device access', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('loads the shared VPS snapshot without a browser-local token', async () => {
+  it('loads the shared VPS snapshot with the configured bearer token', async () => {
     const snapshot = { payload, pushed_at: '2026-07-15T10:00:00.000Z', source: 'futu-assistant' as const };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(snapshot), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(fetchQuantPositions('http://example.test/api/portfolio/positions', '')).resolves.toEqual(snapshot);
-    expect(fetchMock).toHaveBeenCalledWith('http://example.test/api/portfolio/positions', { headers: {} });
+    await expect(fetchQuantPositions('http://example.test/api/portfolio/positions', 'unit-secret')).resolves.toEqual(snapshot);
+    expect(fetchMock).toHaveBeenCalledWith('http://example.test/api/portfolio/positions', {
+      cache: 'no-store',
+      headers: { Authorization: 'Bearer unit-secret' },
+    });
   });
 
   it('still sends a token when a legacy browser already has one', async () => {
@@ -283,7 +298,33 @@ describe('fetchQuantPositions cross-device access', () => {
 
     await fetchQuantPositions('http://example.test/api/portfolio/positions', 'legacy-token');
     expect(fetchMock).toHaveBeenCalledWith('http://example.test/api/portfolio/positions', {
+      cache: 'no-store',
       headers: { Authorization: 'Bearer legacy-token' },
     });
+  });
+});
+
+describe('零碎持仓', () => {
+  const dustPayload: QuantPositionsPayload = {
+    ...payload,
+    net_liquidation: 185_419.71,
+    positions: [
+      { broker: 'IBKR', symbol: 'TSLA', asset_type: 'stock', qty: 17, market_value: 6_241.72, cost_basis: 6_464.99 },
+      { broker: 'FUTU', symbol: 'NVDA', asset_type: 'stock', qty: 0.005, market_value: 1.09, cost_basis: -5_376.15 },
+    ],
+  };
+
+  it('不把券商残留的 NVDA 0.005 股 / $1.09 当作持仓', () => {
+    const mapped = mapQuantPositions(dustPayload, prior());
+
+    expect(mapped.holdings.map((holding) => holding.symbol)).toEqual(['TSLA']);
+  });
+
+  it('总资产口径不变：零碎残值仍计入净资产推算的现金', () => {
+    const mapped = mapQuantPositions(dustPayload, prior());
+    const total = mapped.holdings.reduce((sum, holding) => sum + (holding.marketValueOverride ?? 0), 0)
+      + mapped.cash.reduce((sum, item) => sum + item.amount, 0);
+
+    expect(total).toBeCloseTo(185_419.71, 2);
   });
 });

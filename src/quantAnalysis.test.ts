@@ -89,7 +89,7 @@ describe('quant analysis contract', () => {
     expect(() => parseQuantAnalysis(malformed)).toThrow('最终裁决格式无效');
   });
 
-  it('loads the latest public snapshot with GET semantics', async () => {
+  it('loads the latest protected snapshot with GET semantics', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(quantAnalysisFixture), {
         status: 200,
@@ -98,11 +98,15 @@ describe('quant analysis contract', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(fetchQuantAnalysis('http://example.test/api/portfolio/quant-analysis'))
+    await expect(fetchQuantAnalysis('http://example.test/api/portfolio/quant-analysis', 'unit-secret'))
       .resolves.toEqual(quantAnalysisFixture);
     expect(fetchMock).toHaveBeenCalledWith(
       'http://example.test/api/portfolio/quant-analysis',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({
+        cache: 'no-store',
+        method: 'GET',
+        headers: { Accept: 'application/json', Authorization: 'Bearer unit-secret' },
+      }),
     );
   });
 

@@ -117,6 +117,34 @@ describe('valuation plan helpers', () => {
     })).toContain('这正是你计划里要开枪的时候');
   });
 
+  it('never calls valuation ready when the valuation gate is stale and unavailable', () => {
+    const staleSnapshot: QuantAnalysisSnapshot = structuredClone(snapshot);
+    staleSnapshot.valuation_tab!.ndx.stale = true;
+    staleSnapshot.valuation_tab!.ndx.stale_days = 2;
+    staleSnapshot.valuation_tab!.ndx.gate_available = false;
+
+    expect(buildValuationSummary(staleSnapshot)).toContain('估值数据已过期');
+    expect(buildValuationSummary(staleSnapshot)).toContain('当前无法判定');
+    expect(buildValuationSummary(staleSnapshot)).not.toContain('估值已到位');
+  });
+
+  it('does not block the decision when Danjuan latest PE only crosses a weekend', () => {
+    const latestSnapshot: QuantAnalysisSnapshot = structuredClone(snapshot);
+    latestSnapshot.valuation_tab!.ndx.as_of = '2026-07-30';
+    latestSnapshot.valuation_tab!.ndx.current_pe = 29.9797;
+    latestSnapshot.valuation_tab!.ndx.stale = true;
+    latestSnapshot.valuation_tab!.ndx.stale_days = 8;
+    latestSnapshot.valuation_tab!.ndx.gate_available = false;
+
+    const summary = buildValuationSummary(
+      latestSnapshot,
+      new Date('2026-08-03T01:49:59-04:00'),
+    );
+
+    expect(summary).not.toContain('估值数据已过期');
+    expect(summary).toContain('PE 29.98');
+  });
+
   it('uses the backend daily PE for both the summary and local gate checks', () => {
     const plan = {
       id: 'daily-pe', symbol: 'TQQQ', label: '日更口径',

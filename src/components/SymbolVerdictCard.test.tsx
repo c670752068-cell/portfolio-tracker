@@ -21,12 +21,18 @@ const tqqq: QuantFinalVerdict = {
 };
 
 describe('SymbolVerdictCard', () => {
+  it('can render inside the symbol selector without a second card header', () => {
+    const html = renderToStaticMarkup(<SymbolVerdictCard snapshot={snapshotWith(tqqq)} symbol="TQQQ" embedded />);
+    expect(html).toContain('data-testid="embedded-symbol-verdict"');
+    expect(html).not.toContain('<strong class="text-lg">TQQQ</strong>');
+  });
+
   it('renders every server-owned layer row with its own state', () => {
     const html = renderToStaticMarkup(<SymbolVerdictCard snapshot={snapshotWith(tqqq)} symbol="TQQQ" />);
 
     expect(html).toContain('价格与估值');
     expect(html).toContain('1x 入场门');
-    expect(html).toContain('板块额度');
+    expect(html).not.toContain('板块额度');
     expect(html).toContain('计划条件');
     expect(html).toContain('恐慌窗口');
     expect(html).toContain('data-layer-state="passed">✓');
@@ -37,7 +43,8 @@ describe('SymbolVerdictCard', () => {
   it('names the blocked state without the misread-prone 条件完整 / 不买 wording', () => {
     const html = renderToStaticMarkup(<SymbolVerdictCard snapshot={snapshotWith(tqqq)} symbol="TQQQ" />);
 
-    expect(html).toContain('暂不满足');
+    expect(html).toContain('不满足');
+    expect(html).toContain('bg-loss/15 text-loss');
     expect(html).not.toContain('条件完整');
   });
 
@@ -78,6 +85,37 @@ describe('SymbolVerdictCard', () => {
     expect(html).toContain('不适用');
   });
 
+  it('hides leveraged-only and unused plan rows for a stock', () => {
+    const avgo: QuantFinalVerdict = {
+      symbol: 'AVGO',
+      verdict: 'BUY',
+      layers: [
+        { layer: 'gates_six', label: '价格与估值', state: 'passed', reason: '已通过' },
+        { layer: 'entry_gate_1x', label: '1x 入场门', state: 'not_applicable', reason: '非 3× 标的' },
+        { layer: 'sleeve_borrow', label: '板块额度', state: 'passed', reason: '未超额' },
+        { layer: 'buy_plan_conditions', label: '计划条件', state: 'not_applicable', reason: '未配置' },
+        { layer: 'panic_window', label: '恐慌窗口', state: 'not_applicable', reason: '非 3× 标的' },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      <SymbolVerdictCard
+        snapshot={snapshotWith(avgo)}
+        symbol="AVGO"
+        allocation={{ family: 'AVGO', currentPct: 0, capPct: 10, marketValueUsd: 0, members: [] }}
+      />,
+    );
+
+    expect(html).toContain('价格与估值');
+    expect(html).not.toContain('板块额度');
+    expect(html).toContain('仓位配比');
+    expect(html).toContain('当前 0.00% · 上限 10.00%');
+    expect(html).toContain('role="progressbar"');
+    expect(html).not.toContain('1x 入场门');
+    expect(html).not.toContain('计划条件');
+    expect(html).not.toContain('恐慌窗口');
+  });
+
   it('will not tick a layer that only passed because its inputs are missing', () => {
     const missing: QuantFinalVerdict = {
       symbol: 'TQQQ',
@@ -106,18 +144,55 @@ describe('SymbolVerdictCard', () => {
 
     const html = renderToStaticMarkup(<SymbolVerdictCard snapshot={snapshotWith(avgo)} symbol="AVGO" />);
 
-    expect(html).toContain('五层条件均已满足');
+    expect(html).toContain('>满足</span>');
+    expect(html).toContain('bg-gain/15 text-gain');
     expect(html).not.toContain('建议');
     expect(html).not.toContain('可买');
     expect(html).not.toContain('买入');
   });
 
-  it('says 数据缺失 for an undecidable verdict and 待更新 when the symbol has none', () => {
+  it('keeps a reached stock depth green when an unrelated allocation layer blocks buying', () => {
+    const meta: QuantFinalVerdict = {
+      symbol: 'META', verdict: 'NO_BUY',
+      single_sentence: '不买：科技仓位达到上限',
+      layers: [{
+        layer: 'sleeve_borrow', label: '板块额度', state: 'failed',
+        reason: '科技仓位达到上限',
+      }],
+    };
+    const snapshot = snapshotWith(meta);
+    snapshot.symbols = {
+      META: {
+        available: true,
+        depth_window: {
+          applicable: true, open: true, current_pct: 25.76,
+          threshold_pct: 19.17, price_session: 'regular',
+          win_rate_60d: 0.5, n: 6, sample_insufficient: true,
+          bear_included: true,
+        },
+      },
+    };
+    snapshot.summary = {
+      depth_states: {
+        META: { status: 'ready', progress_pct: 100, gap_pct: 0, excess_pct: 6.59 },
+      },
+    } as unknown as QuantAnalysisSnapshot['summary'];
+
+    const html = renderToStaticMarkup(
+      <SymbolVerdictCard snapshot={snapshot} symbol="META" />,
+    );
+
+    expect(html).toContain('>满足</span>');
+    expect(html).toContain('深度位置已满足');
+    expect(html).not.toContain('不买：科技仓位达到上限');
+  });
+
+  it('keeps the reason visible while using the red not-satisfied state', () => {
     const undecidable: QuantFinalVerdict = { symbol: 'FAS', verdict: 'UNDECIDABLE', layers: [] };
 
     expect(renderToStaticMarkup(<SymbolVerdictCard snapshot={snapshotWith(undecidable)} symbol="FAS" />))
-      .toContain('数据缺失，无法判定');
+      .toContain('数据缺失，当前不满足');
     expect(renderToStaticMarkup(<SymbolVerdictCard snapshot={snapshotWith(undecidable)} symbol="UPRO" />))
-      .toContain('待更新');
+      .toContain('待更新，当前不满足');
   });
 });

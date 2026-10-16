@@ -14,16 +14,30 @@ import { createReadStream } from 'node:fs';
 import { access, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { rename } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
+import { createGzip, gzipSync } from 'node:zlib';
 import {
   createAlertRulesRoute,
-  formatAlertNotification,
-  readAlertRules,
-  runAlertTrackerCycle,
   sendBarkNotification,
-  startAlertTracker,
 } from './alert-tracker.mjs';
+import {
+  CHANNEL_REVIEW_INTERVAL_MS,
+  createChannelReviewRoute,
+  runChannelReviewCycle,
+} from './channel-review.mjs';
 import { createRefreshRequestRoute } from './refresh-request-route.mjs';
+import { deliverQuantDecisionAlerts } from './quant-decision-alerts.mjs';
+import { createNotificationControl, scheduleDue, zonedParts } from './notification-control.mjs';
+import { classifyMarketSession } from './market-session.mjs';
 import { buildYahooChartUrl, parseYahooChartQuote } from './yahoo-quote.mjs';
+import { createSectorRotationRoute } from './sector-rotation.mjs';
+import {
+  buildYahooSlopeChartUrl,
+  normalizeSlopeDashboardRange,
+  normalizeSlopeQuerySymbol,
+  normalizeSlopeWindow,
+  parseYahooSlopeDashboard,
+  parseYahooSlopeHistory,
+} from './ma-slope-query.mjs';
 
 const PORT = Number(process.env.PORT || 8789);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -42,7 +56,20 @@ const PORTFOLIO_ANALYSIS_ROOT = resolve(process.env.PORTFOLIO_ANALYSIS_ROOT || '
 const PORTFOLIO_REFRESH_REQUEST_PATH = resolve(process.env.PORTFOLIO_REFRESH_REQUEST_PATH || '/opt/portfolio-tracker-data/refresh-request.json');
 const PORTFOLIO_ALERTS_ROOT = resolve(process.env.PORTFOLIO_ALERTS_ROOT || '/opt/portfolio-tracker-data/alerts');
 const BARK_DEVICE_KEY = process.env.BARK_DEVICE_KEY || '';
+const QUANT_DECISION_INTERVAL_MS = 60 * 1000;
 const BARK_BASE_URL = process.env.BARK_BASE_URL || 'https://api.day.app';
+const MA_SLOPE_CACHE_TTL_MS = 15 * 60 * 1000;
+const MA_SLOPE_DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
+const MA_SLOPE_CACHE_MAX = 256;
+const MA_SLOPE_RATE_WINDOW_MS = 60 * 1000;
+const MA_SLOPE_RATE_MAX = 60;
+const maSlopeCache = new Map();
+const maSlopeRateWindows = new Map();
+const handleSectorRotationRoute = createSectorRotationRoute({
+  fetchJson: getJsonOverIpv4,
+  sendJson,
+  cacheRoot: join(PORTFOLIO_ANALYSIS_ROOT, '..', 'relative-strength-cache'),
+});
 
 const AI_ROUTES = {
   '/api/zhipu/chat/completions': 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
@@ -62,12 +89,21 @@ const MIME_TYPES = {
 };
 
 function sendJson(res, status, payload) {
-  res.writeHead(status, {
+  sendJsonText(res, status, JSON.stringify(payload));
+}
+
+function sendJsonText(res, status, payload) {
+  const body = Buffer.from(payload);
+  const shouldGzip = Boolean(res.portfolioAcceptsGzip && body.length >= 1024);
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-  });
-  res.end(JSON.stringify(payload));
+    Vary: 'Accept-Encoding',
+  };
+  if (shouldGzip) headers['Content-Encoding'] = 'gzip';
+  res.writeHead(status, headers);
+  res.end(shouldGzip ? gzipSync(body) : body);
 }
 
 async function readBody(req) {
@@ -340,31 +376,26 @@ function positionsAuthorizationMatches(req) {
 
 async function handlePortfolioPositionsRoute(url, req, res) {
   if (url.pathname !== '/api/portfolio/positions') return false;
-  if (!PORTFOLIO_SYNC_TOKEN) {
-    positionsRouteNotFound(res);
-    return true;
-  }
   const latestPath = join(PORTFOLIO_POSITIONS_ROOT, 'latest.json');
   if (req.method === 'GET') {
     try {
       const payload = await readFile(latestPath, 'utf8');
-      res.writeHead(200, {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'no-store',
-        'X-Content-Type-Options': 'nosniff',
-      });
-      res.end(payload);
+      sendJsonText(res, 200, payload);
     } catch {
       sendJson(res, 404, { error: { code: 'no_data', message: '尚无量化系统持仓数据' } });
     }
     return true;
   }
-  if (req.method !== 'POST') {
+  if (!PORTFOLIO_SYNC_TOKEN) {
     positionsRouteNotFound(res);
     return true;
   }
   if (!positionsAuthorizationMatches(req)) {
     sendJson(res, 401, { error: { code: 'unauthorized', message: '认证失败' } });
+    return true;
+  }
+  if (req.method !== 'POST') {
+    positionsRouteNotFound(res);
     return true;
   }
   let body;
@@ -403,31 +434,26 @@ async function handlePortfolioPositionsRoute(url, req, res) {
 
 async function handlePortfolioAnalysisRoute(url, req, res) {
   if (url.pathname !== '/api/portfolio/quant-analysis') return false;
-  if (!PORTFOLIO_SYNC_TOKEN) {
-    positionsRouteNotFound(res);
-    return true;
-  }
   const latestPath = join(PORTFOLIO_ANALYSIS_ROOT, 'latest.json');
   if (req.method === 'GET') {
     try {
       const payload = await readFile(latestPath, 'utf8');
-      res.writeHead(200, {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'no-store',
-        'X-Content-Type-Options': 'nosniff',
-      });
-      res.end(payload);
+      sendJsonText(res, 200, payload);
     } catch {
       sendJson(res, 404, { error: { code: 'no_data', message: '尚无量化分析数据' } });
     }
     return true;
   }
-  if (req.method !== 'POST') {
+  if (!PORTFOLIO_SYNC_TOKEN) {
     positionsRouteNotFound(res);
     return true;
   }
   if (!positionsAuthorizationMatches(req)) {
     sendJson(res, 401, { error: { code: 'unauthorized', message: '认证失败' } });
+    return true;
+  }
+  if (req.method !== 'POST') {
+    positionsRouteNotFound(res);
     return true;
   }
   let body;
@@ -462,8 +488,140 @@ async function handlePortfolioAnalysisRoute(url, req, res) {
     ok: true,
     symbol_count: Object.keys(snapshot.symbols).length,
     generated_at: snapshot.generated_at,
+    alerts_sent: 0,
   });
   return true;
+}
+
+async function handleMaSlopeQueryRoute(url, req, res) {
+  if (url.pathname !== '/api/portfolio/ma-slope') return false;
+  if (req.method !== 'GET') {
+    positionsRouteNotFound(res);
+    return true;
+  }
+  let symbol;
+  try {
+    symbol = normalizeSlopeQuerySymbol(url.searchParams.get('symbol'));
+  } catch (error) {
+    sendJson(res, 400, { error: { code: 'invalid_symbol', message: error.message } });
+    return true;
+  }
+  if (!consumeMaSlopeRate(req)) {
+    sendJson(res, 429, { error: { code: 'rate_limited', message: '查询太频繁，请一分钟后再试' } });
+    return true;
+  }
+  if (url.searchParams.get('view') === 'dashboard') {
+    await handleMaSlopeDashboard(url, symbol, res);
+    return true;
+  }
+  const stored = await readStoredMaSlope(symbol);
+  if (stored) {
+    sendJson(res, 200, stored);
+    return true;
+  }
+  const cached = readMaSlopeCache(symbol);
+  if (cached) {
+    sendJson(res, 200, cached);
+    return true;
+  }
+  try {
+    const data = await getJsonOverIpv4(
+      buildYahooSlopeChartUrl(symbol),
+      { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      12_000,
+    );
+    if (!data?.chart?.result?.[0]) throw new Error('no chart result');
+    const result = parseYahooSlopeHistory(symbol, data);
+    writeMaSlopeCache(symbol, result);
+    sendJson(res, 200, result);
+  } catch {
+    sendJson(res, 422, {
+      error: { code: 'slope_history_unavailable', message: '找不到该股票或历史行情不足' },
+    });
+  }
+  return true;
+}
+
+async function handleMaSlopeDashboard(url, symbol, res) {
+  let range;
+  let slopeWindow;
+  try {
+    range = normalizeSlopeDashboardRange(url.searchParams.get('range') || '5y');
+    slopeWindow = normalizeSlopeWindow(url.searchParams.get('slope_window') || '8');
+  } catch (error) {
+    sendJson(res, 400, { error: { code: 'invalid_chart_options', message: error.message } });
+    return;
+  }
+  const cacheKey = `dashboard:${symbol}:${range}:${slopeWindow}`;
+  const forceRefresh = url.searchParams.get('refresh') === '1';
+  const cached = forceRefresh
+    ? null
+    : readMaSlopeCache(cacheKey, MA_SLOPE_DASHBOARD_CACHE_TTL_MS);
+  if (cached) {
+    sendJson(res, 200, cached);
+    return;
+  }
+  try {
+    const data = await getJsonOverIpv4(
+      buildYahooSlopeChartUrl(symbol, range),
+      { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      15_000,
+    );
+    if (!data?.chart?.result?.[0]) throw new Error('no chart result');
+    const result = parseYahooSlopeDashboard(symbol, data, { range, slopeWindow });
+    writeMaSlopeCache(cacheKey, result);
+    sendJson(res, 200, result);
+  } catch {
+    sendJson(res, 422, {
+      error: { code: 'slope_dashboard_unavailable', message: '找不到该股票或 K 线历史行情不足' },
+    });
+  }
+}
+
+async function readStoredMaSlope(symbol) {
+  const path = join(PORTFOLIO_ANALYSIS_ROOT, 'latest.json');
+  try {
+    const snapshot = JSON.parse(await readFile(path, 'utf8'));
+    const stored = snapshot?.symbols?.[symbol]?.ma_slope;
+    if (!stored || typeof stored !== 'object') return null;
+    return {
+      ...stored,
+      symbol,
+      decision_use: false,
+      query_source: 'decision_snapshot',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function consumeMaSlopeRate(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const key = forwarded || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const current = maSlopeRateWindows.get(key);
+  if (!current || now - current.startedAt >= MA_SLOPE_RATE_WINDOW_MS) {
+    maSlopeRateWindows.set(key, { startedAt: now, count: 1 });
+    return true;
+  }
+  current.count += 1;
+  return current.count <= MA_SLOPE_RATE_MAX;
+}
+
+function readMaSlopeCache(symbol, ttlMs = MA_SLOPE_CACHE_TTL_MS) {
+  const cached = maSlopeCache.get(symbol);
+  if (!cached || Date.now() - cached.createdAt >= ttlMs) {
+    maSlopeCache.delete(symbol);
+    return null;
+  }
+  return cached.result;
+}
+
+function writeMaSlopeCache(symbol, result) {
+  if (maSlopeCache.size >= MA_SLOPE_CACHE_MAX) {
+    maSlopeCache.delete(maSlopeCache.keys().next().value);
+  }
+  maSlopeCache.set(symbol, { createdAt: Date.now(), result });
 }
 
 function asNumber(value) {
@@ -542,43 +700,86 @@ async function fetchFreeQuote(symbol) {
   }
 }
 
-async function fetchAlertQuotes(symbols) {
-  const rows = await Promise.all(symbols.map(async (symbol) => {
-    try {
-      return [symbol, (await fetchFreeQuote(symbol)).price];
-    } catch {
-      return null;
-    }
-  }));
-  return Object.fromEntries(rows.filter(Boolean));
-}
-
-const handleAlertRulesRoute = createAlertRulesRoute({ alertsRoot: PORTFOLIO_ALERTS_ROOT, sendJson });
+const handleAlertRulesRoute = createAlertRulesRoute({
+  alertsRoot: PORTFOLIO_ALERTS_ROOT,
+  sendJson,
+  token: PORTFOLIO_SYNC_TOKEN,
+});
+const notificationControl = createNotificationControl({
+  root: PORTFOLIO_ALERTS_ROOT, token: PORTFOLIO_SYNC_TOKEN, sendJson,
+  send: ({ title, body, presentation }) => sendBarkNotification({ baseUrl: BARK_BASE_URL, deviceKey: BARK_DEVICE_KEY, title, body, presentation }),
+});
+const handleChannelReviewRoute = createChannelReviewRoute({
+  alertsRoot: PORTFOLIO_ALERTS_ROOT,
+  sendJson,
+});
 const handleRefreshRequestRoute = createRefreshRequestRoute({
   token: PORTFOLIO_SYNC_TOKEN,
   filePath: PORTFOLIO_REFRESH_REQUEST_PATH,
   sendJson,
 });
 
-async function runConfiguredAlertCycle() {
-  const rules = await readAlertRules(PORTFOLIO_ALERTS_ROOT);
-  return runAlertTrackerCycle({
-    now: new Date(),
-    alertsRoot: PORTFOLIO_ALERTS_ROOT,
-    rules,
-    fetchQuotes: fetchAlertQuotes,
-    notify: async (event) => {
-      const rule = rules.find((candidate) => candidate.id === event.ruleId);
-      if (!rule) return false;
-      const notification = formatAlertNotification(rule, event);
-      return sendBarkNotification({
-        baseUrl: BARK_BASE_URL,
-        deviceKey: BARK_DEVICE_KEY,
-        title: notification.title,
-        body: notification.body,
+let quantDecisionCycleRunning = false;
+async function runStoredQuantDecisionCycle() {
+  if (quantDecisionCycleRunning) return;
+  quantDecisionCycleRunning = true;
+  try {
+    const snapshot = JSON.parse(await readFile(join(PORTFOLIO_ANALYSIS_ROOT, 'latest.json'), 'utf8'));
+    const now = new Date();
+    const settings = await notificationControl.settings();
+    const age = +now - Date.parse(snapshot.generated_at);
+    if (!Number.isFinite(age) || age < -60_000 || age > 6 * 60 * 60 * 1000) return;
+    if (classifyMarketSession(now, { hasMinuteSeries: true }) === 'closed') return;
+    for (const schedule of settings.schedules.filter(s => s.source === 'server' && scheduleDue(s, now))) {
+      const slot = `${zonedParts(now, schedule.timeZone).date}:${schedule.id}`;
+      await deliverQuantDecisionAlerts({ snapshot, alertsRoot: PORTFOLIO_ALERTS_ROOT, now, notificationSlot: slot,
+        notify: async event => {
+          const result = await notificationControl.dispatch({ ...event, scheduleId: schedule.id,
+            dedupeKey: `${slot}:${event.key}`, createdAt: now.toISOString() });
+          return result.status === 'sent';
+        },
       });
-    },
-  });
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.error('stored quant decision cycle failed:', error instanceof Error ? error.message : String(error));
+    }
+  } finally {
+    quantDecisionCycleRunning = false;
+  }
+}
+
+let channelReviewCycleRunning = false;
+async function runStoredChannelReviewCycle() {
+  if (channelReviewCycleRunning) return;
+  channelReviewCycleRunning = true;
+  try {
+    const snapshot = JSON.parse(await readFile(join(PORTFOLIO_ANALYSIS_ROOT, 'latest.json'), 'utf8'));
+    const positions = await readFile(join(PORTFOLIO_POSITIONS_ROOT, 'latest.json'), 'utf8')
+      .then(raw => JSON.parse(raw)?.payload?.positions).catch(() => []);
+    await runChannelReviewCycle({
+      snapshot,
+      positions: Array.isArray(positions) ? positions : [],
+      alertsRoot: PORTFOLIO_ALERTS_ROOT,
+      notify: event => notificationControl.dispatch(event),
+      extremeRule: (await notificationControl.settings()).zExtreme,
+      fetchDashboard: async (symbol, now) => {
+        const data = await getJsonOverIpv4(
+          buildYahooSlopeChartUrl(symbol, '5y'),
+          { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+          15_000,
+        );
+        if (!data?.chart?.result?.[0]) throw new Error('no chart result');
+        return parseYahooSlopeDashboard(symbol, data, { range: '5y', slopeWindow: 8, now });
+      },
+    });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.error('stored channel review cycle failed:', error instanceof Error ? error.message : String(error));
+    }
+  } finally {
+    channelReviewCycleRunning = false;
+  }
 }
 
 async function proxyQuotes(req, res) {
@@ -626,21 +827,31 @@ async function serveStatic(url, req, res) {
     return true;
   }
   const extension = extname(filePath).toLowerCase();
-  res.writeHead(200, {
+  const compressible = ['.css', '.html', '.js', '.json', '.svg'].includes(extension);
+  const shouldGzip = Boolean(res.portfolioAcceptsGzip && compressible);
+  const headers = {
     'Content-Type': MIME_TYPES[extension] || 'application/octet-stream',
     'Cache-Control': extension === '.html' || extension === '.js' && filePath.endsWith('runtime-config.js') ? 'no-cache' : 'public, max-age=31536000, immutable',
     'X-Content-Type-Options': 'nosniff',
-  });
+    Vary: 'Accept-Encoding',
+  };
+  if (shouldGzip) headers['Content-Encoding'] = 'gzip';
+  res.writeHead(200, headers);
   if (req.method === 'HEAD') {
     res.end();
   } else {
-    createReadStream(filePath).pipe(res);
+    const source = createReadStream(filePath);
+    if (shouldGzip) source.pipe(createGzip()).pipe(res);
+    else source.pipe(res);
   }
   return true;
 }
 
 const server = createServer(async (req, res) => {
+  res.portfolioAcceptsGzip = /(?:^|,)\s*gzip\s*(?:,|$)/i.test(req.headers['accept-encoding'] || '');
   const url = new URL(req.url || '/', 'http://127.0.0.1');
+  if (await handleSectorRotationRoute(url, req, res)) return;
+  if (await notificationControl.route(url, req, res)) return;
   if (await handleImportArchiveRoute(url, req, res)) return;
   if (await handleRefreshRequestRoute(url, req, res)) return;
   if (await handlePortfolioPositionsRoute(url, req, res)) return;
@@ -652,6 +863,8 @@ const server = createServer(async (req, res) => {
     else res.destroy();
     return;
   }
+  if (await handleMaSlopeQueryRoute(url, req, res)) return;
+  if (await handleChannelReviewRoute(url, req, res)) return;
   try {
     if (await handleAlertRulesRoute(url, req, res)) return;
   } catch (error) {
@@ -681,5 +894,11 @@ server.listen(PORT, HOST, () => {
   console.log(`portfolio-ai-gateway listening on ${HOST}:${PORT}${STATIC_ROOT ? `; static=${STATIC_ROOT}` : ''}`);
 });
 
-const stopAlertTracker = startAlertTracker({ runCycle: runConfiguredAlertCycle });
-server.on('close', stopAlertTracker);
+const quantDecisionTimer = setInterval(runStoredQuantDecisionCycle, QUANT_DECISION_INTERVAL_MS);
+const channelReviewTimer = setInterval(runStoredChannelReviewCycle, CHANNEL_REVIEW_INTERVAL_MS);
+void runStoredQuantDecisionCycle();
+void runStoredChannelReviewCycle();
+server.on('close', () => {
+  clearInterval(quantDecisionTimer);
+  clearInterval(channelReviewTimer);
+});

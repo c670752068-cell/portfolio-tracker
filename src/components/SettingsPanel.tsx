@@ -46,7 +46,7 @@ function CostCoverageCard({
   const analysis = analyzeCostCoverage(holdings, holdingCosts);
   const reasons: CostGapReason[] = ['option_no_source', 'equity_no_source', 'quant_coverage_incomplete', 'manual_missing'];
   return (
-    <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
+    <div className="min-w-0 rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
       <h3 className="text-sm font-semibold">成本数据覆盖</h3>
       <p className="mt-1 text-sm">已有成本 {analysis.costed} / 共 {analysis.total} 个持仓</p>
       {analysis.gaps.length === 0 ? (
@@ -145,6 +145,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           已启用 {serverGatewayLabel()}：截图和行情请求先经过服务器，手机不再直接连接 AI 接口。
         </div>
       )}
+      <div data-testid="mobile-settings-field-grid" className="grid grid-cols-2 gap-2 md:gap-3">
       <Field label="AI 识别服务">
         <select
           value={draft.aiProvider}
@@ -241,12 +242,12 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           </Field>
         </>
       )}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={testConnection}
           disabled={testingAi}
-          className="rounded-md bg-surface-overlay px-3 py-1.5 text-sm text-ink-primary hover:bg-neutral/40 disabled:cursor-not-allowed disabled:bg-neutral/60 dark:bg-surface-overlay dark:text-ink-primary dark:hover:bg-neutral"
+          className="min-h-11 rounded-md bg-surface-overlay px-3 py-1.5 text-sm text-ink-primary hover:bg-neutral/40 disabled:cursor-not-allowed disabled:bg-neutral/60 dark:bg-surface-overlay dark:text-ink-primary dark:hover:bg-neutral"
         >
           {testingAi ? '测试中…' : `测试 ${aiLabel} 连接`}
         </button>
@@ -256,9 +257,9 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           </span>
         )}
       </div>
-      <p className="text-xs text-ink-muted">当前生效接口：{serverGatewayEnabled ? '已自动使用服务器转发' : activeAiEndpoint(draft)}</p>
+      <p className="min-w-0 break-words text-xs text-ink-muted">当前生效接口：{serverGatewayEnabled ? '已自动使用服务器转发' : activeAiEndpoint(draft)}</p>
       {serverGatewayEnabled && (
-        <details className="rounded-md border border-neutral/40 p-2 text-xs text-ink-muted">
+        <details className="col-span-2 rounded-md border border-neutral/40 p-2 text-xs text-ink-muted">
           <summary className="cursor-pointer">完整转发地址（仅排障时查看）</summary>
           <ul className="mt-2 space-y-1 break-all font-mono tabular-nums">
             <li>智谱：{getServerAiProxyUrl('zhipu')}</li>
@@ -267,7 +268,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           </ul>
         </details>
       )}
-      {aiTestResult?.hint && <p className="text-xs text-trim dark:text-trim">{aiTestResult.hint}</p>}
+      {aiTestResult?.hint && <p className="col-span-2 text-xs text-trim dark:text-trim">{aiTestResult.hint}</p>}
       <Field label="等效仓位目标 %">
         <input
           type="number"
@@ -282,16 +283,33 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           等效仓位 =（正股 + 杠杆 ETF × 倍数 + 期权 Delta 折算）÷ 总资产。留现金子弹但用杠杆/期权把等效顶到目标，是本设置的用途。
         </p>
       </Field>
-      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
+      </div>
+      <div data-testid="mobile-settings-section-grid" className="grid grid-cols-2 gap-2 md:gap-3">
+      <div className="min-w-0 rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h3 className="mb-2 text-sm font-semibold">量化系统同步</h3>
         <p className="text-xs text-ink-muted">
           {serverGatewayEnabled
-            ? `已启用跨设备自动同步：Mac 量化系统${REFRESH_CADENCE.brokers.interval}汇总 IBKR、长桥和富途后推送到 VPS；手机和电脑打开本网址会自动读取同一份持仓，不再需要分别填 Token。`
-            : '请使用 VPS 入口打开网站，GitHub Pages 无法跨设备读取服务器持仓。'}
+            ? `已启用跨设备自动同步：Mac 量化系统${REFRESH_CADENCE.brokers.interval}汇总 IBKR、长桥和富途后推送到 VPS。打开网站即可读取最新持仓与决策。`
+            : '请使用 VPS 入口打开网站；打开网站即可读取最新持仓与决策。'}
         </p>
+        {serverGatewayEnabled && (
+          <div className="mt-3">
+            <Field label="后台维护 Token（可选）">
+              <input
+                type="password"
+                value={draft.quantSyncToken}
+                onChange={(event) => setDraft({ ...draft, quantSyncToken: event.target.value })}
+                placeholder="仅用于立即重算和后台维护"
+                autoComplete="off"
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-ink-muted">仅保存在当前浏览器；留空不影响日常查看。</p>
+            </Field>
+          </div>
+        )}
       </div>
       <CostCoverageCard holdings={holdings} holdingCosts={holdingCosts} />
-      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
+      <div className="min-w-0 rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h3 className="mb-2 text-sm font-semibold">估值数据补充</h3>
         <Field label="Alpha Vantage PE API Key">
           <input
@@ -306,13 +324,13 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           </p>
         </Field>
       </div>
-      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
+      <div className="col-span-2 min-w-0 rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h3 className="mb-2 text-sm font-semibold">估值基准</h3>
         <p className="text-xs text-ink-muted">{VALUATION_ANCHOR_POLICY_TEXT}</p>
         <p className="mb-3 mt-1 text-xs text-ink-muted">
           手动锚点仅在对应指数填写后覆盖自动值。阈值表示当前 PE 高于锚点的距离分区，不改变量化系统的任何开窗结论。
         </p>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3">
           <Field label="锚点窗口开始">
             <input
               type="date"
@@ -330,7 +348,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
             />
           </Field>
         </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
           {VALUATION_INDEX_KEYS.map((index) => (
             <Field label={`${index} 手动锚点`} key={index}>
               <input
@@ -345,7 +363,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
             </Field>
           ))}
         </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
           <Field label="已进入锚点区阈值">
             <input
               type="number"
@@ -368,7 +386,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           </Field>
         </div>
       </div>
-      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
+      <div className="min-w-0 rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h3 className="mb-2 text-sm font-semibold">每日行情同步</h3>
         <div className="space-y-3">
           <Field label="行情源">
@@ -413,7 +431,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
               </p>
             </Field>
           )}
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex min-h-11 items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={draft.autoRefreshQuotes}
@@ -427,9 +445,18 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
           </p>
         </div>
       </div>
-      <div className="rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
+      <div className="min-w-0 rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h3 className="mb-2 text-sm font-semibold">刷新节奏</h3>
-        <div className="overflow-x-auto">
+        <div className="grid grid-cols-2 gap-2 sm:hidden">
+          {Object.values(REFRESH_CADENCE).map((item) => (
+            <div className="min-w-0 rounded-md bg-surface-overlay/35 p-2" key={item.label}>
+              <div className="text-xs font-medium">{item.label}</div>
+              <div className="mt-1 text-[11px] tabular-nums text-buy">{item.interval}</div>
+              <div className="mt-1 break-words text-[10px] leading-relaxed text-ink-muted">{item.scope}</div>
+            </div>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[420px] text-left text-xs">
             <thead className="text-ink-muted"><tr><th className="pb-2">项目</th><th className="pb-2">节奏</th><th className="pb-2">范围</th></tr></thead>
             <tbody>
@@ -443,6 +470,7 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
             </tbody>
           </table>
         </div>
+      </div>
       </div>
       {saveError && <p className="text-xs text-loss dark:text-loss">{saveError}</p>}
       {dirtyCount > 0 && <SettingsSaveBar dirtyCount={dirtyCount} onSave={save} />}
@@ -467,11 +495,11 @@ export function SettingsSaveBar({ dirtyCount, onSave }: { dirtyCount: number; on
 }
 
 const inputCls =
-  'w-full rounded-md border border-neutral/60 bg-surface-raised px-2 py-1.5 text-sm tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base';
+  'min-h-11 min-w-0 w-full rounded-md border border-neutral/60 bg-surface-raised px-2 py-1.5 text-sm tabular-nums focus:border-buy focus:outline-none dark:border-neutral dark:bg-surface-base';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block text-sm">
+    <label className="block min-w-0 text-sm">
       <div className="mb-1 font-medium">{label}</div>
       {children}
     </label>

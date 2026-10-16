@@ -30,6 +30,13 @@ describe('quantSnapshotQuote', () => {
     expect(quantSnapshotQuote(snapshotWithAaplPrice(308.91), 'AAPL')?.session).toBeUndefined();
   });
 
+  it('treats a regular-session price in a weekend snapshot as the previous close', () => {
+    const snapshot = snapshotWithAaplPrice(308.91, 'regular');
+    snapshot.generated_at = '2026-08-02T11:43:00-04:00';
+
+    expect(quantSnapshotQuote(snapshot, 'AAPL')?.session).toBe('closed');
+  });
+
   it('returns null when the snapshot carries no usable price', () => {
     expect(quantSnapshotQuote(snapshotWithAaplPrice(undefined), 'AAPL')).toBeNull();
     expect(quantSnapshotQuote(snapshotWithAaplPrice(0), 'AAPL')).toBeNull();

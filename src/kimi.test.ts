@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getAiRuntimeConfig, normalizeOptionExpiration, parseOptionDetailImages, parsePortfolioImages } from './kimi';
+import { getAiRuntimeConfig, normalizeOptionExpiration, parseOptionDetailImages, parsePortfolioImages, testAiConnection } from './kimi';
 import type { AppSettings } from './types';
 
 function settings(overrides: Partial<AppSettings> = {}): AppSettings {
@@ -107,6 +107,24 @@ describe('getAiRuntimeConfig', () => {
 
     expect(config.endpoint).toBe('https://api.moonshot.cn/v1/chat/completions');
     expect(config.usesServerGateway).toBe(false);
+  });
+});
+
+describe('Kimi K2 request compatibility', () => {
+  it('disables thinking, omits temperature, and gives the connection test enough output tokens', async () => {
+    setRuntimeConfig();
+    const fetchMock = vi.fn().mockResolvedValueOnce(aiResponse(200, {
+      choices: [{ message: { content: 'OK' } }],
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(testAiConnection(settings())).resolves.toContain('连接成功：OK');
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.model).toBe('kimi-k2.6');
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body).not.toHaveProperty('temperature');
+    expect(body.max_tokens).toBeGreaterThanOrEqual(64);
   });
 });
 

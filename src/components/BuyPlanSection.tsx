@@ -162,7 +162,7 @@ export function BuyPlanSection({ snapshot, onDirtyChange }: BuyPlanSectionProps)
       {evaluated.length === 0 ? (
         <EmptyPlans onUseTemplate={() => beginCreate(0)} />
       ) : (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div data-testid="mobile-plan-grid" className="mt-4 grid grid-cols-2 gap-2 lg:gap-3">
           {evaluated.map((plan) => (
             <PlanCard
               key={plan.id}
@@ -234,7 +234,7 @@ function PlanAccountContext({ plan }: { plan: QuantBuyPlan }) {
   const sizing = plan.buy_sizing!;
   const risk = sizing.risk_context!;
   const gate = sizing.gate;
-  const isHardCapBlocked = risk.sleeve.over_hard_cap_usd > 0;
+  const isHardCapBlocked = !risk.sleeve.unlimited && risk.sleeve.over_hard_cap_usd > 0;
   return (
     <div className="mt-4 rounded-xl border border-neutral/30 bg-surface-overlay/45 p-3 text-xs text-ink-secondary">
       <div className="tabular-nums">当前仓位门额度：{sizing.suggested_usd === null ? '暂无' : `$${sizing.suggested_usd.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}</div>
@@ -242,7 +242,7 @@ function PlanAccountContext({ plan }: { plan: QuantBuyPlan }) {
       <div className="mt-1 tabular-nums">{risk.sleeve.name}：等效 {risk.sleeve.effective_pct.toFixed(2)}% · 现金 {risk.sleeve.cash_pct.toFixed(2)}%</div>
       <div className={`mt-2 rounded-lg px-3 py-2 ${gate?.passed ? 'bg-buy/10 text-buy' : gate ? 'bg-trim/10 text-trim' : 'bg-neutral/20 text-ink-secondary'}`}>
         {gate ? <>{isHardCapBlocked ? '本轮不建议新增：' : gate.passed ? '仓位门通过：' : '仓位门未过：'}{gate.reason}</> : '仓位门数据待量化同步'}
-        {isHardCapBlocked && <span className="ml-1 tabular-nums">（{risk.sleeve.name}超硬顶 {risk.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
+        {isHardCapBlocked && risk.sleeve.hard_cap_pct !== null && <span className="ml-1 tabular-nums">（{risk.sleeve.name}超硬顶 {risk.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
       </div>
     </div>
   );
@@ -262,11 +262,11 @@ function PlanCard({
   const gatePassed = sizing?.gate?.passed ?? plan.position_gate.passed;
   const gateNote = sizing?.gate?.reason ?? plan.position_gate.note;
   const proposedAmount = sizing?.suggested_usd ?? plan.action_amount_usd;
-  const isHardCapBlocked = (risk?.sleeve.over_hard_cap_usd ?? 0) > 0;
+  const isHardCapBlocked = !risk?.sleeve.unlimited && (risk?.sleeve.over_hard_cap_usd ?? 0) > 0;
   const readyStyle = plan.ready ? 'border-buy/60 bg-buy/10' : 'border-neutral/40 bg-surface-overlay/35';
   return (
-    <article className={`rounded-xl border p-4 ${readyStyle}`}>
-      <div className="flex items-start justify-between gap-3">
+    <article className={`min-w-0 rounded-xl border p-3 sm:p-4 ${readyStyle}`}>
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:justify-between sm:gap-3">
         <div>
           <div className="font-semibold"><span className="tabular-nums">{plan.symbol}</span> · {plan.label}</div>
           <div className={`mt-1 text-xs ${plan.ready ? 'text-buy' : 'text-ink-muted'}`}>
@@ -274,16 +274,16 @@ function PlanCard({
           </div>
         </div>
         <div className="flex gap-1">
-          <button type="button" onClick={onEdit} className="min-h-11 rounded-lg px-3 text-xs text-ink-secondary hover:bg-surface-overlay">编辑</button>
-          <button type="button" onClick={onDelete} className="min-h-11 rounded-lg px-3 text-xs text-ink-muted hover:bg-surface-overlay">删除</button>
+          <button type="button" onClick={onEdit} className="min-h-9 rounded-lg px-2 text-xs text-ink-secondary hover:bg-surface-overlay sm:min-h-11 sm:px-3">编辑</button>
+          <button type="button" onClick={onDelete} className="min-h-9 rounded-lg px-2 text-xs text-ink-muted hover:bg-surface-overlay sm:min-h-11 sm:px-3">删除</button>
         </div>
       </div>
       <div className="mt-3 space-y-3">
         {plan.conditions.map((conditionValue) => (
           <div key={conditionValue.key}>
-            <div className="flex items-center justify-between gap-3 text-xs">
+            <div className="flex flex-col items-start gap-1 text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-3">
               <span>{conditionValue.met ? <span className="text-buy">✓</span> : <span className="text-ink-muted">○</span>} {conditionValue.name}</span>
-              <span className="text-right tabular-nums text-ink-secondary">
+              <span className="tabular-nums text-ink-secondary sm:text-right">
                 当前 {numberText(conditionValue.current)} · {conditionValue.gap_text}
               </span>
             </div>
@@ -301,7 +301,7 @@ function PlanCard({
         </div>
         <div className={`mt-2 rounded-lg px-3 py-2 ${gatePassed ? 'bg-buy/10 text-buy' : 'bg-trim/10 text-trim'}`}>
           {isHardCapBlocked ? '本轮不建议新增：' : gatePassed ? '仓位门通过：' : '仓位门未过：'}{gateNote}
-          {isHardCapBlocked && <span className="ml-1 tabular-nums">（{risk!.sleeve.name}超硬顶 {risk!.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
+          {isHardCapBlocked && risk!.sleeve.hard_cap_pct !== null && <span className="ml-1 tabular-nums">（{risk!.sleeve.name}超硬顶 {risk!.sleeve.hard_cap_pct.toFixed(2)}%）</span>}
         </div>
       </div>}
     </article>

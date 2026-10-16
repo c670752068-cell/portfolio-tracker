@@ -5,15 +5,15 @@ import { depthQuotePrice, depthQuoteSnapshot, type DepthQuote } from '../depthQu
 import { quantSnapshotQuote } from '../depthWindowPrice';
 import { formatMoney } from '../format';
 import { REFRESH_CADENCE } from '../refreshCadence';
-import { finalVerdictWord } from '../finalVerdictWord';
-import { finalVerdictSymbols, isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
+import { stockFamilyAllocation } from '../positionAllocation';
+import { depthConditionSatisfied, isQuantAnalysisStale, lookupQuantSymbol, quantAnalysisAgeHours, quantAnalysisFreshnessText } from '../quantAnalysis';
 import {
   closedQuoteText,
   formatPriceSession,
   priceSessionLabel,
   quoteSessionMismatchText,
 } from '../quoteSession';
-import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantPanicSymbolStatus, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
+import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantDepthPresentation, QuantDrawdownResearch, QuantDrawdownResearchHorizon, QuantPanicSymbolStatus, QuantSignalStatWindow, QuantSymbolAnalysis } from '../types';
 import { SymbolVerdictCard } from './SymbolVerdictCard';
 import { ValuationCard, type ValuationSettings } from './ValuationCard';
 
@@ -31,6 +31,7 @@ interface BuyDecisionSectionProps {
   displayCurrency?: DisplayCurrency;
   rates?: ExchangeRates;
   valuationSettings?: ValuationSettings;
+  totalAssets?: number;
 }
 
 const USD_RATES: ExchangeRates = {
@@ -83,29 +84,98 @@ function usdPrice(value: number): string {
   return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function signedPercent(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '暂无';
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+function researchHorizon(
+  research: QuantDrawdownResearch,
+  depth: number | null,
+): QuantDrawdownResearchHorizon | null {
+  if (depth === null) return null;
+  const level = research.levels.find((item) => item.depth_pct === depth);
+  return level?.horizons[String(research.primary_horizon_days)] ?? null;
+}
+
+function ResearchResult({
+  label,
+  depth,
+  horizon,
+}: {
+  label: string;
+  depth: number;
+  horizon: QuantDrawdownResearchHorizon;
+}) {
+  return (
+    <div className="rounded-lg border border-neutral/40 bg-surface-overlay/40 p-3">
+      <div className="text-xs text-ink-muted">{label}</div>
+      <div className="mt-1 font-semibold tabular-nums">回撤 {depth}% · {horizon.horizon_trading_days} 日上涨 {horizon.win_count}/{horizon.n}（{horizon.win_rate_pct?.toFixed(2) ?? '暂无'}%）</div>
+      <div className="mt-1 text-xs tabular-nums text-ink-secondary">中位 {signedPercent(horizon.median_return_pct)} · 最差 {signedPercent(horizon.worst_return_pct)}</div>
+    </div>
+  );
+}
+
+function FocusedDrawdownResearch({ research }: { research: QuantDrawdownResearch }) {
+  const best = researchHorizon(research, research.best_supported_depth_pct);
+  const observed = researchHorizon(research, research.most_observed_depth_pct);
+  const usesBenchmark = research.basis_symbol !== research.symbol;
+  const observedIsDistinct = (
+    research.most_observed_depth_pct !== research.best_supported_depth_pct
+  );
+  return (
+    <div className="mb-4 rounded-lg border border-neutral/40 bg-surface-overlay/30 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="font-semibold">
+          {research.symbol} 回撤胜率研究{usesBenchmark ? `（按 ${research.basis_symbol} 触发）` : ''}
+        </h3>
+        <span className="text-xs tabular-nums text-ink-muted">{research.available_start} 至 {research.available_end}</span>
+      </div>
+      <p className="mt-1 text-xs text-ink-muted">每轮回撤只取首次触线 · {research.completed_cycle_count} 轮已完成 · {research.ongoing_cycle_count} 轮进行中</p>
+      {usesBenchmark && (
+        <p className="mt-1 text-xs font-medium text-ink-secondary">
+          {research.basis_symbol} 负责回撤触发，{research.symbol} 负责计算后续收益
+        </p>
+      )}
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {research.best_supported_depth_pct !== null && best && <ResearchResult label={`高胜率档位（至少 ${research.minimum_comparison_samples} 轮且胜率 ≥ ${research.minimum_win_rate_pct}%）`} depth={research.best_supported_depth_pct} horizon={best} />}
+        {research.best_supported_depth_pct === null && (
+          <div className="rounded-lg border border-neutral/40 bg-surface-overlay/40 p-3 text-sm text-ink-secondary sm:col-span-2">
+            2021 年至今没有同时达到 ≥{research.minimum_comparison_samples} 轮且胜率 ≥{research.minimum_win_rate_pct}% 的档位。
+          </div>
+        )}
+        {observed && observedIsDistinct && (
+          <ResearchResult label="常见档位" depth={research.most_observed_depth_pct} horizon={observed} />
+        )}
+      </div>
+      <details className="mt-3 rounded-lg border border-neutral/30 px-3 py-2">
+        <summary className="cursor-pointer text-sm font-medium">查看全部回撤档位</summary>
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-[34rem] text-left text-xs tabular-nums">
+            <thead className="text-ink-muted"><tr><th className="py-1">回撤</th><th>20 日</th><th>60 日</th><th>120 日</th></tr></thead>
+            <tbody>{research.levels.map((level) => <tr key={level.depth_pct} className="border-t border-neutral/20">
+              <td className="py-1.5 font-medium">{level.depth_pct}%</td>
+              {[20, 60, 120].map((days) => {
+                const item = level.horizons[String(days)];
+                return <td key={days}>{item ? `${item.win_count}/${item.n} · ${signedPercent(item.median_return_pct)}` : '—'}</td>;
+              })}
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </details>
+      <p className="mt-2 text-xs text-ink-muted">这是历史频数与收益记录，不会自动修改现有买入规则。</p>
+    </div>
+  );
+}
+
 /**
  * This deliberately performs no gate calculation. It only turns the backend's
  * explicit pass/block/unknown lists into the five fixed presentation rows so
  * older snapshots remain explainable while the exported detailed layer list
  * is rolling out.
  */
-function finalVerdictStatusLabel(snapshot: QuantAnalysisSnapshot | null, symbol: string): string {
-  const verdict = snapshot ? finalVerdictSymbols(snapshot)[symbol] : undefined;
-  return `${symbol} · ${finalVerdictWord(verdict)}`;
-}
-
-function finalVerdictTone(snapshot: QuantAnalysisSnapshot | null, symbol: string): StatusTone {
-  const verdict = snapshot ? finalVerdictSymbols(snapshot)[symbol] : undefined;
-  if (verdict?.verdict === 'BUY') return 'buy';
-  if (verdict?.verdict === 'UNDECIDABLE') return 'trim';
-  return 'neutral';
-}
-
-type StatusTone = 'buy' | 'trim' | 'neutral';
-
-function StatusDot({ tone }: { tone: StatusTone }) {
-  const color = tone === 'buy' ? 'bg-buy' : tone === 'trim' ? 'bg-trim' : 'bg-neutral';
-  return <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${color}`} />;
+function finalVerdictSatisfied(snapshot: QuantAnalysisSnapshot | null, symbol: string): boolean {
+  return snapshot ? depthConditionSatisfied(snapshot, symbol) : false;
 }
 
 const DEPTH_STYLE = {
@@ -199,10 +269,10 @@ function DepthHighlight({
         {presentation.status === 'ready' && <span className="text-xs font-semibold tabular-nums">超出 {presentation.excess_pct.toFixed(2)} 点</span>}
       </div>
       {!closedText && priceSessionLabel(depth.price_session) && <div className="mt-2 text-xs text-ink-muted">取价时段：{priceSessionLabel(depth.price_session)}</div>}
-      <div className={`mt-3 tabular-nums ${depth.sample_insufficient || depth.win_rate_60d === null ? 'text-ink-muted opacity-70' : 'text-buy'}`}>
-        {depth.sample_insufficient || depth.win_rate_60d === null
-          ? `60 日样本不足（n=${depth.n}）`
-          : <><strong className="text-xl">60 日胜率 {(depth.win_rate_60d * 100).toFixed(2)}%</strong><span className="ml-2 text-xs">（n={depth.n}）</span></>}
+      <div className={`mt-3 tabular-nums ${depth.win_rate_60d === null ? 'text-ink-muted opacity-70' : 'text-buy'}`}>
+        {depth.win_rate_60d === null
+          ? `60 日暂无历史记录（n=${depth.n}）`
+          : <><strong className="text-xl">60 日上涨 {(depth.win_rate_60d * 100).toFixed(2)}%（n={depth.n}）</strong></>}
       </div>
     </div>
   );
@@ -300,15 +370,23 @@ function PanicWindowStatus({ status }: { status: QuantPanicSymbolStatus }) {
   );
 }
 
-export function BuyDecisionSection({ snapshot, holdings = [], monitoredQuotes = new Map(), initialSymbol = '', initialSide, loading = false, error = '', onRefresh, displayCurrency = 'USD', rates = USD_RATES, valuationSettings = DEFAULT_VALUATION_SETTINGS }: BuyDecisionSectionProps) {
+export function BuyDecisionSection({ snapshot, holdings = [], monitoredQuotes = new Map(), initialSymbol = '', initialSide, loading = false, error = '', onRefresh, displayCurrency = 'USD', rates = USD_RATES, valuationSettings = DEFAULT_VALUATION_SETTINGS, totalAssets = 0 }: BuyDecisionSectionProps) {
   const monitoredSymbols = useMemo(() => snapshot
-    ? Object.keys(snapshot.symbols).filter((item) => !CASH_EQUIVALENT_SYMBOLS.has(item.toUpperCase())).sort()
+    ? Object.keys(snapshot.symbols)
+      .filter((item) => !CASH_EQUIVALENT_SYMBOLS.has(item.toUpperCase()))
+      .sort((left, right) => {
+        const leftSatisfied = depthConditionSatisfied(snapshot, left);
+        const rightSatisfied = depthConditionSatisfied(snapshot, right);
+        return Number(rightSatisfied) - Number(leftSatisfied) || left.localeCompare(right);
+      })
     : [], [snapshot]);
   const firstSymbol = monitoredSymbols.includes(initialSymbol.toUpperCase())
     ? initialSymbol.toUpperCase()
     : monitoredSymbols[0] || '';
   const [symbol, setSymbol] = useState(firstSymbol);
+  const [symbolMenuOpen, setSymbolMenuOpen] = useState(false);
   const selectedSymbol = monitoredSymbols.includes(symbol) ? symbol : firstSymbol;
+  const selectedSatisfied = finalVerdictSatisfied(snapshot, selectedSymbol);
   const result = useMemo(() => snapshot && selectedSymbol ? lookupQuantSymbol(snapshot, selectedSymbol) : null, [snapshot, selectedSymbol]);
   const snapshotAgeHours = snapshot ? quantAnalysisAgeHours(snapshot.generated_at) : null;
   const foundAnalysis = result?.found ? result.analysis : undefined;
@@ -316,11 +394,13 @@ export function BuyDecisionSection({ snapshot, holdings = [], monitoredQuotes = 
   const hasDepthStats = Boolean(foundAnalysis?.depth_stats);
   const panicStatus = snapshot?.panic_window?.symbols[selectedSymbol];
   const depthPresentation = snapshot?.summary?.depth_states[selectedSymbol];
+  const allocation = stockFamilyAllocation(selectedSymbol, holdings, totalAssets, rates);
   const selectedHoldingQuotePrice = depthQuotePrice(holdings, new Map(), selectedSymbol);
   const selectedMonitoredQuotePrice = depthQuotePrice(holdings, monitoredQuotes, selectedSymbol);
-  const selectedQuantQuotePrice = quantSnapshotQuote(snapshot, selectedSymbol)?.price ?? null;
+  const selectedQuantQuote = quantSnapshotQuote(snapshot, selectedSymbol);
+  const selectedQuantQuotePrice = selectedQuantQuote?.price ?? null;
   const selectedDepthQuotePrice = selectedMonitoredQuotePrice ?? selectedQuantQuotePrice;
-  const selectedDepthQuote = depthQuoteSnapshot(holdings, monitoredQuotes, selectedSymbol);
+  const selectedDepthQuote = depthQuoteSnapshot(holdings, monitoredQuotes, selectedSymbol) ?? selectedQuantQuote;
   const selectedDepthPriceSource = selectedHoldingQuotePrice !== null
     ? 'holding'
     : selectedMonitoredQuotePrice !== null
@@ -339,7 +419,7 @@ export function BuyDecisionSection({ snapshot, holdings = [], monitoredQuotes = 
   return (
     <section className="space-y-4">
       {snapshot && <ReviewCheckpointStrip snapshot={snapshot} />}
-      <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4">
+      <div data-testid="quant-symbol-console" className="rounded-xl border border-neutral/40 bg-surface-raised p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">量化条件查询</h2>
@@ -348,12 +428,59 @@ export function BuyDecisionSection({ snapshot, holdings = [], monitoredQuotes = 
           {onRefresh && <button type="button" onClick={onRefresh} disabled={loading} className="rounded-md bg-neutral/30 px-3 py-2 text-sm">{loading ? '读取中…' : '刷新快照'}</button>}
         </div>
         {snapshot && <p className="mt-2 text-xs tabular-nums text-ink-muted">{quantAnalysisFreshnessText(snapshot.generated_at)} · {REFRESH_CADENCE.quantAnalysis.interval}自动更新</p>}
-        <div className="mt-4 flex items-center gap-2">
-          <StatusDot tone={finalVerdictTone(snapshot, selectedSymbol)} />
-          <select aria-label="量化监控标的" value={selectedSymbol} onChange={(event) => setSymbol(event.target.value)} className="min-w-0 flex-1 rounded-md border border-neutral bg-transparent px-3 py-2">
-            {monitoredSymbols.map((item) => <option key={item} value={item}>{finalVerdictStatusLabel(snapshot, item)}</option>)}
-          </select>
+        <div className="relative mt-4">
+          <button
+            type="button"
+            aria-label="量化监控标的"
+            aria-haspopup="listbox"
+            aria-expanded={symbolMenuOpen}
+            onClick={() => setSymbolMenuOpen((open) => !open)}
+            className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md border border-neutral bg-transparent px-3 py-2 text-left"
+          >
+            <span className="min-w-0 truncate font-medium tabular-nums">{selectedSymbol}</span>
+            <span className="ml-auto flex shrink-0 items-center gap-3">
+              <span className={`font-semibold ${selectedSatisfied ? 'text-gain' : 'text-loss'}`}>
+                {selectedSatisfied ? '满足' : '不满足'}
+              </span>
+              <span aria-hidden="true" className="text-ink-muted">{symbolMenuOpen ? '⌃' : '⌄'}</span>
+            </span>
+          </button>
+          <div
+            role="listbox"
+            aria-label="量化监控标的列表"
+            className={`${symbolMenuOpen ? 'absolute z-30 mt-1' : 'hidden'} max-h-80 w-full overflow-y-auto rounded-xl border border-neutral/50 bg-surface-raised p-1 shadow-xl`}
+          >
+            {monitoredSymbols.map((item) => {
+              const satisfied = finalVerdictSatisfied(snapshot, item);
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  role="option"
+                  aria-selected={item === selectedSymbol}
+                  onClick={() => {
+                    setSymbol(item);
+                    setSymbolMenuOpen(false);
+                  }}
+                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-surface-overlay"
+                >
+                  <span className="font-medium tabular-nums">{item}</span>
+                  <span className={`font-semibold ${satisfied ? 'text-gain' : 'text-loss'}`}>
+                    {satisfied ? '满足' : '不满足'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
+        {snapshot && result?.found && (
+          <SymbolVerdictCard
+            snapshot={snapshot}
+            symbol={result.symbol}
+            allocation={allocation}
+            embedded
+          />
+        )}
       </div>
 
       {error && <div className="rounded-xl border border-loss/40 bg-loss/10 p-3 text-sm text-loss">读取失败：{error}</div>}
@@ -372,13 +499,17 @@ export function BuyDecisionSection({ snapshot, holdings = [], monitoredQuotes = 
 
       {snapshot && result?.found && (
         <>
-          <SymbolVerdictCard snapshot={snapshot} symbol={result.symbol} />
-
           <div id="buy-condition-detail" className="scroll-mt-4 rounded-xl border border-neutral/40 bg-surface-raised p-4">
             <div className="mb-4">
               {panicStatus?.applicable
                 ? <PanicWindowStatus status={panicStatus} />
-                : <DepthHighlight analysis={result.analysis} presentation={depthPresentation} title="深度买入窗口（个股）" quotePrice={selectedDepthQuotePrice} quote={selectedDepthQuote} />}
+                : <DepthHighlight
+                    analysis={result.analysis}
+                    presentation={depthPresentation}
+                    title={result.symbol === 'GDX' ? '黄金回撤买入窗口（GLD）' : '深度买入窗口（个股）'}
+                    quotePrice={selectedDepthQuotePrice}
+                    quote={selectedDepthQuote}
+                  />}
             </div>
             <ValuationCard
               symbol={result.symbol}
@@ -389,30 +520,30 @@ export function BuyDecisionSection({ snapshot, holdings = [], monitoredQuotes = 
               displayCurrency={displayCurrency}
               rates={rates}
             />
+            {result.analysis.depth_window?.research && <FocusedDrawdownResearch research={result.analysis.depth_window.research} />}
+            <div className="mt-4 border-t border-neutral/30 pt-4">
+              <h3 className="font-semibold">回撤历史</h3>
+              {!hasSignalStats && !hasDepthStats && (
+                <p className="mt-2 text-sm text-ink-muted">当前没有可展示的历史事件样本。</p>
+              )}
+              {Object.entries(result.analysis.signal_stats || {}).map(([name, stats]) => (
+                <div key={name} className="mt-3">
+                  <div className="text-sm font-medium">{name}</div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <StatWindow label="5 日" stat={stats.d5} />
+                    <StatWindow label="20 日" stat={stats.d20} />
+                    <StatWindow label="60 日" stat={stats.d60} />
+                  </div>
+                </div>
+              ))}
+              {result.analysis.depth_stats && <DepthStat stat={result.analysis.depth_stats} />}
+              <p className="mt-3 text-xs font-medium text-trim">历史统计不代表未来收益；概率禁止相乘。</p>
+            </div>
             {!result.analysis.available && (
               <p className="mt-3 text-trim">当前无可用判定：{result.analysis.error || '数据未生成'}</p>
             )}
           </div>
 
-          <div className="rounded-xl border border-neutral/40 bg-surface-raised p-4">
-            <h3 className="font-semibold">历史事件统计</h3>
-            {!hasSignalStats && !hasDepthStats && (
-              <p className="mt-2 text-sm text-ink-muted">当前没有可展示的历史事件样本。</p>
-            )}
-            {Object.entries(result.analysis.signal_stats || {}).map(([name, stats]) => (
-              <div key={name} className="mt-3">
-                <div className="text-sm font-medium">{name}</div>
-                <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                  <StatWindow label="5 日" stat={stats.d5} />
-                  <StatWindow label="20 日" stat={stats.d20} />
-                  <StatWindow label="60 日" stat={stats.d60} />
-                </div>
-              </div>
-            ))}
-            {result.analysis.depth_stats && <DepthStat stat={result.analysis.depth_stats} />}
-            <p className="mt-3 text-xs font-medium text-trim">历史统计不代表未来收益；概率禁止相乘。</p>
-          </div>
-          <div className="rounded-xl border border-neutral/40 bg-surface-overlay/50 p-3 text-xs text-ink-muted">{snapshot.disclaimer}</div>
         </>
       )}
     </section>

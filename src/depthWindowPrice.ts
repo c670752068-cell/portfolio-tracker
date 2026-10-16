@@ -1,4 +1,5 @@
 import type { PriceSession, QuantAnalysisSnapshot, QuoteSnapshot } from './types';
+import { sessionLabel } from './marketSession';
 
 /**
  * The quant snapshot already carries a price for every symbol it evaluated
@@ -22,9 +23,17 @@ export function quantSnapshotQuote(
     changePercent: null,
     currency: 'USD',
     timestamp: null,
-    session: priceSession(window?.price_session),
+    session: snapshotPriceSession(window?.price_session, snapshot?.generated_at ?? ''),
     source: 'quant',
   };
+}
+
+function snapshotPriceSession(value: unknown, generatedAt: string): PriceSession | undefined {
+  const session = priceSession(value);
+  if (session !== 'regular') return session;
+  const generated = new Date(generatedAt);
+  if (!Number.isFinite(generated.getTime())) return session;
+  return sessionLabel(generated) === '盘中' ? session : 'closed';
 }
 
 function priceSession(value: unknown): PriceSession | undefined {

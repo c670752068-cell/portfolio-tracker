@@ -1,15 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Isolated deployment: it never changes Nginx, /root/stockpulse, or existing PM2 apps.
+# Isolated deployment: upload a complete versioned release, then switch one symlink.
+# It never changes Nginx, /root/stockpulse, or unrelated PM2 apps.
 # The server password and every API key are intentionally omitted.
 SERVER="root@67.215.255.196"
-REMOTE_APP="/opt/portfolio-tracker-gateway"
-REMOTE_WEB="/opt/portfolio-tracker-web"
+RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+REMOTE_RELEASE_ROOT="/opt/portfolio-tracker-releases/${RELEASE_ID}"
+REMOTE_RELEASE_APP="${REMOTE_RELEASE_ROOT}/gateway"
+REMOTE_RELEASE_WEB="${REMOTE_RELEASE_ROOT}/web"
+REMOTE_CURRENT="/opt/portfolio-tracker-current"
+REMOTE_STABLE_APP='/opt/portfolio-tracker-gateway'
+REMOTE_STABLE_WEB='/opt/portfolio-tracker-web'
 IMPORT_ARCHIVE_ENV=""
 PORTFOLIO_SYNC_ENV=""
 BARK_ENV=""
 BARK_BASE_ENV=""
+SSH_CMD=(ssh)
+SCP_CMD=(scp)
+RSYNC_SHELL="ssh"
+if [[ -n "${SSHPASS:-}" ]]; then
+  SSH_CMD=(sshpass -e ssh)
+  SCP_CMD=(sshpass -e scp)
+  RSYNC_SHELL="sshpass -e ssh"
+fi
 if [[ -n "${IMPORT_ARCHIVE_TOKEN:-}" ]]; then
   printf -v IMPORT_ARCHIVE_ENV 'IMPORT_ARCHIVE_TOKEN=%q ' "${IMPORT_ARCHIVE_TOKEN}"
 fi
@@ -23,23 +37,48 @@ if [[ -n "${BARK_BASE_URL:-}" ]]; then
   printf -v BARK_BASE_ENV 'BARK_BASE_URL=%q ' "${BARK_BASE_URL}"
 fi
 
-ssh "${SERVER}" "
-  mkdir -p '${REMOTE_APP}' '${REMOTE_WEB}' && \
-  if [ -f '${REMOTE_APP}/portfolio-gateway.mjs' ]; then \
-    cp '${REMOTE_APP}/portfolio-gateway.mjs' '${REMOTE_APP}/portfolio-gateway.mjs.bak-'\$(date +%Y%m%d-%H%M%S); \
-  fi
-"
-rsync -az --delete dist/ "${SERVER}:${REMOTE_WEB}/"
-scp deploy/runtime-config.us-vps.js "${SERVER}:${REMOTE_WEB}/runtime-config.js"
-scp deploy/aliyun-gateway.mjs "${SERVER}:${REMOTE_APP}/portfolio-gateway.mjs"
-scp deploy/refresh-request-route.mjs "${SERVER}:${REMOTE_APP}/refresh-request-route.mjs"
-scp deploy/alert-tracker.mjs "${SERVER}:${REMOTE_APP}/alert-tracker.mjs"
-scp deploy/market-session.mjs "${SERVER}:${REMOTE_APP}/market-session.mjs"
-scp deploy/yahoo-quote.mjs "${SERVER}:${REMOTE_APP}/yahoo-quote.mjs"
-ssh "${SERVER}" "
-  ufw allow 8788/tcp && \
-  (pm2 describe portfolio-tracker >/dev/null 2>&1 \
-    && ${IMPORT_ARCHIVE_ENV}${PORTFOLIO_SYNC_ENV}${BARK_ENV}${BARK_BASE_ENV}PORT=8788 HOST=0.0.0.0 STATIC_ROOT=/opt/portfolio-tracker-web PORTFOLIO_ALERTS_ROOT=/opt/portfolio-tracker-data/alerts pm2 restart portfolio-tracker --update-env \
-    || ${IMPORT_ARCHIVE_ENV}${PORTFOLIO_SYNC_ENV}${BARK_ENV}${BARK_BASE_ENV}PORT=8788 HOST=0.0.0.0 STATIC_ROOT=/opt/portfolio-tracker-web PORTFOLIO_ALERTS_ROOT=/opt/portfolio-tracker-data/alerts pm2 start /opt/portfolio-tracker-gateway/portfolio-gateway.mjs --name portfolio-tracker --interpreter node --node-args='--max-old-space-size=96') && \
+"${SSH_CMD[@]}" "${SERVER}" "mkdir -p '${REMOTE_RELEASE_APP}' '${REMOTE_RELEASE_WEB}'"
+rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
+"${SCP_CMD[@]}" deploy/runtime-config.us-vps.js "${SERVER}:${REMOTE_RELEASE_WEB}/runtime-config.js"
+"${SCP_CMD[@]}" deploy/aliyun-gateway.mjs "${SERVER}:${REMOTE_RELEASE_APP}/portfolio-gateway.mjs"
+"${SCP_CMD[@]}" deploy/refresh-request-route.mjs "${SERVER}:${REMOTE_RELEASE_APP}/refresh-request-route.mjs"
+"${SCP_CMD[@]}" deploy/alert-tracker.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-tracker.mjs"
+"${SCP_CMD[@]}" deploy/channel-review.mjs "${SERVER}:${REMOTE_RELEASE_APP}/channel-review.mjs"
+"${SCP_CMD[@]}" deploy/z-breakout.mjs "${SERVER}:${REMOTE_RELEASE_APP}/z-breakout.mjs"
+"${SCP_CMD[@]}" deploy/z-extreme.mjs "${SERVER}:${REMOTE_RELEASE_APP}/z-extreme.mjs"
+"${SCP_CMD[@]}" deploy/quant-decision-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/quant-decision-alerts.mjs"
+"${SCP_CMD[@]}" deploy/notification-copy.mjs "${SERVER}:${REMOTE_RELEASE_APP}/notification-copy.mjs"
+"${SCP_CMD[@]}" deploy/notification-control.mjs "${SERVER}:${REMOTE_RELEASE_APP}/notification-control.mjs"
+"${SCP_CMD[@]}" deploy/market-session.mjs "${SERVER}:${REMOTE_RELEASE_APP}/market-session.mjs"
+"${SCP_CMD[@]}" deploy/yahoo-quote.mjs "${SERVER}:${REMOTE_RELEASE_APP}/yahoo-quote.mjs"
+"${SCP_CMD[@]}" deploy/ma-slope-query.mjs "${SERVER}:${REMOTE_RELEASE_APP}/ma-slope-query.mjs"
+"${SCP_CMD[@]}" deploy/sector-rotation.mjs "${SERVER}:${REMOTE_RELEASE_APP}/sector-rotation.mjs"
+
+"${SSH_CMD[@]}" "${SERVER}" "
+  test -s '${REMOTE_RELEASE_WEB}/index.html' && \
+  node --check '${REMOTE_RELEASE_APP}/portfolio-gateway.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/refresh-request-route.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/alert-tracker.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/channel-review.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/z-breakout.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/z-extreme.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/quant-decision-alerts.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/notification-control.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/ma-slope-query.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/sector-rotation.mjs' && \
+  ln -sfn '${REMOTE_RELEASE_ROOT}' '${REMOTE_CURRENT}.next' && \
+  mv -Tf '${REMOTE_CURRENT}.next' '${REMOTE_CURRENT}' && \
+  if [ -e '${REMOTE_STABLE_APP}' ] && [ ! -L '${REMOTE_STABLE_APP}' ]; then mv '${REMOTE_STABLE_APP}' '${REMOTE_STABLE_APP}.legacy-${RELEASE_ID}'; fi && \
+  if [ -e '${REMOTE_STABLE_WEB}' ] && [ ! -L '${REMOTE_STABLE_WEB}' ]; then mv '${REMOTE_STABLE_WEB}' '${REMOTE_STABLE_WEB}.legacy-${RELEASE_ID}'; fi && \
+  ln -sfn '${REMOTE_CURRENT}/gateway' '${REMOTE_STABLE_APP}.next' && \
+  mv -Tf '${REMOTE_STABLE_APP}.next' '${REMOTE_STABLE_APP}' && \
+  ln -sfn '${REMOTE_CURRENT}/web' '${REMOTE_STABLE_WEB}.next' && \
+  mv -Tf '${REMOTE_STABLE_WEB}.next' '${REMOTE_STABLE_WEB}' && \
+  (ufw delete allow 8788/tcp >/dev/null 2>&1 || true) && \
+  if pm2 describe portfolio-tracker >/dev/null 2>&1; then \
+    pm2 restart portfolio-tracker; \
+  else \
+    ${IMPORT_ARCHIVE_ENV}${PORTFOLIO_SYNC_ENV}${BARK_ENV}${BARK_BASE_ENV}PORT=8788 HOST=127.0.0.1 STATIC_ROOT='${REMOTE_STABLE_WEB}' PORTFOLIO_ALERTS_ROOT=/opt/portfolio-tracker-data/alerts pm2 start '${REMOTE_STABLE_APP}/portfolio-gateway.mjs' --name portfolio-tracker --interpreter node --node-args='--max-old-space-size=96'; \
+  fi && \
   pm2 save
 "

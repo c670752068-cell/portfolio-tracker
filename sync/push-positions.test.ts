@@ -29,7 +29,25 @@ async function fakeCli(root: string, analysisStdoutBytes = 0): Promise<{
   await writeFile(cli, `#!/bin/sh
 printf '%s\\n' "$1" >> "$FAKE_CLI_LOG"
 if [ "$1" = "positions-status" ]; then
-  printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":1000,"positions":[{"symbol":"MSFT","asset_type":"stock","qty":2,"market_value":800}]}'
+  if [ "$FAKE_BROKER_MODE" = "ibkr-stale" ] && [ ! -f "$FAKE_IBKR_FIXED" ]; then
+    printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":200,"broker_health":[{"broker":"IBKR","available":false,"error_code":"IBKR_SNAPSHOT_STALE"},{"broker":"FUTU","available":true}],"positions":[{"symbol":"NVDA","broker":"FUTU","asset_type":"stock","qty":1,"market_value":200}]}'
+  elif [ "$FAKE_BROKER_MODE" = "ibkr-decision-stale" ] && [ ! -f "$FAKE_IBKR_FIXED" ]; then
+    printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":1000,"decision_freshness":{"data_stale":true,"stale_days":3,"max_stale_days":2,"stale_sources":["positions"]},"broker_health":[{"broker":"IBKR","available":true,"as_of":"2026-07-15"},{"broker":"FUTU","available":true,"as_of":"2026-07-18"}],"positions":[{"symbol":"MSFT","broker":"IBKR","asset_type":"stock","qty":2,"market_value":800},{"symbol":"NVDA","broker":"FUTU","asset_type":"stock","qty":1,"market_value":200}]}'
+  elif [ "$FAKE_BROKER_MODE" = "longport-sdk-down" ] || { [ "$FAKE_BROKER_MODE" = "longport-transient" ] && [ ! -f "$FAKE_IBKR_FIXED" ]; }; then
+    : > "$FAKE_IBKR_FIXED"
+    printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":800,"broker_health":[{"broker":"IBKR","available":true},{"broker":"LONGPORT","available":false,"error_code":"LONGPORT_SDK"}],"positions":[{"symbol":"MSFT","broker":"IBKR","asset_type":"stock","qty":2,"market_value":800}]}'
+  elif [ "$FAKE_BROKER_MODE" = "longport-down" ]; then
+    printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":800,"broker_health":[{"broker":"IBKR","available":true},{"broker":"FUTU","available":true},{"broker":"LONGPORT","available":false,"error_code":"LONGPORT_UNAVAILABLE"}],"positions":[{"symbol":"MSFT","broker":"IBKR","asset_type":"stock","qty":2,"market_value":800}]}'
+  elif [ "$FAKE_BROKER_MODE" = "longport-transient" ]; then
+    printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":1000,"broker_health":[{"broker":"IBKR","available":true},{"broker":"LONGPORT","available":true}],"positions":[{"symbol":"MSFT","broker":"IBKR","asset_type":"stock","qty":2,"market_value":800},{"symbol":"NVDA","broker":"LONGPORT","asset_type":"stock","qty":1,"market_value":200}]}'
+  elif [ "$FAKE_BROKER_MODE" = "ibkr-stale" ] || [ "$FAKE_BROKER_MODE" = "ibkr-decision-stale" ]; then
+    printf '%s' '{"as_of":"2026-07-18","currency":"USD","net_liquidation":1000,"decision_freshness":{"data_stale":false,"stale_days":0,"max_stale_days":2,"stale_sources":[]},"broker_health":[{"broker":"IBKR","available":true,"as_of":"2026-07-18"},{"broker":"FUTU","available":true,"as_of":"2026-07-18"}],"positions":[{"symbol":"MSFT","broker":"IBKR","asset_type":"stock","qty":2,"market_value":800},{"symbol":"NVDA","broker":"FUTU","asset_type":"stock","qty":1,"market_value":200}]}'
+  else
+    printf '%s' '{"as_of":"2026-07-15","currency":"USD","net_liquidation":1000,"broker_health":[{"broker":"IBKR","available":true}],"positions":[{"symbol":"MSFT","broker":"IBKR","asset_type":"stock","qty":2,"market_value":800}]}'
+  fi
+elif [ "$1" = "sync-ibkr" ]; then
+  : > "$FAKE_IBKR_FIXED"
+  printf '%s' '{"ok":true,"as_of":"2026-07-15"}'
 elif [ "$1" = "site-export" ]; then
   printf '%s' '{"source":"futu-assistant","generated_at":"2026-07-15T16:00:00-04:00","rule_version":"2.2","symbols":{"MSFT":{"gates":{},"gates_passed":0,"gates_total":6}}}' > "$FUTU_ASSISTANT_SITE_EXPORT"
   if [ "${analysisStdoutBytes}" -gt 0 ]; then
@@ -37,7 +55,7 @@ elif [ "$1" = "site-export" ]; then
   fi
   printf '%s' '{"ok":true}'
 elif [ "$1" = "site-refresh" ] && [ "$2" = "--quick" ]; then
-  printf '%s' '{"source":"futu-assistant","generated_at":"2026-07-23T10:32:11-04:00","rule_version":"2.2","symbols":{"MSFT":{"gates":{},"gates_passed":0,"gates_total":6}}}' > "$FUTU_ASSISTANT_SITE_EXPORT"
+  printf '%s' '{"source":"futu-assistant","generated_at":"2026-07-23T10:32:11-04:00","rule_version":"2.2","final_verdict":{"decision":"LOCAL_MUST_NOT_PUBLISH"},"symbols":{"MSFT":{"gates":{}}},"valuation_tab":{"available":true,"generated_at":"2026-07-23T10:32:11-04:00","cnn":{"current_score":99},"anchors":[{"label":"LOCAL_MUST_NOT_PUBLISH"}],"distance_to_anchors":[{"label":"LOCAL_MUST_NOT_PUBLISH"}],"ndx":{"as_of":"2026-07-22","available":true,"stale":false,"stale_days":0,"gate_available":true,"current_pe":31.25,"percentile_lines":{"p30":24,"median":28,"p70":34},"history":[{"date":"2026-07-22","pe":31.25}]}}}' > "$FUTU_ASSISTANT_SITE_EXPORT"
   printf '%s' '{"source":"futu-assistant","generated_at":"2026-07-23T10:32:11-04:00","freshness":{"prices_at":"2026-07-23T10:32:11-04:00"},"symbols":{"MSFT":{"gates":{}}}}'
 else
   exit 2
@@ -53,6 +71,21 @@ async function testServer(analysisStatus: number, refreshStatus = 'idle'): Promi
   close: () => Promise<void>;
 }> {
   const requests: RequestRecord[] = [];
+  const productionAnalysis = {
+    source: 'futu-assistant',
+    rule_version: '2.2',
+    generated_at: '2026-07-20T16:00:00-04:00',
+    final_verdict: { decision: 'PRODUCTION_HOLD' },
+    symbols: { MSFT: { decision: 'PRODUCTION_WAIT' } },
+    valuation_tab: {
+      available: true,
+      generated_at: '2026-07-20T16:00:00-04:00',
+      cnn: { current_score: 47 },
+      anchors: [{ label: 'PRODUCTION_ANCHOR' }],
+      distance_to_anchors: [{ label: 'PRODUCTION_DISTANCE' }],
+      ndx: { as_of: '2026-07-15', stale: true, current_pe: 30 },
+    },
+  };
   const server = createServer(async (req, res) => {
     const parts: Buffer[] = [];
     for await (const part of req) parts.push(Buffer.from(part));
@@ -67,6 +100,11 @@ async function testServer(analysisStatus: number, refreshStatus = 'idle'): Promi
     if (req.url === '/api/refresh-request/complete') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{"ok":true}');
+      return;
+    }
+    if (req.url === '/api/portfolio/quant-analysis' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(productionAnalysis));
       return;
     }
     const status = req.url === '/api/portfolio/quant-analysis' ? analysisStatus : 200;
@@ -92,13 +130,21 @@ async function setup(analysisStatus: number, analysisStdoutBytes = 0, refreshSta
   vi.stubEnv('FUTU_ASSISTANT_CLI', cli);
   vi.stubEnv('FUTU_ASSISTANT_SITE_EXPORT', analysis);
   vi.stubEnv('FAKE_CLI_LOG', cliLog);
+  vi.stubEnv('FAKE_IBKR_FIXED', join(root, 'ibkr-fixed'));
   vi.stubEnv('PORTFOLIO_GATEWAY_ORIGIN', server.origin);
   vi.stubEnv('PORTFOLIO_SYNC_TOKEN', 'unit-token');
   vi.stubEnv('PORTFOLIO_SYNC_LOG', log);
-  return { ...server, log, cliLog };
+  return { ...server, log, cliLog, analysis };
 }
 
 describe('portfolio Mac push chain', () => {
+  it('uses the canonical HTTPS gateway when no origin override is configured', async () => {
+    const source = await readFile('sync/push-positions.mjs', 'utf8');
+
+    expect(source).toContain("const DEFAULT_ORIGIN = 'https://myopenid.top'");
+    expect(source).not.toContain("const DEFAULT_ORIGIN = 'http://67.215.255.196:8788'");
+  });
+
   it('keeps the 45-minute fallback and adds a separate persistent watch agent', async () => {
     const fallback = await readFile('sync/com.portfolio.sync.plist', 'utf8');
     const watcher = await readFile('sync/com.portfolio.refresh-watch.plist', 'utf8');
@@ -110,6 +156,12 @@ describe('portfolio Mac push chain', () => {
     expect(watcher).toContain('<key>KeepAlive</key>');
     expect(watcher).not.toContain('PORTFOLIO_SYNC_TOKEN');
     expect(readme).toContain('com.portfolio.refresh-watch.plist');
+  });
+
+  it('gives site-refresh --quick enough time and stdout capacity for a real refresh', async () => {
+    const source = await readFile('sync/push-positions.mjs', 'utf8');
+
+    expect(source).toContain("['site-refresh', '--quick'], { timeout: 180_000, maxBuffer: 8 * 1024 * 1024 }");
   });
 
   it('runs site-refresh --quick before pushing snapshots and then reports completion', async () => {
@@ -224,6 +276,46 @@ describe('portfolio Mac push chain', () => {
     }
   });
 
+  it('reuses an on-demand site-refresh export for NDX fallback without refreshing again', async () => {
+    const fixture = await setup(200);
+    vi.stubEnv('FAKE_BROKER_MODE', 'longport-down');
+    await writeFile(fixture.analysis, JSON.stringify({
+      source: 'futu-assistant',
+      generated_at: '2026-07-23T10:32:11-04:00',
+      rule_version: '2.2',
+      final_verdict: { decision: 'LOCAL_MUST_NOT_PUBLISH' },
+      symbols: { MSFT: { gates: {} } },
+      valuation_tab: {
+        generated_at: '2026-07-23T10:32:11-04:00',
+        ndx: {
+          as_of: '2026-07-22',
+          available: true,
+          stale: false,
+          stale_days: 0,
+          gate_available: true,
+          current_pe: 31.25,
+        },
+      },
+    }), 'utf8');
+    try {
+      await expect(pushPositions({
+        reuseAnalysisSnapshot: true,
+        now: new Date('2026-07-23T10:35:00-04:00'),
+      })).rejects.toThrow('LONGPORT');
+      expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n')).toEqual([
+        'positions-status',
+      ]);
+      expect(fixture.requests.map((item) => `${item.method} ${item.url}`)).toEqual([
+        'GET /api/portfolio/quant-analysis',
+        'GET /api/portfolio/quant-analysis',
+        'POST /api/portfolio/quant-analysis',
+      ]);
+      expect(await readFile(fixture.log, 'utf8')).toContain('status=ndx_fallback_success');
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it('pushes holdings first and then the independent site analysis snapshot', async () => {
     const fixture = await setup(200);
     try {
@@ -236,6 +328,157 @@ describe('portfolio Mac push chain', () => {
       ]);
       expect(fixture.requests[1].body).toEqual(expect.objectContaining({ source: 'futu-assistant' }));
       expect(await readFile(fixture.log, 'utf8')).toContain('status=analysis_success');
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('repairs a stale IBKR snapshot before it can replace the complete server portfolio', async () => {
+    const fixture = await setup(200);
+    vi.stubEnv('FAKE_BROKER_MODE', 'ibkr-stale');
+    try {
+      await expect(pushPositions()).resolves.toEqual(expect.objectContaining({
+        count: 2,
+        analysisPushed: true,
+      }));
+      expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n')).toEqual([
+        'positions-status',
+        'sync-ibkr',
+        'positions-status',
+        'site-export',
+      ]);
+      expect(fixture.requests[0]).toEqual(expect.objectContaining({
+        url: '/api/portfolio/positions',
+        body: expect.objectContaining({
+          payload: expect.objectContaining({
+            positions: expect.arrayContaining([expect.objectContaining({ broker: 'IBKR' })]),
+          }),
+        }),
+      }));
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('repairs IBKR when it is readable but already too stale for a buy decision', async () => {
+    const fixture = await setup(200);
+    vi.stubEnv('FAKE_BROKER_MODE', 'ibkr-decision-stale');
+    try {
+      await expect(pushPositions()).resolves.toEqual(expect.objectContaining({
+        count: 2,
+        analysisPushed: true,
+      }));
+      expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n')).toEqual([
+        'positions-status',
+        'sync-ibkr',
+        'positions-status',
+        'site-export',
+      ]);
+      expect(fixture.requests[0].body).toEqual(expect.objectContaining({
+        payload: expect.objectContaining({
+          decision_freshness: expect.objectContaining({ data_stale: false }),
+        }),
+      }));
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('refuses to overwrite the server when any broker snapshot is still unavailable', async () => {
+    const fixture = await setup(200);
+    vi.stubEnv('FAKE_BROKER_MODE', 'longport-down');
+    try {
+      await expect(pushPositions()).rejects.toThrow('LONGPORT');
+      expect(fixture.requests).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ method: 'POST', url: '/api/portfolio/positions' }),
+      ]));
+      const analysisWrite = fixture.requests.find((item) => (
+        item.method === 'POST' && item.url === '/api/portfolio/quant-analysis'
+      ));
+      if (analysisWrite) {
+        expect(analysisWrite.body).toEqual(expect.objectContaining({
+          final_verdict: { decision: 'PRODUCTION_HOLD' },
+          symbols: { MSFT: { decision: 'PRODUCTION_WAIT' } },
+        }));
+      }
+      expect(await readFile(fixture.log, 'utf8')).toContain('status=failure');
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('re-reads a transient LongPort SDK failure before publishing a complete snapshot', async () => {
+    const fixture = await setup(200);
+    vi.stubEnv('FAKE_BROKER_MODE', 'longport-transient');
+    try {
+      await expect(pushPositions()).resolves.toEqual(expect.objectContaining({
+        count: 2, analysisPushed: true,
+      }));
+      expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n')).toEqual([
+        'positions-status', 'positions-status', 'site-export',
+      ]);
+      expect(fixture.requests[0].body).toEqual(expect.objectContaining({
+        payload: expect.objectContaining({
+          broker_health: expect.arrayContaining([expect.objectContaining({ broker: 'LONGPORT', available: true })]),
+        }),
+      }));
+      expect(await readFile(fixture.log, 'utf8')).toContain('status=broker_retry');
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('bounds LongPort retries and never publishes partial holdings after a persistent SDK failure', async () => {
+    const fixture = await setup(200);
+    vi.stubEnv('FAKE_BROKER_MODE', 'longport-sdk-down');
+    try {
+      await expect(pushPositions()).rejects.toThrow('LONGPORT_SDK');
+      expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n').filter((call) => call === 'positions-status')).toHaveLength(2);
+      expect(fixture.requests).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ method: 'POST', url: '/api/portfolio/positions' }),
+      ]));
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('publishes only fresh NDX after a scheduled holdings failure and still reports that failure', async () => {
+    const fixture = await setup(200);
+    vi.stubEnv('FAKE_BROKER_MODE', 'longport-down');
+    try {
+      await expect(pushPositions({
+        now: new Date('2026-07-23T10:35:00-04:00'),
+      })).rejects.toThrow('LONGPORT');
+      expect((await readFile(fixture.cliLog, 'utf8')).trim().split('\n')).toEqual([
+        'positions-status',
+        'site-refresh',
+      ]);
+      expect(fixture.requests.map((item) => `${item.method} ${item.url}`)).toEqual([
+        'GET /api/portfolio/quant-analysis',
+        'GET /api/portfolio/quant-analysis',
+        'POST /api/portfolio/quant-analysis',
+      ]);
+      expect(fixture.requests[2].body).toEqual({
+        source: 'futu-assistant',
+        rule_version: '2.2',
+        generated_at: '2026-07-20T16:00:00-04:00',
+        final_verdict: { decision: 'PRODUCTION_HOLD' },
+        symbols: { MSFT: { decision: 'PRODUCTION_WAIT' } },
+        valuation_tab: {
+          available: true,
+          generated_at: '2026-07-20T16:00:00-04:00',
+          cnn: { current_score: 47 },
+          anchors: [{ label: 'PRODUCTION_ANCHOR' }],
+          distance_to_anchors: [{ label: 'PRODUCTION_DISTANCE' }],
+          ndx: expect.objectContaining({
+            as_of: '2026-07-22',
+            current_pe: 31.25,
+          }),
+        },
+      });
+      const log = await readFile(fixture.log, 'utf8');
+      expect(log).toContain('status=ndx_fallback_success');
+      expect(log).toContain('status=failure');
     } finally {
       await fixture.close();
     }

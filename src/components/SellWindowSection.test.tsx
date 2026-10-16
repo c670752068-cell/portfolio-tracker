@@ -31,7 +31,7 @@ describe('SellWindowSection', () => {
       <SellWindowSection snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="SOXL" />,
     );
 
-    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
+    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</button>');
     expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-trim');
     expect(html).not.toContain('🟠 MSFT');
   });
@@ -41,8 +41,8 @@ describe('SellWindowSection', () => {
       <SellWindowSection snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="AAPL" />,
     );
 
-    expect(html).not.toContain('· 无</option>');
-    expect(html).toContain('TQQQ · 市值 $600.00 · LONGPORT</option>');
+    expect(html).not.toContain('· 无</button>');
+    expect(html).toContain('TQQQ · 市值 $600.00 · LONGPORT</button>');
   });
 
   it('renders a held-only sell selector and the server-authored repair window', () => {
@@ -59,6 +59,12 @@ describe('SellWindowSection', () => {
     expect(html).toContain('量化剧本参考比例 50%');
     expect(html).toContain('市场亢奋·量化剧本参考：清仓杠杆品种或调仓 SGOV');
     expect(html).toContain('止盈阶梯参考 · 剧本：个股');
+    expect(html).toContain('低点到高点 · 概率卖出计划');
+    expect(html).toContain('低点反弹 +12.00%');
+    expect(html).toContain('目标价 $448.00');
+    expect(html).toContain('历史到达 83.3% · 中位 20 个交易日');
+    expect(html).toContain('历史分位，仅作辅助确认');
+    expect(html).toContain('历史低点反弹率不得替代账户盈利率');
     expect(html).toContain('（观察期，未正式生效）');
     expect(html).toContain('触发依据：知足常乐');
     expect(html).toContain('自基准日 +18.00% vs QQQ +20.00%');
@@ -90,9 +96,9 @@ describe('SellWindowSection', () => {
       <SellWindowSection snapshot={snapshot} holdings={holdings} initialSymbol="MSFT" />,
     );
 
-    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 卖出窗口开启</option>');
+    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 卖出窗口开启</button>');
     expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-buy');
-    expect(html).not.toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
+    expect(html).not.toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</button>');
   });
 
   it('explains module-level observation and never labels its signals as open windows', () => {
@@ -109,7 +115,7 @@ describe('SellWindowSection', () => {
 
     expect(html).toContain('量化卖出模块当前为观察期，全部信号均未正式生效');
     expect(html).not.toContain('卖出窗口开启');
-    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</option>');
+    expect(html).toContain('MSFT · 市值 $4,000.00 · IBKR · 观察期</button>');
   });
 
   it('shows an explicit fallback when the quant playbook has no label', () => {

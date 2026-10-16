@@ -204,7 +204,7 @@ describe('alert event evaluation and durable deduplication', () => {
 });
 
 describe('Bark delivery', () => {
-  it('URL-encodes the device key, title, and message and keeps the fixed manual-action warning', () => {
+  it('URL-encodes the device key, title, and concise website action', () => {
     const notification = formatAlertNotification({
       id: 'fngu-target',
       symbol: 'FNGU',
@@ -216,10 +216,8 @@ describe('Bark delivery', () => {
       enabled: true,
     }, { type: 'reached', currentPrice: 40.25, targetPrice: 40 });
     expect(notification.title).toContain('FNGU');
-    expect(notification.title).toContain('到达');
-    expect(notification.body).toContain('清仓或减到 ≤5%');
-    expect(notification.body).toContain('只提醒不下单');
-    expect(notification.body).toContain('手动执行');
+    expect(notification.title).toBe('🟠 FNGU · 已到目标');
+    expect(notification.body).toBe('现价 $40.25，目标 $40.00；先清期权和杠杆；正股最后分批至 ≤5%。');
 
     const url = buildBarkPushUrl({
       baseUrl: 'https://api.day.app/',
@@ -240,7 +238,7 @@ describe('Bark delivery', () => {
       approach_pct: 5,
       enabled: true,
     }, { type: 'reached', currentPrice: 121, targetPrice: 120 });
-    expect(gainNotification.body).toContain('卖出 50% 仓位，留 50% 博弈');
+    expect(gainNotification.body).toBe('现价 $121.00，目标 $120.00；先卖半仓期权，再卖杠杆；正股不急卖。');
   });
 
   it('retries exactly once and never leaks the Bark key through errors or logs', async () => {
@@ -267,5 +265,13 @@ describe('Bark delivery', () => {
     expect(thrown).toBeInstanceOf(Error);
     expect(String(thrown)).not.toContain(deviceKey);
     expect(logMessages.join('\n')).not.toContain(deviceKey);
+  });
+  it('preserves passive workstation reports using POST rather than an oversized URL', async () => {
+    let captured: RequestInit | undefined;
+    const sent = await sendBarkNotification({ baseUrl: 'https://api.day.app', deviceKey: 'test-key',
+      title: '日报', body: '长期数据'.repeat(500), presentation: { level: 'passive', group: '日报', sound: null },
+      fetchImpl: async (url: string, options: RequestInit) => { expect(url).toBe('https://api.day.app/push'); captured = options; return new Response('{"code":200}'); } });
+    expect(sent).toBe(true); expect(captured?.method).toBe('POST');
+    const body = JSON.parse(String(captured?.body)); expect(body.level).toBe('passive'); expect(body).not.toHaveProperty('sound');
   });
 });

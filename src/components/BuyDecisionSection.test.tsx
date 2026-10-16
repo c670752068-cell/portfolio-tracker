@@ -68,29 +68,124 @@ describe('BuyDecisionSection', () => {
     expect(html).toContain('盘中每 5 分钟；其他时段每 25 分钟自动更新');
   });
 
-  it('uses a locked snapshot-symbol select and filters cash equivalents', () => {
+  it('uses a styled snapshot-symbol list and filters cash equivalents', () => {
     const html = renderToStaticMarkup(
       <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="SOXL" />,
     );
 
-    expect(html).toContain('<select');
-    expect(html).toContain('value="AAPL"');
-    expect(html).toContain('value="SOXL"');
-    expect(html).not.toContain('value="SGOV"');
+    expect(html).toContain('aria-haspopup="listbox"');
+    expect(html).toContain('role="option"');
+    expect(html).toContain('>AAPL</span>');
+    expect(html).toContain('>SOXL</span>');
+    expect(html).not.toContain('>SGOV</span>');
     expect(html).not.toContain('placeholder="例如 SOXL"');
     expect(html).not.toContain('>查询</button>');
   });
 
-  it('uses final-verdict status dots rather than independently derived opportunity states', () => {
+  it('merges the symbol selector and verdict into one compact console', () => {
+    const html = renderToStaticMarkup(
+      <BuyDecisionSection snapshot={quantAnalysisFixture} initialSymbol="AAPL" />,
+    );
+    expect(html).toContain('data-testid="quant-symbol-console"');
+    expect(html).toContain('data-testid="embedded-symbol-verdict"');
+    expect(html).not.toContain('data-testid="standalone-symbol-verdict"');
+  });
+
+  it('colors the status words themselves instead of adding status dots', () => {
     const html = renderToStaticMarkup(
       <BuyDecisionSection snapshot={quantAnalysisFixture} holdings={holdings} initialSymbol="SOXL" />,
     );
 
-    expect(html).toContain('SOXL · 待更新');
-    expect(html).toContain('AMZN · 待更新');
-    expect(html).toContain('h-2 w-2 shrink-0 rounded-full bg-neutral');
+    expect(html).toMatch(/SOXL<\/span><span class="font-semibold text-gain">满足/);
+    expect(html).toMatch(/AMZN<\/span><span class="font-semibold text-loss">不满足/);
+    expect(html).not.toContain('rounded-full bg-loss');
     expect(html).not.toContain('⚪');
-    expect(html).toContain('AAPL · 待更新');
+    expect(html).toMatch(/AAPL<\/span><span class="font-semibold text-gain">满足/);
+  });
+
+  it('sorts depth-satisfied symbols first even when final buy verdicts differ', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.final_verdict = {
+      symbols: {
+        AAPL: { symbol: 'AAPL', verdict: 'NO_BUY', layers: [] },
+        AMZN: { symbol: 'AMZN', verdict: 'BUY', layers: [] },
+      },
+    };
+
+    const html = renderToStaticMarkup(<BuyDecisionSection snapshot={snapshot} initialSymbol="AAPL" />);
+
+    const list = html.slice(html.indexOf('role="listbox"'));
+    expect(list.indexOf('>AAPL</span>')).toBeLessThan(list.indexOf('>AMZN</span>'));
+    expect(html).toMatch(/AAPL<\/span><span class="font-semibold text-gain">满足/);
+    expect(html).toMatch(/AMZN<\/span><span class="font-semibold text-loss">不满足/);
+    expect(html).not.toContain('暂不满足');
+    expect(html).not.toContain('五层条件均已满足');
+  });
+
+  it('uses the depth-window result for the status even when portfolio limits block a new buy', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.META = structuredClone(snapshot.symbols.AAPL);
+    snapshot.symbols.META.depth_window = {
+      ...snapshot.symbols.META.depth_window!, open: true,
+      current_pct: 25.76, threshold_pct: 19.17,
+    };
+    snapshot.summary!.depth_states.META = {
+      status: 'ready', progress_pct: 100, gap_pct: 0, excess_pct: 6.59,
+    };
+    snapshot.final_verdict = { symbols: { META: {
+      symbol: 'META', verdict: 'NO_BUY',
+      single_sentence: '不买：科技仓位达到上限', layers: [],
+    } } };
+
+    const html = renderToStaticMarkup(
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="META" />,
+    );
+
+    expect(html).toMatch(/META<\/span><span class="font-semibold text-gain">满足/);
+  });
+
+  it('shows a merged ten-percent stock-family allocation for META and METU', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.META = structuredClone(snapshot.symbols.AAPL);
+    snapshot.final_verdict = { symbols: { META: { symbol: 'META', verdict: 'BUY', layers: [] } } };
+    const familyHoldings = [
+      { ...holdings[0], id: 'meta', symbol: 'META', shares: 10, currentPrice: 500 },
+      { ...holdings[2], id: 'metu', symbol: 'METU', shares: 100, currentPrice: 30 },
+    ];
+
+    const html = renderToStaticMarkup(
+      <BuyDecisionSection snapshot={snapshot} holdings={familyHoldings} totalAssets={100_000} initialSymbol="META" />,
+    );
+
+    expect(html).toContain('仓位配比');
+    expect(html).toContain('当前 8.00% · 上限 10.00%');
+    expect(html).toContain('META + METU');
+    expect(html).not.toContain('板块额度');
+    expect(html).not.toContain('仓位可用');
+  });
+
+  it('labels GDX depth as a gold benchmark window', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.GDX = {
+      ...structuredClone(snapshot.symbols.AAPL),
+      depth_window: {
+        ...structuredClone(snapshot.symbols.AAPL.depth_window!),
+        applicable: true,
+        current_pct: 12.5,
+        threshold_pct: 12.5,
+        price_note: 'GLD 基准闭市价为唯一判定价',
+      },
+    };
+    snapshot.summary!.depth_states.GDX = {
+      status: 'ready', progress_pct: 100, gap_pct: 0, excess_pct: 0,
+    };
+    snapshot.final_verdict = { symbols: { GDX: { symbol: 'GDX', verdict: 'BUY', layers: [] } } };
+
+    const html = renderToStaticMarkup(<BuyDecisionSection snapshot={snapshot} initialSymbol="GDX" />);
+
+    expect(html).toContain('黄金回撤买入窗口（GLD）');
+    expect(html).toContain('GLD 基准闭市价为唯一判定价');
+    expect(html).not.toContain('深度买入窗口（个股）');
   });
 
   it('shows successful refresh feedback with the snapshot timestamp and minute age', () => {
@@ -147,11 +242,116 @@ describe('BuyDecisionSection', () => {
     expect(html).toContain('深度位 ✓');
     expect(html).toContain('当前回撤</span><strong class="text-2xl tabular-nums">22.50%');
     expect(html).toContain('阈值</span><strong class="text-2xl tabular-nums">21.70%');
-    expect(html).toContain('60 日胜率 68.00%');
+    expect(html).toContain('60 日上涨 68.00%');
     expect(html).toContain('（n=25）');
     expect(html).not.toContain('CNN 29.00');
     expect(html).not.toContain('SOXX');
     expect(html).not.toContain('纳指100');
+  });
+
+  it('shows explicit-period drawdown research with raw counts for AVGO and FAS', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.AVGO = structuredClone(snapshot.symbols.AAPL);
+    snapshot.symbols.AVGO.depth_window = {
+      ...snapshot.symbols.AVGO.depth_window!,
+      sample_insufficient: true,
+      n: 13,
+      win_rate_60d: 0.75,
+      research: {
+        symbol: 'AVGO', basis_symbol: 'AVGO', available_start: '2021-01-04', available_end: '2026-07-31',
+        cycle_count: 13, completed_cycle_count: 12, ongoing_cycle_count: 1,
+        primary_horizon_days: 60, minimum_comparison_samples: 4, minimum_win_rate_pct: 70,
+        best_supported_depth_pct: 25, most_observed_depth_pct: 10,
+        levels: [
+          { depth_pct: 10, horizons: { '60': { horizon_trading_days: 60, n: 12, pending_count: 1, win_count: 9, win_rate_pct: 75, average_return_pct: 10, median_return_pct: 9.5198, worst_return_pct: -12.3093, best_return_pct: 35, sample_sufficient: true } } },
+          { depth_pct: 25, horizons: { '60': { horizon_trading_days: 60, n: 4, pending_count: 0, win_count: 4, win_rate_pct: 100, average_return_pct: 31, median_return_pct: 31.0186, worst_return_pct: 2.1412, best_return_pct: 56, sample_sufficient: false } } },
+        ],
+      },
+    };
+    snapshot.summary!.depth_states.AVGO = {
+      status: 'ready', progress_pct: 100, gap_pct: 0, excess_pct: 0,
+    };
+
+    const html = renderToStaticMarkup(<BuyDecisionSection snapshot={snapshot} initialSymbol="AVGO" />);
+
+    expect(html).toContain('2021-01-04 至 2026-07-31');
+    expect(html).toContain('回撤 25%');
+    expect(html).toContain('上涨 4/4（100.00%）');
+    expect(html).toContain('中位 +31.02%');
+    expect(html).toContain('常见档位');
+    expect(html).toContain('回撤 10%');
+    expect(html).toContain('60 日上涨 75.00%（n=13）');
+    expect(html).not.toContain('60 日样本不足（n=13）');
+  });
+
+  it('explains that FAS uses XLF drawdowns and FAS forward returns', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.FAS = structuredClone(snapshot.symbols.AAPL);
+    snapshot.symbols.FAS.depth_window = {
+      ...snapshot.symbols.FAS.depth_window!,
+      research: {
+        symbol: 'FAS', basis_symbol: 'XLF',
+        available_start: '2021-01-04', available_end: '2026-07-31',
+        cycle_count: 11, completed_cycle_count: 11, ongoing_cycle_count: 0,
+        primary_horizon_days: 60, minimum_comparison_samples: 4, minimum_win_rate_pct: 70,
+        best_supported_depth_pct: 5, most_observed_depth_pct: 5,
+        levels: [{
+          depth_pct: 5,
+          horizons: { '60': {
+            horizon_trading_days: 60, n: 11, pending_count: 0,
+            win_count: 9, win_rate_pct: 81.8182, average_return_pct: 7,
+            median_return_pct: 8.036, worst_return_pct: -20.4378,
+            best_return_pct: 30, sample_sufficient: true,
+          } },
+        }],
+      },
+    };
+    snapshot.summary!.depth_states.FAS = {
+      status: 'ready', progress_pct: 100, gap_pct: 0, excess_pct: 0,
+    };
+
+    const html = renderToStaticMarkup(
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="FAS" />,
+    );
+
+    expect(html).toContain('FAS 回撤胜率研究（按 XLF 触发）');
+    expect(html).toContain('XLF 负责回撤触发，FAS 负责计算后续收益');
+    expect(html).toContain('上涨 9/11（81.82%）');
+    expect(html).not.toContain('常见档位');
+  });
+
+  it('does not invent a high-win depth when the 2021 TSLA sample is unsupported', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.symbols.TSLA = structuredClone(snapshot.symbols.AAPL);
+    snapshot.symbols.TSLA.depth_window = {
+      ...snapshot.symbols.TSLA.depth_window!,
+      research: {
+        symbol: 'TSLA', basis_symbol: 'TSLA',
+        available_start: '2021-01-04', available_end: '2026-07-31',
+        cycle_count: 4, completed_cycle_count: 3, ongoing_cycle_count: 1,
+        primary_horizon_days: 60, minimum_comparison_samples: 4, minimum_win_rate_pct: 70,
+        best_supported_depth_pct: null, most_observed_depth_pct: 10,
+        levels: [{
+          depth_pct: 10,
+          horizons: { '60': {
+            horizon_trading_days: 60, n: 4, pending_count: 0,
+            win_count: 0, win_rate_pct: 0, average_return_pct: -19.26,
+            median_return_pct: -13.16, worst_return_pct: -40.93,
+            best_return_pct: -9.79, sample_sufficient: false,
+          } },
+        }],
+      },
+    };
+    snapshot.summary!.depth_states.TSLA = {
+      status: 'ready', progress_pct: 100, gap_pct: 0, excess_pct: 2.04,
+    };
+
+    const html = renderToStaticMarkup(
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="TSLA" />,
+    );
+
+    expect(html).toContain('2021 年至今没有同时达到 ≥4 轮且胜率 ≥70% 的档位');
+    expect(html).not.toContain('高胜率档位');
   });
 
   it('renders backend-authored ready and near depth highlights without recomputing thresholds', () => {
@@ -166,7 +366,7 @@ describe('BuyDecisionSection', () => {
     expect(ready).toContain('当前回撤</span><strong class="text-2xl tabular-nums">22.50%');
     expect(ready).toContain('阈值</span><strong class="text-2xl tabular-nums">21.70%');
     expect(ready).toContain('value="100"');
-    expect(ready).toContain('60 日胜率 68.00%');
+    expect(ready).toContain('60 日上涨 68.00%');
     expect(near).toContain('接近 · 还差 2.30 点');
     expect(near).toContain('value="86.857143"');
   });
@@ -310,6 +510,25 @@ describe('BuyDecisionSection', () => {
     expect(html).toContain('休市 · 上一交易日收盘价 $390.34');
     expect(html).not.toContain('（休市');
     expect(html).not.toContain('取价时段：休市');
+  });
+
+  it('labels a weekend quant price as Friday close instead of intraday', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    snapshot.generated_at = '2026-08-02T11:43:00-04:00';
+    snapshot.symbols.AAPL.depth_window = {
+      ...snapshot.symbols.AAPL.depth_window!,
+      current_price: 308.91,
+      high_price: 395,
+      threshold_price: 309,
+      price_session: 'regular',
+    };
+
+    const html = renderToStaticMarkup(
+      <BuyDecisionSection snapshot={snapshot} initialSymbol="AAPL" />,
+    );
+
+    expect(html).toContain('休市 · 上一交易日收盘价 $308.91');
+    expect(html).not.toContain('现价 $308.91（盘中）');
   });
 
   it('states the overnight coverage limit instead of presenting a regular close as overnight', () => {

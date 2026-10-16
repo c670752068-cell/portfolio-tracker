@@ -7,7 +7,7 @@ export interface DepthPriceView {
 
 interface DepthPercentages {
   current_pct: number;
-  threshold_pct: number;
+  threshold_pct: number | null;
 }
 
 export interface QuantDepthPrices {
@@ -63,7 +63,9 @@ export function buildDepthPriceView(
     };
   }
   const highPrice = currentPrice / currentFactor;
-  const thresholdPrice = highPrice * drawdownFactor(depth.threshold_pct);
+  const thresholdPrice = depth.threshold_pct === null
+    ? null
+    : highPrice * drawdownFactor(depth.threshold_pct);
   return {
     currentPrice,
     highPrice: positiveFinite(highPrice),

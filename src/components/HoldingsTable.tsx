@@ -159,6 +159,11 @@ interface RowEditorProps {
   analysisSnapshot?: QuantAnalysisSnapshot | null;
 }
 
+function editableNumber(value: number, maximumFractionDigits = 6): string {
+  if (!Number.isFinite(value)) return '';
+  return String(Number(value.toFixed(maximumFractionDigits)));
+}
+
 function RowEditor({
   layout,
   metric,
@@ -230,13 +235,13 @@ function RowEditor({
             <input value={holding.sector} onChange={(event) => onUpdate(holding.id, { sector: event.target.value })} className={mobileInputCls} placeholder="行业" />
           </MobileEditField>
           <MobileEditField label={isOption ? '合约张数' : '股数'}>
-            <input type="number" step="any" value={holding.shares} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className={`${mobileInputCls} text-right tabular-nums`} />
+            <input type="number" step="any" value={editableNumber(holding.shares)} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className={`${mobileInputCls} text-right tabular-nums`} />
           </MobileEditField>
           <MobileEditField label={`买入价（${holding.currency}）`}>
-            <input type="number" step="any" value={holding.buyPrice} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className={`${mobileInputCls} text-right tabular-nums`} />
+            <input type="number" step="any" value={editableNumber(holding.buyPrice)} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className={`${mobileInputCls} text-right tabular-nums`} />
           </MobileEditField>
           <MobileEditField label={`当前价（${holding.currency}）`}>
-            <input type="number" step="any" value={holding.currentPrice} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className={`${mobileInputCls} text-right tabular-nums`} />
+            <input type="number" step="any" value={editableNumber(holding.currentPrice)} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className={`${mobileInputCls} text-right tabular-nums`} />
           </MobileEditField>
           <div className={`min-w-0 rounded-lg border border-neutral/30 bg-surface-base px-3 py-2 text-right tabular-nums ${dayClass}`}>
             <div className="text-left text-[10px] text-ink-muted">今日（{displayCurrency}）</div>
@@ -277,9 +282,9 @@ function RowEditor({
     <tr className="align-top hover:bg-surface-overlay/50">
       <td className="px-3 py-2.5"><div className="font-medium">{holding.symbol}</div><div className="text-xs tabular-nums text-ink-muted">{label} · {holding.currency}</div>{holding.broker && <span className="mt-1 inline-block rounded bg-surface-overlay px-1.5 py-0.5 text-[10px] font-semibold text-ink-secondary">{brokerLabel(holding.broker)}</span>}{holding.assetType === 'leveraged_etf' && <label className="mt-1 block text-xs text-ink-muted">杠杆倍数 <input type="number" min={0.5} max={5} step={0.1} value={holding.leverageFactor ?? ''} placeholder={String(leverageFactorFor(holding))} onChange={(event) => onUpdate(holding.id, { leverageFactor: event.target.value === '' ? undefined : Number(event.target.value) })} className="ml-1 w-14 rounded border border-neutral/60 bg-transparent px-1 py-0.5 text-right tabular-nums" /></label>}{optionDescription && <div className="mt-1 max-w-44 text-xs tabular-nums text-ink-muted">{optionDescription}</div>}</td>
       <td className="px-3 py-2.5"><input value={holding.name} onChange={(event) => onUpdate(holding.id, { name: event.target.value })} className="w-28 bg-transparent text-ink-primary focus:outline-none" placeholder="名称" /><input value={holding.sector} onChange={(event) => onUpdate(holding.id, { sector: event.target.value })} className="mt-1 w-24 bg-transparent text-xs text-ink-muted focus:outline-none" placeholder="行业" /><label className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><input type="checkbox" checked={isCashEquivalent(holding)} onChange={(event) => onUpdate(holding.id, { cashEquivalent: event.target.checked })} className="accent-buy" />现金等价物</label>{holding.missingFields && holding.missingFields.length > 0 && <div className="mt-1 max-w-36 text-xs text-trim">待补：{holding.missingFields.join('、')}</div>}{holding.quote?.note && <div className="mt-1 max-w-44 text-xs text-ink-secondary">{holding.quote.note}</div>}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums"><input type="number" step="any" value={holding.shares} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-ink-muted">{isOption ? '合约张数' : '股'}</div></td>
-      <td className="px-3 py-2.5 text-right tabular-nums"><input type="number" step="any" value={holding.buyPrice} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-ink-muted">{holding.currency}</div></td>
-      <td className="px-3 py-2.5 text-right tabular-nums"><input type="number" step="any" value={holding.currentPrice} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="mt-1 text-xs font-medium">{formatDisplayMoney(metric.marketValue, displayCurrency, rates)}</div></td>
+      <td className="px-3 py-2.5 text-right tabular-nums"><input type="number" step="any" value={editableNumber(holding.shares)} onChange={(event) => onUpdate(holding.id, { shares: Number(event.target.value), marketValueOverride: undefined, costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-ink-muted">{isOption ? '合约张数' : '股'}</div></td>
+      <td className="px-3 py-2.5 text-right tabular-nums"><input type="number" step="any" value={editableNumber(holding.buyPrice)} onChange={(event) => onUpdate(holding.id, { buyPrice: Number(event.target.value), costOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="text-xs text-ink-muted">{holding.currency}</div></td>
+      <td className="px-3 py-2.5 text-right tabular-nums"><input type="number" step="any" value={editableNumber(holding.currentPrice)} onChange={(event) => onUpdate(holding.id, { currentPrice: Number(event.target.value), marketValueOverride: undefined })} className="w-20 bg-transparent text-right tabular-nums focus:outline-none" /><div className="mt-1 text-xs font-medium">{formatDisplayMoney(metric.marketValue, displayCurrency, rates)}</div></td>
       <td className={`px-3 py-2.5 text-right tabular-nums ${dayClass}`}>{dayChangeContent}</td>
       <td className="px-3 py-2.5 text-right tabular-nums"><div>{formatDisplayMoney(metric.marketValue, displayCurrency, rates)}</div><div className="text-xs text-ink-muted">{formatPct(metric.weight)}</div></td>
       <td className={`px-3 py-2.5 text-right tabular-nums ${pnlClass}`}>

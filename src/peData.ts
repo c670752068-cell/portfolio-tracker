@@ -16,6 +16,8 @@ export interface PeHistoryEntry {
   source: string;
   frequency: string;
   updated_at?: string | null;
+  basis_symbol?: string;
+  basis_note?: string;
 }
 
 export interface PeHistoryPayload {
@@ -170,6 +172,8 @@ export function parsePeHistoryPayload(value: unknown): PeHistoryPayload {
       source: typeof rawEntry.source === 'string' ? rawEntry.source : '量化系统',
       frequency: typeof rawEntry.frequency === 'string' ? rawEntry.frequency : value.frequency,
       updated_at: typeof rawEntry.updated_at === 'string' ? rawEntry.updated_at : null,
+      basis_symbol: typeof rawEntry.basis_symbol === 'string' ? rawEntry.basis_symbol : undefined,
+      basis_note: typeof rawEntry.basis_note === 'string' ? rawEntry.basis_note : undefined,
     };
   }
   return {

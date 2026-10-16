@@ -4,6 +4,7 @@ import type {
   QuantBuyPlanCondition,
   QuantValuationHistoryPoint,
 } from './types';
+import { valuationFreshness } from './valuationFreshness';
 
 export interface LocalBuyPlan {
   id: string;
@@ -73,9 +74,12 @@ export function alignValuationHistoryAsOf(
     : [...history, current];
 }
 
-export function buildValuationSummary(snapshot: QuantAnalysisSnapshot): string {
+export function buildValuationSummary(snapshot: QuantAnalysisSnapshot, now = new Date()): string {
   const valuation = snapshot.valuation_tab;
   if (!valuation?.available) return '估值与情绪数据准备中，先按原计划耐心等待。';
+  if (valuationFreshness(valuation.ndx, now).effectivelyStale) {
+    return '估值数据已过期，当前无法判定；先等待下一次更新，不临时改变计划。';
+  }
   const pe = finite(valuation.ndx.current_pe);
   const p30 = finite(valuation.ndx.percentile_lines.p30);
   const cnn = finite(valuation.cnn.current_score);

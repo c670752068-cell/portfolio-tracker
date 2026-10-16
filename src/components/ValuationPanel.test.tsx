@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { QuantAnalysisSnapshot, QuantBuyPlan } from '../types';
+import type { QuantAnalysisSnapshot } from '../types';
 import { ValuationPanel } from './ValuationPanel';
 
 afterEach(() => vi.useRealTimers());
@@ -294,11 +294,76 @@ const snapshot = {
 } satisfies QuantAnalysisSnapshot;
 
 describe('ValuationPanel', () => {
+  it('uses a compact mobile grid without the removed distance and plan grids', () => {
+    const html = renderToStaticMarkup(
+      <ValuationPanel snapshot={snapshot} onDirtyChange={() => undefined} />,
+    );
+
+    expect(html).toMatch(/data-testid="mobile-decision-grid"[^>]*class="[^"]*grid-cols-2/);
+    expect(html).toContain('data-testid="mobile-cnn-card"');
+    expect(html).toContain('col-span-2');
+    expect(html).toContain('data-testid="mobile-indicator-card"');
+    expect(html).toContain('data-testid="mobile-cnn-gauge"');
+    expect(html).toContain('max-w-[280px]');
+    expect(html).toContain('data-testid="cnn-range-legend"');
+    expect(html).not.toContain('<span class="sm:hidden">等待</span>');
+    expect(html).not.toContain('data-testid="mobile-distance-grid"');
+    expect(html).not.toContain('data-testid="mobile-plan-grid"');
+    expect(html).toContain('sm:text-4xl');
+  });
+
+  it('shows indicator dates and keeps NDX neutral below its 35 PE warning line', () => {
+    const value: QuantAnalysisSnapshot = structuredClone(snapshot);
+    value.valuation_tab!.ndx.current_pe = 31.15;
+    value.valuation_tab!.ndx.as_of = '2026-08-11';
+    (value.context.vix as { value: number; as_of: string }).value = 24;
+    (value.context.vix as { value: number; as_of: string }).as_of = '2026-08-11';
+
+    const html = renderToStaticMarkup(<ValuationPanel snapshot={value} onDirtyChange={() => undefined} />);
+
+    expect(html).toContain('数据 08-11');
+    expect(html).toContain('警戒线 PE ≥ 35');
+    expect(html).not.toContain('估值过高');
+    expect(html).toContain('警戒线 VIX &gt; 23');
+  });
+
+  it('turns NDX red only at PE 35 and links to Danjuan on a double activation', () => {
+    const value: QuantAnalysisSnapshot = structuredClone(snapshot);
+    value.valuation_tab!.ndx.current_pe = 35;
+
+    const html = renderToStaticMarkup(<ValuationPanel snapshot={value} onDirtyChange={() => undefined} />);
+
+    expect(html).toContain('href="https://danjuanfunds.com/dj-valuation-table-detail/NDX"');
+    expect(html).toContain('双击查看雪球估值');
+    expect(html).toContain('data-alert-state="danger"');
+    expect(html).toContain('估值过高');
+  });
+
+  it('removes the prose banner and turns CNN PE and VIX into threshold cards', () => {
+    const html = renderToStaticMarkup(
+      <ValuationPanel snapshot={snapshot} onDirtyChange={() => undefined} />,
+    );
+    expect(html).not.toContain('此刻怎么做');
+    expect(html).not.toContain('冷静时定规则');
+    expect(html).toContain('aria-label="CNN 恐慌贪婪指数 39.43"');
+    expect(html.match(/data-panic-state="normal"/g)).toHaveLength(3);
+
+    const fearSnapshot: QuantAnalysisSnapshot = structuredClone(snapshot);
+    fearSnapshot.valuation_tab!.cnn.current_score = 29.99;
+    fearSnapshot.valuation_tab!.ndx.current_pe = 29.99;
+    (fearSnapshot.context.vix as { value: number }).value = 30.01;
+    const fearHtml = renderToStaticMarkup(
+      <ValuationPanel snapshot={fearSnapshot} onDirtyChange={() => undefined} />,
+    );
+    expect(fearHtml.match(/data-panic-state="ready"/g)).toHaveLength(3);
+    expect(fearHtml.match(/恐慌 · 可开仓/g)).toHaveLength(3);
+  });
+
   it('calculates stale age from the valuation date and shows the warning only once', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-30T08:49:00-04:00'));
     const staleSnapshot: QuantAnalysisSnapshot = structuredClone(snapshot);
-    staleSnapshot.valuation_tab!.ndx.as_of = '2026-07-28';
+    staleSnapshot.valuation_tab!.ndx.as_of = '2026-07-27';
     staleSnapshot.valuation_tab!.ndx.stale = true;
     staleSnapshot.valuation_tab!.ndx.stale_days = 4;
 
@@ -306,45 +371,65 @@ describe('ValuationPanel', () => {
       <ValuationPanel snapshot={staleSnapshot} onDirtyChange={() => undefined} />,
     );
 
-    expect(html).toContain('数据停留在 2026-07-28（2 天前）');
+    expect(html).toContain('数据停留在 2026-07-28（2 个交易日前）');
+    expect(html).toContain('data-alert-state="unavailable"');
     expect(html.match(/数据停留在/g)).toHaveLength(1);
   });
 
-  it('renders all five evidence sections, estimates, progress and timestamps', () => {
+  it('shows the corrected latest Danjuan date without a stale warning after a weekend', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-03T01:49:59-04:00'));
+    const latestSnapshot: QuantAnalysisSnapshot = structuredClone(snapshot);
+    latestSnapshot.valuation_tab!.ndx.as_of = '2026-07-30';
+    latestSnapshot.valuation_tab!.ndx.current_pe = 29.9797;
+    latestSnapshot.valuation_tab!.ndx.stale = true;
+    latestSnapshot.valuation_tab!.ndx.stale_days = 8;
+    latestSnapshot.valuation_tab!.ndx.gate_available = false;
+
+    const html = renderToStaticMarkup(
+      <ValuationPanel snapshot={latestSnapshot} onDirtyChange={() => undefined} />,
+    );
+
+    expect(html).toContain('丹居 · 2026-07-31');
+    expect(html).not.toContain('数据停留在');
+    expect(html).not.toContain('估值数据已过期');
+  });
+
+  it('keeps the decision page focused on simple buy decisions and valuation curves', () => {
     const html = renderToStaticMarkup(
       <ValuationPanel snapshot={snapshot} onDirtyChange={() => undefined} />,
     );
 
-    expect(html).toContain('估值已到位');
+    expect(html).not.toContain('估值已到位');
     expect(html).toContain('纳指100 估值');
     expect(html).toContain('市场情绪');
     expect(html).toContain('VIX 波动率');
     expect(html).toContain('VIX 18.58');
     expect(html).toContain('252日分位 68.25%');
-    expect(html).toContain('波动率与胜率研究');
-    expect(html).toContain('集中于「疫情崩盘」');
-    expect(html).toContain('历史统计不代表未来收益');
-    expect(html).toContain('1 年 PE 走势');
-    expect(html).toContain('CNN 恐慌贪婪 · 近1年');
-    expect(html).toContain('还差多少');
-    expect(html).toContain('按当前盈利基数估算');
-    expect(html).toContain('开枪计划表');
-    expect(html).toContain('1/3 条件满足');
-    expect(html).toContain('量化快照');
-    expect(html).toContain('生成 YAML');
-    expect(html).toContain('中度回撤 × 波动偏高');
-    expect(html).toContain('当前状态');
-    expect(html).toContain('最差情形');
-    expect(html).toContain('查看完整状态矩阵');
-    expect(html).toContain('回撤 -8.20% × VIX 分位 68.25%');
+    expect(html).not.toContain('波动率与胜率研究');
+    expect(html).not.toContain('查看完整状态矩阵');
+    expect(html).not.toContain('当前状态已在上方结论卡显示');
+    expect(html).toContain('股票与指数估值');
+    expect(html).toContain('data-testid="decision-signals"');
+    expect(html).not.toContain('data-testid="technical-symbol-list"');
+    expect(html).not.toContain('1 年 PE 走势');
+    expect(html).not.toContain('CNN 恐慌贪婪 · 近1年');
+    expect(html).not.toContain('还差多少');
+    expect(html).not.toContain('按当前盈利基数估算');
+    expect(html).not.toContain('开枪计划表');
+    expect(html).not.toContain('1/3 条件满足');
+    expect(html).not.toContain('生成 YAML');
+    expect(html).not.toContain('中度回撤 × 波动偏高');
+    expect(html).not.toContain('当前状态');
+    expect(html).not.toContain('最差情形');
+    expect(html).not.toContain('回撤 -8.20% × VIX 分位 68.25%');
     expect(html).not.toContain('熊市样本');
     expect(html).not.toContain('QQQ / TQQQ 历史胜率');
-    expect(html).toContain('建议总仓位，不是单笔金额');
-    expect(html).toContain('当前状态已在上方结论卡显示');
+    expect(html).not.toContain('建议总仓位，不是单笔金额');
     expect(html).not.toContain('行 = 估值高低（PE 分位）');
   });
 
-  it('renders the backend-provided dual risk context and blocked amount on a buy plan', () => {
+  it('does not render the removed account and buy-plan details', () => {
     const plan = {
       ...snapshot.buy_plan_status!.plans[0],
       buy_sizing: {
@@ -356,7 +441,7 @@ describe('ValuationPanel', () => {
           sleeve: { name: '科技', effective_pct: 91.23, cash_pct: 54.04, hard_cap_pct: 75, over_hard_cap_usd: 22746.78 },
         },
       },
-    } as unknown as QuantBuyPlan;
+    };
     const html = renderToStaticMarkup(
       <ValuationPanel
         snapshot={{ ...snapshot, buy_plan_status: { ...snapshot.buy_plan_status!, plans: [plan] } }}
@@ -364,11 +449,11 @@ describe('ValuationPanel', () => {
       />,
     );
 
-    expect(html).toContain('等效敞口 200.84%');
-    expect(html).toContain('实付现金 67.85%');
-    expect(html).toContain('科技超硬顶 75.00%');
-    expect(html).toContain('本轮不建议新增');
-    expect(html).toContain('当前仓位门额度：$0');
+    expect(html).not.toContain('等效敞口 200.84%');
+    expect(html).not.toContain('实付现金 67.85%');
+    expect(html).not.toContain('科技超硬顶 75.00%');
+    expect(html).not.toContain('本轮不建议新增');
+    expect(html).not.toContain('当前仓位门额度：$0');
   });
 
   it('degrades honestly when the backend fields are not ready', () => {
@@ -403,7 +488,7 @@ describe('ValuationPanel', () => {
     expect(html).toContain('2026-07-30 08:49');
   });
 
-  it('rounds long decimals embedded in backend plan-link sentences', () => {
+  it('does not render backend plan-link prose after the regime card is hidden', () => {
     const verdict = snapshot.regime_status!.verdict_card!;
     const html = renderToStaticMarkup(
       <ValuationPanel
@@ -430,8 +515,8 @@ describe('ValuationPanel', () => {
       />,
     );
 
-    expect(html).toContain('当前 34.49');
-    expect(html).toContain('当前 -29.01');
+    expect(html).not.toContain('当前 34.49');
+    expect(html).not.toContain('当前 -29.01');
     expect(html).not.toContain('34.4857');
   });
 
@@ -457,7 +542,7 @@ describe('ValuationPanel', () => {
     expect(html).not.toContain('5年分位 20.16% · 数据缺失');
   });
 
-  it('describes an upward anchor as an already-below reference instead of a target to reach', () => {
+  it('does not render the removed valuation anchor cards', () => {
     const html = renderToStaticMarkup(
       <ValuationPanel
         snapshot={{
@@ -480,12 +565,12 @@ describe('ValuationPanel', () => {
       />,
     );
 
-    expect(html).toContain('当前已低于 PE 30分位线（分位线对应 PE 32.47）');
+    expect(html).not.toContain('当前已低于 PE 30分位线（分位线对应 PE 32.47）');
     expect(html).not.toContain('29.40 → 32.47');
     expect(html).not.toContain('已到达');
   });
 
-  it('renders repeated account and estimate context only once above their card groups', () => {
+  it('does not render removed repeated account and estimate context', () => {
     const basePlan = snapshot.buy_plan_status!.plans[0];
     const buySizing = {
       suggested_usd: 0,
@@ -522,12 +607,12 @@ describe('ValuationPanel', () => {
       />,
     );
 
-    expect(html.match(/等效敞口 209.94%/g)).toHaveLength(1);
-    expect(html.match(/科技已超硬顶，不建议新增/g)).toHaveLength(1);
-    expect(html.match(/按当前盈利基数估算/g)).toHaveLength(1);
+    expect(html).not.toContain('等效敞口 209.94%');
+    expect(html).not.toContain('科技已超硬顶，不建议新增');
+    expect(html).not.toContain('按当前盈利基数估算');
   });
 
-  it('labels proxy VIX data and suppresses all insufficient research statistics', () => {
+  it('labels proxy VIX data without rendering the removed VIX research section', () => {
     const html = renderToStaticMarkup(
       <ValuationPanel
         snapshot={{
@@ -563,11 +648,12 @@ describe('ValuationPanel', () => {
     );
 
     expect(html).toContain('RV20 代理，非真实 VIX');
-    expect(html).toContain('样本不足 · n=5');
+    expect(html).not.toContain('样本不足 · n=5');
     expect(html).not.toContain('+42.00%');
+    expect(html).not.toContain('波动率与胜率研究');
   });
 
-  it('shows a calm unavailable state without inventing regime evidence', () => {
+  it('does not render the removed regime state when its data is unavailable', () => {
     const html = renderToStaticMarkup(
       <ValuationPanel
         snapshot={{
@@ -581,12 +667,12 @@ describe('ValuationPanel', () => {
       />,
     );
 
-    expect(html).toContain('当前状态准备中');
-    expect(html).toContain('联合历史暂不可用');
+    expect(html).not.toContain('当前状态准备中');
+    expect(html).not.toContain('联合历史暂不可用');
     expect(html).not.toContain('NaN');
   });
 
-  it('withholds all verdict statistics when the backend marks the current cell insufficient', () => {
+  it('does not render the removed regime history even when observations exist', () => {
     const verdict = snapshot.regime_status!.verdict_card!;
     const html = renderToStaticMarkup(
       <ValuationPanel
@@ -597,10 +683,14 @@ describe('ValuationPanel', () => {
             verdict_card: {
               ...verdict,
               sample_sufficient: false,
-              headline: '当前状态的历史样本不足，暂不展示胜率结论。',
-              sample_context: '样本不足（n=8，需≥30），不构成统计结论。',
-              primary: { horizon_days: null, win_rate_pct: null, median_return_pct: null, worst_return_pct: null, n: null },
-              horizons: { '20': null, '60': null, '120': null },
+              headline: '中度回撤 × 波动偏低 —— 历史 60 日上涨 15/16（93.75%）',
+              sample_context: '历史状态共17段：16段已有60日结果，1段仍在进行；原始35个交易日已按连续状态去重',
+              primary: { horizon_days: 60, win_rate_pct: 93.75, win_count: 15, pending_count: 1, median_return_pct: 9.55, worst_return_pct: -18.86, n: 16 },
+              horizons: {
+                '20': { win_rate_pct: 81.25, win_count: 13, pending_count: 1, median_return_pct: 4.05, worst_return_pct: -5.95, n: 16 },
+                '60': { win_rate_pct: 93.75, win_count: 15, pending_count: 1, median_return_pct: 9.55, worst_return_pct: -18.86, n: 16 },
+                '120': { win_rate_pct: 93.75, win_count: 15, pending_count: 1, median_return_pct: 19.50, worst_return_pct: -6.94, n: 16 },
+              },
             },
           },
         }}
@@ -608,8 +698,9 @@ describe('ValuationPanel', () => {
       />,
     );
 
-    expect(html).toContain('无统计结论');
+    expect(html).not.toContain('历史 60 日上涨 15/16（93.75%）');
     expect(html).not.toContain('TQQQ 同状态 60 日');
     expect(html).not.toContain('⚠ 最差情形');
+    expect(html).not.toContain('无统计结论');
   });
 });

@@ -1,0 +1,33 @@
+.pe-position,.sma-position { display:flex; flex-direction:column; gap:7px; min-width:0; font-variant-numeric:tabular-nums; }
+.pe-position small,.sma-position small { font-size:10px; font-weight:400; line-height:1.5; color:var(--color-ink-muted); }
+.indicator-top { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.indicator-top>strong { font-size:23px; font-weight:750; }
+.indicator-tag { font-size:11px; font-weight:650; }
+.indicator-low .indicator-tag,.indicator-low .median-distance { color:#047857; }
+.indicator-high .indicator-tag,.indicator-high .median-distance,.indicator-hot { color:#b45309; }
+.indicator-short { color:#1675a9; }.indicator-down { color:#b4232c; }
+.position-track { display:block; height:7px; position:relative; border-radius:6px; margin:5px 3px; background:linear-gradient(to right,#34d399 0%,#a7f3d0 30%,#cbd5e1 30%,#cbd5e1 70%,#fdba74 70%,#f87171 100%); }
+.position-track>b { position:absolute; top:-4px; height:15px; width:15px; border:2px solid var(--color-ink-primary); border-radius:50%; background:var(--color-surface-raised); transform:translateX(-50%); }
+.position-tick { height:11px; position:absolute; top:-2px; border-left:1px solid var(--color-ink-muted); }
+.position-labels { display:flex; justify-content:space-between; font-size:10px; color:var(--color-ink-muted); }.position-labels strong { color:var(--color-ink-primary); }
+.median-distance { font-size:11px; font-weight:650; }.pe-reference-values { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:12px 0; font-size:11px; color:var(--color-ink-muted); }.pe-reference-values b { display:block; font-size:16px; color:var(--color-ink-primary); }
+.sma-secondary { font-size:12px; color:var(--color-ink-muted); }.sma-secondary b { color:#b45309; }
+.sma-zero-status { display:flex; flex-wrap:wrap; gap:4px 9px; align-items:center; font-size:11px; color:var(--color-buy); padding:5px 7px; border-radius:5px; background:var(--color-surface-overlay); }
+.sma-zero-status.is-severe { color:#b91c1c; background:#fef2f2; }.sma-zero-status.is-near { color:#92400e; background:#fffbeb; }
+.is-compact .indicator-top>strong { font-size:12px; }.is-compact .indicator-top small { display:inline; font-size:9px; color:inherit; white-space:nowrap; }.is-compact .indicator-tag,.is-compact .median-distance { font-size:10px; }.is-compact .sma-zero-status { font-size:10px; padding:4px; }.is-compact .position-track { margin:2px; }
+.sma-peak-reference { font-size:10px; line-height:1.6; color:var(--color-ink-secondary); }
+.sma-peak-reference>span,.sma-reference-median { display:block; }
+.sma-reference-median { font-size:12px; color:var(--color-ink-primary); font-weight:750; }
+.sma-reference-median small,.decision-row .sma-reference-median small { display:inline; color:inherit; margin-left:2px; }
+.sma-peak-reference.is-downside { padding:6px 7px; border-left:3px solid #e25761; border-radius:5px; background:#fff0f1; }
+.sma-peak-reference.is-downside .sma-reference-median { color:#b4232c; font-weight:800; }
+.sma-peak-reference.is-downside small { color:#80666a; }
+.sma-position.is-falling .indicator-top>strong { font-size:14px; font-weight:800; }
+.sma-direction-evidence+.sma-direction-evidence { border-top:1px solid var(--color-neutral); margin-top:16px; padding-top:16px; }
+.decision-detail .decision-evidence p.sma-downside-summary { color:#b4232c; background:#fff0f1; padding:8px; border-radius:6px; font-weight:700; }
+.dark .indicator-down,.dark .sma-peak-reference.is-downside .sma-reference-median { color:#ffb2b8; }
+.dark .sma-peak-reference.is-downside { background:#491c24; border-color:#e77c89; color:#e5b9be; }
+.dark .sma-peak-reference.is-downside small { color:#d7aeb4; }
+.dark .decision-detail .decision-evidence p.sma-downside-summary { color:#ffb2b8; background:#491c24; }
+.dark .indicator-low .indicator-tag,.dark .indicator-low .median-distance { color:#6ee7b7; }.dark .indicator-high .indicator-tag,.dark .indicator-high .median-distance,.dark .indicator-hot,.dark .sma-secondary b { color:#fdba74; }.dark .indicator-short { color:#7dd3fc; }
+.dark .sma-zero-status.is-severe { background:#451a20; color:#fecaca; }.dark .sma-zero-status.is-near { background:#422b13; color:#fde68a; }

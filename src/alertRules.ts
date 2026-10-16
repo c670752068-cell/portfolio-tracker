@@ -1,6 +1,7 @@
 import { isCashEquivalent } from './assetClass';
 import type { Holding, PriceSession, QuantHoldingCost } from './types';
 import { formatMoney } from './format';
+import { marketSessionDateKey, sessionLabel } from './marketSession';
 
 export const ALERT_RULES_REFRESH_MS = 35 * 60 * 1000;
 
@@ -98,18 +99,31 @@ function formatNewYorkTime(value: string | null | undefined): string | null {
   }).format(date);
 }
 
-export function formatAlertCurrentPrice(rule: AlertRule): string {
+function currentPriceSession(rule: AlertRule, now: Date): PriceSession | undefined {
+  const timestamp = rule.prices_at ?? rule.last_checked_at;
+  const quoteDate = timestamp ? new Date(timestamp) : null;
+  if (quoteDate && Number.isFinite(quoteDate.getTime())) {
+    if (marketSessionDateKey(quoteDate) !== marketSessionDateKey(now)) return 'closed';
+  }
+  const currentSession = sessionLabel(now);
+  if (currentSession === '周末' || currentSession === '已收盘') return 'closed';
+  if (currentSession === '未开盘' && rule.price_session === 'regular') return 'closed';
+  return rule.price_session;
+}
+
+export function formatAlertCurrentPrice(rule: AlertRule, now = new Date()): string {
   if (rule.current_price == null) return '当前价 待盘中检查';
   const checkedAt = formatNewYorkTime(rule.prices_at ?? rule.last_checked_at);
-  const label = rule.price_session === 'pre'
+  const priceSession = currentPriceSession(rule, now);
+  const label = priceSession === 'pre'
     ? '盘前'
-    : rule.price_session === 'regular'
+    : priceSession === 'regular'
       ? '盘中'
-      : rule.price_session === 'post'
+      : priceSession === 'post'
         ? '盘后'
-        : rule.price_session === 'overnight'
+        : priceSession === 'overnight'
           ? '夜盘'
-          : rule.price_session === 'closed' && checkedAt === '16:00'
+          : priceSession === 'closed' && checkedAt === '16:00'
             ? '收盘'
             : '休市';
   return `${label} ${formatMoney(rule.current_price)}${checkedAt ? ` @ ${checkedAt} ET` : ''}`;
@@ -151,18 +165,25 @@ async function errorMessage(response: Response): Promise<string> {
   }
 }
 
-export async function fetchAlertRules(endpoint: string): Promise<AlertRule[]> {
-  const response = await fetch(endpoint, { method: 'GET', headers: { Accept: 'application/json' } });
+function alertHeaders(token: string, includeContentType = false): Record<string, string> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (includeContentType) headers['Content-Type'] = 'application/json';
+  if (token.trim()) headers.Authorization = `Bearer ${token.trim()}`;
+  return headers;
+}
+
+export async function fetchAlertRules(endpoint: string, token = ''): Promise<AlertRule[]> {
+  const response = await fetch(endpoint, { method: 'GET', headers: alertHeaders(token) });
   if (!response.ok) throw new Error(await errorMessage(response));
   const payload = await response.json() as { rules?: unknown[] };
   if (!Array.isArray(payload.rules)) throw new Error('服务器提醒规则格式无效');
   return payload.rules.map(normalizeRule);
 }
 
-export async function saveAlertRule(endpoint: string, draft: AlertRuleDraft): Promise<AlertRule> {
+export async function saveAlertRule(endpoint: string, draft: AlertRuleDraft, token = ''): Promise<AlertRule> {
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    headers: alertHeaders(token, true),
     body: JSON.stringify(draft),
   });
   if (!response.ok) throw new Error(await errorMessage(response));
@@ -171,10 +192,10 @@ export async function saveAlertRule(endpoint: string, draft: AlertRuleDraft): Pr
   return normalizeRule(payload.rule);
 }
 
-export async function deleteAlertRule(endpoint: string, id: string): Promise<void> {
+export async function deleteAlertRule(endpoint: string, id: string, token = ''): Promise<void> {
   const response = await fetch(`${endpoint}/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    headers: { Accept: 'application/json' },
+    headers: alertHeaders(token),
   });
   if (!response.ok) throw new Error(await errorMessage(response));
 }

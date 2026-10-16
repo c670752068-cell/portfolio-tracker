@@ -21,6 +21,14 @@ const HALF_DAYS = new Set([
 
 const warnedHolidayYears = new Set();
 
+// Null means the local holiday table cannot establish a session for this year.
+export function knownTradingDate(dateKey) {
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  if (Number.isNaN(+date)) return false;
+  if ([0, 6].includes(date.getUTCDay())) return false;
+  return date.getUTCFullYear() === COVERED_HOLIDAY_YEAR ? !HOLIDAYS.has(dateKey) : null;
+}
+
 function minutes(hour, minute = 0) {
   return hour * 60 + minute;
 }

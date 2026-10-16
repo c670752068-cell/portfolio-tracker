@@ -25,6 +25,16 @@ function holding(overrides: Partial<Holding>): Holding {
 }
 
 describe('SettingsPanel cost coverage', () => {
+  it('uses two-column mobile grids for settings fields and section cards', () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel settings={settings} onSave={() => undefined} />,
+    );
+
+    expect(html).toMatch(/data-testid="mobile-settings-field-grid"[^>]*class="[^"]*grid-cols-2/);
+    expect(html).toMatch(/data-testid="mobile-settings-section-grid"[^>]*class="[^"]*grid-cols-2/);
+    expect(html).toContain('grid grid-cols-2 gap-2 sm:hidden');
+  });
+
   it('renders a sticky save bar only for dirty settings', () => {
     const html = renderToStaticMarkup(
       <SettingsSaveBar dirtyCount={2} onSave={() => undefined} />,
@@ -58,6 +68,23 @@ describe('SettingsPanel cost coverage', () => {
     );
 
     expect(html.match(/美国 VPS 中转/g)).toHaveLength(1);
+  });
+
+  it('does not require a token for ordinary cross-device reads', () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'http://67.215.255.196:8788' },
+      __PORTFOLIO_TRACKER_RUNTIME__: {
+        apiBaseUrl: 'http://67.215.255.196:8788',
+        deploymentLabel: '美国 VPS 中转',
+      },
+    });
+    const html = renderToStaticMarkup(
+      <SettingsPanel settings={settings} onSave={() => undefined} />,
+    );
+
+    expect(html).toContain('打开网站即可读取最新持仓与决策');
+    expect(html).toContain('后台维护 Token（可选）');
+    expect(html).toContain('type="password"');
   });
 
   it('uses neutral product copy for the backup AI provider', () => {
@@ -209,5 +236,24 @@ describe('SettingsPanel cost coverage', () => {
 
     expect(html).toContain('已有成本 2 / 共 2 个持仓');
     expect(html).toContain('全部持仓成本齐全');
+  });
+
+  it('explains that normal reads need no token and uses mobile-sized controls', () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'http://67.215.255.196:8788' },
+      __PORTFOLIO_TRACKER_RUNTIME__: {
+        apiBaseUrl: 'http://67.215.255.196:8788',
+        deploymentLabel: '美国 VPS 中转',
+      },
+    });
+    const html = renderToStaticMarkup(
+      <SettingsPanel settings={settings} onSave={() => undefined} />,
+    );
+
+    expect(html).toContain('打开网站即可读取最新持仓与决策');
+    expect(html).toContain('后台维护 Token（可选）');
+    expect(html).toContain('不影响日常查看');
+    expect(html).toContain('min-h-11 min-w-0 w-full');
+    expect(html).toContain('min-h-11 rounded-md bg-surface-overlay');
   });
 });

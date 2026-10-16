@@ -54,7 +54,10 @@ export function createRefreshRequestRoute({
       sendJson(res, 404, { error: { code: 'not_found', message: '未知接口' } });
       return true;
     }
-    if (req.headers.authorization !== `Bearer ${token}`) {
+    // The website only creates and reads a throttled refresh request. Keep the
+    // worker completion write authenticated so a public client cannot forge a
+    // successful recompute.
+    if (url.pathname === COMPLETE_PATH && req.headers.authorization !== `Bearer ${token}`) {
       sendJson(res, 401, { error: { code: 'unauthorized', message: '认证失败' } });
       return true;
     }

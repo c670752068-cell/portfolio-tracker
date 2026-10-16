@@ -83,7 +83,7 @@ function validateSymbolAnalysis(value: unknown, symbol: string): asserts value i
     throw new Error(`${symbol} 的量化分析格式无效`);
   }
   if (value.gates !== undefined && !isRecord(value.gates)) {
-    throw new Error(`${symbol} 的价格与估值数据格式无效`);
+    throw new Error(`${symbol} 的回撤条件数据格式无效`);
   }
   if (isRecord(value.signal_stats)) {
     for (const [signal, raw] of Object.entries(value.signal_stats)) {
@@ -149,13 +149,14 @@ function validateOpportunitySummary(value: unknown): void {
     || !Array.isArray(value.buy_ready)
     || !Array.isArray(value.buy_near)
     || !Array.isArray(value.sell_ready)
+    || (value.sell_near !== undefined && !Array.isArray(value.sell_near))
     || !Array.isArray(value.idle_symbols)
     || typeof value.idle_count !== 'number'
     || !isRecord(value.depth_states)
     || typeof value.generated_at !== 'string') {
     throw new Error('今日机会一览格式无效');
   }
-  const rows = [...value.buy_ready, ...value.buy_near, ...value.sell_ready];
+  const rows = [...value.buy_ready, ...value.buy_near, ...value.sell_ready, ...(value.sell_near || [])];
   if (rows.some((item) => !isRecord(item) || typeof item.symbol !== 'string')) {
     throw new Error('今日机会一览格式无效');
   }
@@ -211,6 +212,22 @@ export function finalVerdictSymbols(snapshot: QuantAnalysisSnapshot): Record<str
   return payload;
 }
 
+/**
+ * The decision page labels the market-depth condition, not permission to buy.
+ * Portfolio limits may block a new order without changing whether price has
+ * reached its configured drawdown depth.
+ */
+export function depthConditionSatisfied(
+  snapshot: QuantAnalysisSnapshot,
+  symbol: string,
+): boolean {
+  const state = snapshot.summary?.depth_states?.[symbol]?.status;
+  if (state) return state === 'ready';
+  const depth = snapshot.symbols?.[symbol]?.depth_window;
+  if (depth?.applicable) return depth.open;
+  return finalVerdictSymbols(snapshot)[symbol]?.verdict === 'BUY';
+}
+
 /** Server-owned freshness accompanying a wrapped final-verdict payload. */
 export function finalVerdictFreshness(snapshot: QuantAnalysisSnapshot): Pick<QuantFinalVerdictEnvelope, 'data_stale' | 'stale_days' | 'data_as_of'> | undefined {
   const payload = snapshot.final_verdict;
@@ -250,10 +267,13 @@ export function parseQuantAnalysis(value: unknown): QuantAnalysisSnapshot {
   return value as unknown as QuantAnalysisSnapshot;
 }
 
-export async function fetchQuantAnalysis(url: string): Promise<QuantAnalysisSnapshot> {
+export async function fetchQuantAnalysis(url: string, token = ''): Promise<QuantAnalysisSnapshot> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token.trim()) headers.Authorization = `Bearer ${token.trim()}`;
   const response = await fetch(url, {
+    cache: 'no-store',
     method: 'GET',
-    headers: { Accept: 'application/json' },
+    headers,
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => '');

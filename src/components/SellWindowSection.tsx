@@ -3,7 +3,7 @@ import { buildAlertHoldingOptions } from '../alertRules';
 import { formatDisplayMoney } from '../displayCurrency';
 import { computeFamilyPnl, type FamilyPnl } from '../familyPnl';
 import { findSellFamily, resolveSellStatus, type ResolvedSellStatus } from '../sellStatus';
-import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantSellFamily } from '../types';
+import type { DisplayCurrency, ExchangeRates, Holding, QuantAnalysisSnapshot, QuantExitResearch, QuantSellFamily } from '../types';
 
 type OpportunitySide = 'buy' | 'sell';
 
@@ -69,6 +69,55 @@ function InfoDisclosure({ label, children }: { label: string; children: string }
   );
 }
 
+function ExitResearchPlan({
+  research,
+  displayCurrency,
+  rates,
+}: {
+  research: QuantExitResearch;
+  displayCurrency: DisplayCurrency;
+  rates: ExchangeRates;
+}) {
+  const usesBenchmark = research.basis_symbol !== research.symbol;
+  const reliable = research.sample_sufficient && research.sample_count >= 5;
+  return (
+    <div className="rounded-lg border border-buy/30 bg-buy/5 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="font-semibold">低点到高点 · 概率卖出计划</div>
+        <div className="text-xs tabular-nums text-ink-muted">{research.available_start} 至 {research.available_end}</div>
+      </div>
+      <p className="mt-1 text-xs text-ink-muted">
+        每轮明显回撤的低点 → 下一轮回撤前高点；{usesBenchmark ? `${research.basis_symbol} 定周期、${research.symbol} 算实际涨幅` : `${research.symbol} 自身周期`}。
+      </p>
+      {research.anchor && <div className="mt-3 rounded-lg bg-surface-overlay/60 p-3 tabular-nums">
+        最近低点 {research.anchor.low_date} · {formatDisplayMoney(research.anchor.low_price, displayCurrency, rates)}
+        {' → '}当前 {formatDisplayMoney(research.anchor.current_price, displayCurrency, rates)}
+        {' · '}已反弹 {signedPct(research.anchor.current_gain_from_low_pct)}
+      </div>}
+      {!reliable ? <div className="mt-3 rounded-xl border border-trim/30 bg-trim/8 p-3 text-sm leading-relaxed text-trim">
+        <strong>仅 {research.sample_count} 个独立周期，不生成卖出目标。</strong>
+        <p className="mt-1 text-xs">页面此前显示的高反弹分位描述的是标的从历史低点到随后高点的涨幅，不是你的账户盈利，也不参与当前卖出军令。</p>
+      </div> : <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        {research.stages.map((stage) => <div key={stage.key} className={`rounded-lg border p-3 ${stage.reached_now ? 'border-trim/40 bg-trim/10' : 'border-neutral/40 bg-surface-raised'}`}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold">{stage.label}</span>
+            {stage.reached_now && <span className="rounded-full bg-trim/15 px-2 py-1 text-xs font-medium text-trim">已到达</span>}
+          </div>
+          <div className="mt-2 text-xl font-semibold tabular-nums">低点反弹 +{stage.target_gain_pct.toFixed(2)}%</div>
+          {stage.target_price_from_latest_low !== null && <div className="mt-1 tabular-nums">目标价 {formatDisplayMoney(stage.target_price_from_latest_low, displayCurrency, rates)}</div>}
+          <div className="mt-2 text-xs tabular-nums text-ink-secondary">
+            历史到达 {stage.historical_reach_pct.toFixed(1)}% · {stage.median_days_to_target === null ? '时间暂无' : `中位 ${stage.median_days_to_target} 个交易日`}
+          </div>
+          <div className="mt-2 font-medium text-trim">历史分位，仅作辅助确认</div>
+        </div>)}
+      </div>}
+      <p className="mt-3 text-xs text-ink-muted">
+        样本 {research.sample_count} 轮；卖出金额以你的真实持仓与实际浮盈为准，历史低点反弹率不得替代账户盈利率。
+      </p>
+    </div>
+  );
+}
+
 function SellWindow({
   item,
   status,
@@ -112,6 +161,13 @@ function SellWindow({
   const belowFirst = !hasKnownLoss && pnl.pnlPct !== null && firstStep && pnl.pnlPct < firstStep.gain_min_pct;
   return (
     <div className="mt-3 space-y-3 text-sm">
+      {item.decision && (
+        <div className={`rounded-lg border p-3 ${item.decision.verdict === 'SELL' ? 'border-gain/40 bg-gain/10' : 'border-loss/35 bg-loss/5'}`}>
+          <div className={`font-semibold ${item.decision.verdict === 'SELL' ? 'text-gain' : 'text-loss'}`}>{item.decision.label}</div>
+          <p className="mt-1 text-ink-secondary">{item.decision.reason}</p>
+          {item.decision.verdict === 'SELL' && <p className="mt-2 font-medium text-gain">建议分批卖出 {item.decision.recommended_sell_pct.toFixed(0)}%</p>}
+        </div>
+      )}
       <div className="rounded-lg border border-neutral/40 p-3">
         <div className="font-semibold">本族当前盈亏</div>
         <div className="mt-2 grid gap-2 tabular-nums sm:grid-cols-3">
@@ -134,6 +190,7 @@ function SellWindow({
           {pnl.unknownCostHoldings.length} 个持仓成本未知（{unknownCostGuidance}），未计入本次盈亏：{pnl.unknownCostHoldings.join('、')}
         </p>}
       </div>
+      {item.exit_research && <ExitResearchPlan research={item.exit_research} displayCurrency={displayCurrency} rates={rates} />}
       {item.profit_gate && (
         <div className={`rounded-lg border p-3 ${gateActionable ? 'border-gain/40 bg-gain/10' : 'border-neutral/50 bg-surface-overlay/50'}`}>
           <div className="text-xs font-medium text-ink-muted">当前结论</div>
@@ -263,12 +320,12 @@ export function SellWindowSection({ snapshot, holdings = [], initialSymbol = '',
           <h3 className="text-lg font-semibold">卖出窗口</h3>
           {snapshot.sell?.shadow && <p className="mt-1 text-sm font-medium text-trim">量化卖出模块当前为观察期，全部信号均未正式生效</p>}
           <p className="mt-1 text-sm text-ink-muted">从当前持仓选择标的，查看量化系统给出的修复期、知足常乐、补涨收敛与止盈阶梯依据。</p>
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex items-start gap-2">
             <StatusDot tone={selectedSellTone} />
-            <select aria-label="卖出持仓标的" value={selectedSellSymbol} onChange={(event) => setSellSymbol(event.target.value)} className="min-w-0 flex-1 rounded-md border border-neutral bg-transparent px-3 py-2">
-              {sellOptions.length === 0 && <option value="">暂无可用持仓</option>}
-              {sellOptions.map((item) => <option key={item.symbol} value={item.symbol}>{sellStatusLabel(item.symbol, item.label)}</option>)}
-            </select>
+            <div role="group" aria-label="卖出持仓标的" className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
+              {sellOptions.length === 0 && <span className="col-span-full rounded-lg bg-surface-overlay px-3 py-2 text-ink-muted">暂无可用持仓</span>}
+              {sellOptions.map((option) => <button type="button" value={option.symbol} key={option.symbol} onClick={() => setSellSymbol(option.symbol)} className={`min-h-11 rounded-lg px-3 text-left text-sm ${selectedSellSymbol === option.symbol ? 'bg-buy/12 font-semibold text-buy' : 'bg-surface-overlay text-ink-secondary'}`}>{sellStatusLabel(option.symbol, option.label)}</button>)}
+            </div>
           </div>
           {sellFamilyMatch?.multipleHeldMatches && <p className="mt-2 text-xs font-medium text-trim">该标的同时属于多个族，已按市值最大者展示</p>}
           {!snapshot.sell ? <p className="mt-3 text-sm text-ink-muted">卖出窗口快照尚未生成，请刷新量化快照。</p> : !sellFamily || !familyPnl ? <p className="mt-3 text-sm text-ink-muted">未持有，无卖出窗口可查。</p> : <SellWindow item={sellFamily} status={selectedSellStatus} pnl={familyPnl} displayCurrency={displayCurrency} rates={rates} audit={sellAudit} />}

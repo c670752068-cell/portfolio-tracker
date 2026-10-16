@@ -34,6 +34,7 @@ export interface QuoteSnapshot {
 
 export interface OptionDetails {
   underlying: string;
+  contractCode?: string;
   optionType: 'call' | 'put';
   strike: number | null;
   expiration: string | null;
@@ -115,6 +116,12 @@ export interface QuantPosition {
   asset_type: 'stock' | 'etf' | 'option';
   qty: number;
   market_value: number;
+  cost_basis?: number | null;
+  contract_code?: string | null;
+  option_type?: 'call' | 'put' | null;
+  strike?: number | null;
+  expiry?: string | null;
+  contract_multiplier?: number | null;
 }
 
 export interface QuantPositionsPayload {
@@ -149,6 +156,191 @@ export interface QuantSignalStats {
   d60: QuantSignalStatWindow;
 }
 
+export interface QuantDrawdownResearchHorizon {
+  horizon_trading_days: number;
+  n: number;
+  pending_count: number;
+  win_count: number;
+  win_rate_pct: number | null;
+  average_return_pct: number | null;
+  median_return_pct: number | null;
+  worst_return_pct: number | null;
+  best_return_pct: number | null;
+  sample_sufficient: boolean;
+}
+
+export interface QuantDrawdownResearch {
+  symbol: string;
+  basis_symbol: string;
+  available_start: string;
+  available_end: string;
+  cycle_count: number;
+  completed_cycle_count: number;
+  ongoing_cycle_count: number;
+  primary_horizon_days: number;
+  minimum_comparison_samples: number;
+  minimum_win_rate_pct: number;
+  best_supported_depth_pct: number | null;
+  most_observed_depth_pct: number;
+  levels: Array<{
+    depth_pct: number;
+    horizons: Record<string, QuantDrawdownResearchHorizon>;
+  }>;
+}
+
+export interface QuantHistoricalStandard {
+  symbol?: string;
+  basis_symbol?: string;
+  lookback_years?: number;
+  requested_start?: string;
+  available_start?: string;
+  available_end?: string;
+  event_floor_pct?: number;
+  completed_cycle_count?: number;
+  ongoing_cycle_count?: number;
+  sample_count: number;
+  average_drawdown_pct: number | null;
+  median_drawdown_pct: number | null;
+  sample_status: 'direct' | 'reference' | 'insufficient';
+  primary_statistic?: 'median';
+  average_usage?: 'display_only';
+  inherited?: boolean;
+}
+
+export interface QuantExecutionStandard {
+  symbol?: string;
+  basis_symbol: string;
+  threshold_pct: number | null;
+  source: string;
+  sample_status?: 'direct' | 'reference' | 'insufficient';
+  sample_count?: number;
+  execution_allowed: boolean;
+  requires_ma_confirmation?: boolean;
+  forward_support_status?: 'supported' | 'reference' | 'insufficient';
+}
+
+export interface QuantMaSlopeSnapshot {
+  symbol?: string;
+  available: boolean;
+  model: 'ma200_20d_annualized';
+  role: 'trend_context_only';
+  buy_veto: false;
+  ma_period: 200;
+  change_window_sessions: 20;
+  annualization_sessions: 252;
+  annualized_pct: number | null;
+  current_ma: number | null;
+  comparison_ma: number | null;
+  direction: 'up' | 'down' | null;
+  regime: 'strong_up' | 'weak_up' | 'weak_down' | 'strong_down' | null;
+  label: string;
+  as_of: string | null;
+  price_adjustment: 'QFQ' | string;
+  data_source: string;
+  formula: string;
+  reason: string;
+  required_bars?: number;
+  observed_bars?: number;
+  error?: string;
+  series?: ReadonlyArray<{
+    date: string;
+    annualized_pct: number;
+  }>;
+  decision_use?: false;
+  query_source?: 'decision_snapshot' | 'custom' | 'custom_dashboard';
+  dashboard?: QuantMaSlopeDashboard;
+}
+
+export type QuantMaSlopeDashboardRange = '1y' | '3y' | '5y' | '10y' | '20y';
+
+export interface QuantMaSlopeDashboardPoint {
+  date: string;
+  is_partial?: boolean;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number;
+  volume: number | null;
+  ma20?: number | null;
+  ma50?: number | null;
+  ma200?: number | null;
+  slope20?: number | null;
+  slope50?: number | null;
+  slope200?: number | null;
+  std200?: number | null;
+  band200?: [number, number] | null;
+  zscore200?: number | null;
+}
+
+export interface QuantMaSlopeTechnicalSummary {
+  price: number;
+  ma200: number | null;
+  distance_to_ma200_pct: number | null;
+  z_score: number | null;
+  z_score_band: string | null;
+  z_score_label: string;
+  ma200_slope_annualized_pct: number | null;
+  ma200_trend: 'strong_up' | 'weak_up' | 'weak_down' | 'strong_down' | null;
+  ma200_trend_label: string;
+}
+
+export type QuantChannelAlertState = 'buy' | 'buy_near' | 'sell' | 'sell_near' | 'neutral' | 'insufficient';
+
+export interface QuantChannelAlert {
+  stale?: boolean;
+  reviewed_at?: string;
+  available: boolean;
+  state: QuantChannelAlertState;
+  signal: 'buy' | 'sell' | 'neutral';
+  label: string;
+  as_of: string | null;
+  close?: number;
+  lower_band?: number;
+  upper_band?: number;
+  z_score?: number;
+  near_sigma?: number;
+  boundary_sigma?: number;
+  complete_close: true;
+  decision_use: false;
+  buy_veto: false;
+  reason: string;
+}
+
+export interface QuantChannelReviewSnapshot {
+  review_time: string;
+  timezone: 'America/New_York';
+  review_date: string | null;
+  updated_at: string | null;
+  symbols: Record<string, QuantChannelAlert>;
+  failed_symbols?: string[];
+  breakout_date?: string | null;
+  breakouts?: Record<string, ZBreakoutStatus>;
+  breakout_history?: ZBreakoutEvent[];
+}
+
+export interface ZBreakoutEvent {
+  id: string; symbol: string; date: string; direction: 'up' | 'down';
+  sessions: number; previous_z: number; z: number; confirmed: true;
+}
+export interface ZBreakoutStatus {
+  status: 'triggered' | 'none' | 'unavailable' | 'insufficient';
+  as_of: string; event: ZBreakoutEvent | null; reason: string;
+}
+
+export interface QuantMaSlopeDashboard {
+  range: QuantMaSlopeDashboardRange;
+  slope_window_sessions: number;
+  slope_unit: 'pct_per_day';
+  ma_periods: number[];
+  band_sigma?: number;
+  z_score_period?: number;
+  latest_bar_status?: 'intraday' | 'closed';
+  latest_closed_as_of?: string | null;
+  channel_alert?: QuantChannelAlert | null;
+  summary?: QuantMaSlopeTechnicalSummary | null;
+  series: QuantMaSlopeDashboardPoint[];
+}
+
 export interface QuantSymbolAnalysis {
   available: boolean;
   error?: string;
@@ -167,9 +359,10 @@ export interface QuantSymbolAnalysis {
     applicable: boolean;
     open: boolean;
     current_pct: number;
-    threshold_pct: number;
+    threshold_pct: number | null;
     current_price?: number | null;
     high_price?: number | null;
+    high_price_date?: string | null;
     threshold_price?: number | null;
     next_level_price?: number | null;
     price_session: string;
@@ -178,7 +371,13 @@ export interface QuantSymbolAnalysis {
     n: number;
     sample_insufficient: boolean;
     bear_included: boolean;
+    research?: QuantDrawdownResearch | null;
+    historical_standard?: QuantHistoricalStandard | null;
+    execution_standard?: QuantExecutionStandard | null;
   };
+  historical_standard?: QuantHistoricalStandard | null;
+  execution_standard?: QuantExecutionStandard | null;
+  ma_slope?: QuantMaSlopeSnapshot | null;
 }
 
 export interface QuantHoldingCost {
@@ -192,10 +391,103 @@ export interface QuantSellBasis {
   observation: boolean;
 }
 
+export interface QuantSellPricePlan {
+  available: boolean;
+  method: 'forward_pe' | 'historical_cycle' | 'recovery_valuation' | 'benchmark_high' | 'ndx_valuation_stages' | 'unavailable';
+  strategy_profile?: 'standard_stock' | 'high_growth_tolerant';
+  action_stage_key?: 'reduce_risk' | 'clear_derivatives' | 'trim_stock' | string;
+  basis_symbol: string | null;
+  current_price: number | null;
+  basis_current_price?: number | null;
+  current_forward_pe: number | null;
+  current_ttm_pe?: number | null;
+  implied_forward_eps: number | null;
+  sell_forward_pe: number | null;
+  sell_price: number | null;
+  trigger_price?: number | null;
+  clear_forward_pe: number | null;
+  clear_price: number | null;
+  gap_pct: number | null;
+  status: 'waiting' | 'reached' | 'unavailable';
+  quality: 'current_estimate' | 'historical_reference' | 'reference_only' | 'unavailable';
+  source: string | null;
+  as_of: string | null;
+  previous_high_price?: number | null;
+  previous_high_date?: string | null;
+  ttm_percentiles?: {
+    median: number | null;
+    p70: number | null;
+    p80: number | null;
+  };
+  stages?: ReadonlyArray<{
+    key: string;
+    label: string;
+    trigger_price: number | null;
+    trigger_kind: string;
+    prior_high_price?: number | null;
+    ttm_valuation_price?: number | null;
+    forward_valuation_price?: number | null;
+    ttm_pe?: number | null;
+    sell_holding_pct?: number | null;
+    reached: boolean;
+    action: string;
+  }>;
+  active_stage?: string | null;
+  sample_count?: number;
+  target_portfolio_weight_pct: number | null;
+  note: string;
+}
+
+export interface QuantExitResearch {
+  symbol: string;
+  basis_symbol: string;
+  available_start: string;
+  available_end: string;
+  sample_count: number;
+  minimum_samples: number;
+  sample_sufficient: boolean;
+  method: string;
+  retained_holding_pct: number;
+  anchor: {
+    low_date: string;
+    low_price: number;
+    current_price: number;
+    current_gain_from_low_pct: number;
+    highest_gain_from_low_pct: number;
+  } | null;
+  stages: ReadonlyArray<{
+    key: string;
+    label: string;
+    quantile: number;
+    target_gain_pct: number;
+    historical_reach_pct: number;
+    median_days_to_target: number | null;
+    sell_holding_pct: number;
+    target_price_from_latest_low: number | null;
+    reached_now: boolean;
+  }>;
+}
+
 export interface QuantSellFamily {
   family: string;
   market_value: number;
   held_symbols: readonly string[];
+  positions?: ReadonlyArray<{
+    symbol: string;
+    asset_type: 'stock' | 'etf' | 'option';
+    broker: string;
+    quantity: number;
+    contract_code?: string | null;
+    contract_multiplier: number;
+    current_price: number | null;
+    price_session: string;
+    price_note?: string | null;
+    market_value: number;
+    cost_basis: number | null;
+    average_cost: number | null;
+    unrealized_pnl_usd: number | null;
+    unrealized_pnl_pct: number | null;
+  }>;
   profit_gate?: {
     available: boolean;
     market_value: number;
@@ -245,7 +537,40 @@ export interface QuantSellFamily {
     }>;
     risk_first_order: readonly string[];
   };
+  exit_research?: QuantExitResearch | null;
+  sell_price_plan?: QuantSellPricePlan;
   recent_signals: ReadonlyArray<{ name: string; label: string; date: string }>;
+  decision?: {
+    verdict: 'SELL' | 'WAIT';
+    label: '可以卖出' | '再等等';
+    notification_state: 'sell' | 'near' | 'wait';
+    reason: string;
+    recommended_sell_pct: number;
+    evidence: {
+      profit: { status: string; pnl_pct: number | null; threshold_pct: number | null };
+      history: {
+        status: string;
+        basis_symbol?: string | null;
+        sample_count: number;
+        current_gain_pct: number | null;
+        target_gain_pct: number | null;
+        gap_pct: number | null;
+        historical_reach_pct: number | null;
+        sell_holding_pct: number | null;
+      };
+      valuation: {
+        status: string;
+        percentile: number | null;
+        source: string;
+        current_pe?: number | null;
+        average_pe?: number | null;
+        as_of?: string | null;
+      };
+      sentiment: { status: string; score: number | null; rating?: string | null };
+      relative_strength_hot: boolean;
+      recent_signals: readonly string[];
+    };
+  };
 }
 
 export interface QuantSellSnapshot {
@@ -335,6 +660,7 @@ export interface QuantBuyOpportunity {
   panic_session: string | null;
   excess_pct?: number;
   gap_pct?: number;
+  ma_slope?: QuantMaSlopeSnapshot;
 }
 
 export interface QuantSellOpportunity {
@@ -342,6 +668,7 @@ export interface QuantSellOpportunity {
   trigger: string;
   detail: string;
   shadow: boolean;
+  recommended_sell_pct?: number;
 }
 
 export interface QuantDepthPresentation {
@@ -355,6 +682,7 @@ export interface QuantOpportunitySummary {
   buy_ready: readonly QuantBuyOpportunity[];
   buy_near: readonly QuantBuyOpportunity[];
   sell_ready: readonly QuantSellOpportunity[];
+  sell_near?: readonly QuantSellOpportunity[];
   idle_symbols: readonly string[];
   idle_count: number;
   depth_states: Record<string, QuantDepthPresentation>;
@@ -487,6 +815,70 @@ export interface QuantForwardPeHistory {
   symbols: Record<string, QuantForwardPeEntry>;
 }
 
+export type QuantStockForwardZone =
+  | 'extreme_low'
+  | 'low'
+  | 'middle'
+  | 'high'
+  | 'ultra_high'
+  | 'exempt';
+
+export interface QuantStockForwardEntry {
+  symbol: string;
+  current: number | null;
+  available: boolean;
+  stale: boolean;
+  as_of: string | null;
+  source: string;
+  unavailable_reason: string | null;
+  zone: QuantStockForwardZone | null;
+  label: string | null;
+  icon: string | null;
+  message: string | null;
+  series: readonly { date: string; value: number }[];
+  series_start: string | null;
+  series_end: string | null;
+}
+
+export interface QuantStockForwardValuation {
+  generated_at: string;
+  metric: 'forward_pe_1bf';
+  source: string;
+  symbols_order: readonly string[];
+  thresholds: {
+    full_position_max: number;
+    low_max: number;
+    middle_max: number;
+    high_max: number;
+  };
+  history_note: string;
+  symbols: Record<string, QuantStockForwardEntry>;
+}
+
+export interface QuantIndexEtfValuationEntry {
+  symbol: string;
+  available: boolean;
+  basis_symbol: string;
+  basis_name: string;
+  current_pe: number | null;
+  forward_pe: number | null;
+  as_of: string | null;
+  source: string;
+  source_url: string;
+  fetched_at?: string;
+  historical_available: boolean;
+  history_note: string;
+  forward_note?: string;
+  metric_label?: string;
+  stale?: boolean;
+  refresh_error?: string;
+}
+
+export interface QuantIndexEtfValuation {
+  generated_at: string;
+  symbols: Record<string, QuantIndexEtfValuationEntry>;
+}
+
 export interface QuantBuyPlanCondition {
   key: 'ndx_pe_below' | 'cnn_score_below' | 'drawdown_below_pct' | 'vix_above' | 'vix_percentile_above';
   name: string;
@@ -526,7 +918,8 @@ export interface QuantBuyPlan {
         name: string;
         effective_pct: number;
         cash_pct: number;
-        hard_cap_pct: number;
+        unlimited?: boolean;
+        hard_cap_pct: number | null;
         over_hard_cap_usd: number;
       };
     };
@@ -612,6 +1005,8 @@ export interface QuantVixStudy {
 export interface QuantRegimeStatistic {
   horizon_trading_days: number;
   n: number;
+  win_count?: number;
+  pending_count?: number;
   win_rate_pct: number | null;
   mean_return_pct: number | null;
   median_return_pct: number | null;
@@ -631,6 +1026,8 @@ export interface QuantRegimeGridCell {
   row_bucket: string;
   col_bucket: string;
   n: number;
+  observation_days?: number;
+  episode_count?: number;
   bear_included: boolean;
   reference_benchmark: string;
   reference_horizon_days: number;
@@ -650,6 +1047,8 @@ export interface QuantRegimeCurrentCell {
   as_of: string;
   price_session: string;
   n: number;
+  observation_days?: number;
+  episode_count?: number;
   bear_included: boolean;
   statistics: Record<string, Record<string, QuantRegimeStatistic>>;
 }
@@ -660,9 +1059,9 @@ export interface QuantRegimeVerdictCard {
   sample_sufficient: boolean;
   bear_included: boolean;
   sample_context: string;
-  primary: { horizon_days: number | null; win_rate_pct: number | null; median_return_pct: number | null; worst_return_pct: number | null; n: number | null };
-  horizons: Record<string, { win_rate_pct: number | null; median_return_pct: number | null; worst_return_pct: number | null; n: number } | null>;
-  leveraged: { symbol: string; [horizon: string]: string | { win_rate_pct: number | null; median_return_pct: number | null; worst_return_pct: number | null; n: number } | null };
+  primary: { horizon_days: number | null; win_rate_pct: number | null; win_count?: number; pending_count?: number; median_return_pct: number | null; worst_return_pct: number | null; n: number | null };
+  horizons: Record<string, { win_rate_pct: number | null; win_count?: number; pending_count?: number; median_return_pct: number | null; worst_return_pct: number | null; n: number } | null>;
+  leveraged: { symbol: string; [horizon: string]: string | { win_rate_pct: number | null; win_count?: number; pending_count?: number; median_return_pct: number | null; worst_return_pct: number | null; n: number } | null };
   overlay_note: string;
   action_hint: string;
   caveats: readonly string[];
@@ -783,6 +1182,8 @@ export interface QuantAnalysisFreshness {
   prices_at: string | null;
   price_session: string | null;
   valuation_as_of: string | null;
+  /** Generation time of the historical statistics file, not this page refresh. */
+  drawdown_generated_at?: string | null;
   cnn_as_of: string | null;
   regime_evaluated_at: string | null;
   sell_evaluated_at: string | null;
@@ -869,7 +1270,24 @@ export interface QuantPortfolioRisk {
     delta_exposure_usd?: number;
     delta_assumption?: string;
     delta_assumption_note?: string;
-    items?: Array<{ symbol: string; delta?: number; delta_source?: string; delta_notional_usd?: number; days_to_expiry?: number | null; status?: string }>;
+    items?: Array<{
+      symbol: string;
+      family?: string;
+      contract_code?: string | null;
+      option_type?: string | null;
+      strike?: number | null;
+      expiry?: string | null;
+      option_price?: number | null;
+      underlying_price?: number | null;
+      contract_multiplier?: number | null;
+      underlying_leverage?: number | null;
+      delta?: number;
+      delta_source?: string;
+      delta_notional_usd?: number;
+      data_quality?: string;
+      days_to_expiry?: number | null;
+      status?: string;
+    }>;
   };
   sleeve_status?: Record<string, QuantSleeveStatus>;
   allocation_plan?: {
@@ -910,6 +1328,7 @@ export interface QuantSleeveMetric {
 }
 
 export interface QuantSleeveStatus {
+  unlimited?: boolean;
   baseline_pct?: number;
   hard_cap_pct?: number | null;
   borrowed_pp?: number;
@@ -934,6 +1353,23 @@ export interface QuantAnalysisSnapshot {
   disclaimer: string;
   context: Record<string, unknown>;
   symbols: Record<string, QuantSymbolAnalysis>;
+  growth_watchlist?: {
+    generated_at?: string;
+    source?: string;
+    group_name?: string;
+    names?: Record<string, string>;
+    active_symbols: readonly string[];
+    inherited?: ReadonlyArray<{ symbol: string; basis_symbol: string }>;
+    excluded?: readonly string[];
+    ignored?: readonly string[];
+    unresolved?: ReadonlyArray<{
+      symbol: string;
+      name?: string;
+      security_type?: string;
+      reason?: string;
+    }>;
+    stale?: boolean;
+  };
   holding_costs?: Record<string, QuantHoldingCost>;
   panic_window?: QuantPanicWindowSnapshot;
   review_checkpoint?: {
@@ -951,6 +1387,8 @@ export interface QuantAnalysisSnapshot {
   summary?: QuantOpportunitySummary;
   pe_history?: PeHistoryPayload;
   pe_history_forward?: QuantForwardPeHistory;
+  stock_forward_valuation?: QuantStockForwardValuation;
+  index_etf_valuation?: QuantIndexEtfValuation;
   valuation_tab?: QuantValuationTab;
   buy_plan_status?: QuantBuyPlanStatus;
   regime_status?: QuantRegimeStatus;

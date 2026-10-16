@@ -5,6 +5,7 @@ import {
   fetchForwardPe,
   fetchQuantPeHistory,
   resolvePeSnapshot,
+  parsePeHistoryPayload,
   type PeHistoryPayload,
 } from './peData';
 
@@ -45,6 +46,14 @@ function history(): PeHistoryPayload {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('fetchQuantPeHistory', () => {
+  it('preserves the ETF index proxy and its explanation without replacing the original series', () => {
+    const payload = history();
+    payload.symbols.VOO = { ...payload.symbols.MSFT, basis_symbol: 'SPX', basis_note: 'VOO 展示标普500指数 PE；价格使用自身数据。' };
+    const result = parsePeHistoryPayload(payload);
+    expect(result.symbols.VOO.basis_symbol).toBe('SPX');
+    expect(result.symbols.VOO.basis_note).toContain('价格使用自身数据');
+    expect(result.symbols.VOO.series).toEqual(payload.symbols.VOO.series);
+  });
   it('reads an embedded quant PE payload and preserves the explicit TTM metric', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       source: 'futu-assistant',

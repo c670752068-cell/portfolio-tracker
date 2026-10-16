@@ -85,6 +85,14 @@ button:active:not(:disabled) {
   transform: scale(0.97);
 }
 
+@media (pointer: coarse) {
+  button,
+  select,
+  input:not([type='checkbox']):not([type='radio']):not([type='file']) {
+    min-height: 44px;
+  }
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -172,4 +180,11 @@ a:focus-visible {
     rgb(var(--surface-raised) / 0.3) 0 3px,
     transparent 3px 6px
   );
+}
+
+/* A phone in landscape needs its short viewport for charts, not a pinned header. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .portfolio-header {
+    position: static;
+  }
 }

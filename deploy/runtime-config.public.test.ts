@@ -13,7 +13,7 @@ describe('GitHub Pages canonical deployment redirect', () => {
 
     runInNewContext(source, { window });
 
-    expect(replace).toHaveBeenCalledWith('http://67.215.255.196:8788/');
+    expect(replace).toHaveBeenCalledWith('https://myopenid.top/');
   });
 
   it('does not redirect an unrelated local preview', async () => {

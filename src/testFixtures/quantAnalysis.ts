@@ -200,6 +200,21 @@ export const quantAnalysisFixture = {
           ],
           risk_first_order: ['option', 'leveraged_2x', 'underlying'],
         },
+        exit_research: {
+          symbol: 'MSFT', basis_symbol: 'MSFT',
+          available_start: '2021-01-04', available_end: '2026-07-31',
+          sample_count: 6, minimum_samples: 4, sample_sufficient: true,
+          method: 'drawdown_trough_to_next_cycle_peak', retained_holding_pct: 15,
+          anchor: {
+            low_date: '2026-06-01', low_price: 400, current_price: 460,
+            current_gain_from_low_pct: 15, highest_gain_from_low_pct: 18,
+          },
+          stages: [
+            { key: 'conservative', label: '保守兑现', quantile: 0.25, target_gain_pct: 12, historical_reach_pct: 83.33, median_days_to_target: 20, sell_holding_pct: 25, target_price_from_latest_low: 448, reached_now: true },
+            { key: 'balanced', label: '中位兑现', quantile: 0.5, target_gain_pct: 22, historical_reach_pct: 50, median_days_to_target: 45, sell_holding_pct: 35, target_price_from_latest_low: 488, reached_now: false },
+            { key: 'stretch', label: '乐观兑现', quantile: 0.75, target_gain_pct: 35, historical_reach_pct: 33.33, median_days_to_target: 80, sell_holding_pct: 25, target_price_from_latest_low: 540, reached_now: false },
+          ],
+        },
         recent_signals: [{ name: 'five_day_gain', label: '5日涨幅过热', date: '2026-07-15' }],
       },
     },

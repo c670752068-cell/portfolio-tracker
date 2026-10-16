@@ -43,8 +43,23 @@ export function getServerQuantAnalysisUrl(): string {
   return apiUrl('/api/portfolio/quant-analysis');
 }
 
+export function getServerMaSlopeUrl(): string {
+  return apiUrl('/api/portfolio/ma-slope');
+}
+
+export function getServerSectorRotationUrl(): string {
+  return apiUrl('/api/portfolio/sector-rotation');
+}
+
+export function getServerChannelAlertsUrl(): string {
+  return apiUrl('/api/portfolio/channel-alerts');
+}
+
 export function getServerAlertRulesUrl(): string {
   return apiUrl('/api/portfolio/alert-rules');
+}
+export function getServerNotificationSettingsUrl(): string {
+  return apiUrl('/api/notifications/settings');
 }
 
 export function getServerRefreshRequestUrl(): string {

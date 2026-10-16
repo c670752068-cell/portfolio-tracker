@@ -47,7 +47,8 @@ interface AiMessage {
 
 interface AiResponse {
   choices?: Array<{
-    message?: { content?: string };
+    finish_reason?: string;
+    message?: { content?: string; reasoning_content?: string };
   }>;
   error?: { message?: string; code?: string };
 }
@@ -116,7 +117,7 @@ export async function testAiConnection(settings: AppSettings): Promise<string> {
   const content = await requestAi(
     settings,
     [{ role: 'user', content: '只回复 OK，用于测试 API 连接。' }],
-    { maxTokens: 16, timeoutMs: PING_TIMEOUT_MS },
+    { maxTokens: 64, timeoutMs: PING_TIMEOUT_MS },
   );
   return `${label} 连接成功：${content.slice(0, 40) || 'OK'}`;
 }
@@ -275,11 +276,8 @@ async function requestAi(
         body: JSON.stringify({
           model: requestModel,
           messages,
-          temperature: temperatureForModel(config.provider, requestModel),
           max_tokens: options.maxTokens ?? 3500,
-          // Screenshot extraction only needs structured facts. Explicitly disabling
-          // reasoning on GLM avoids a slow, unnecessary thinking pass.
-          ...(config.provider === 'zhipu' ? { thinking: { type: 'disabled' } } : {}),
+          ...requestTuning(config.provider, requestModel),
         }),
         signal: controller.signal,
       });
@@ -321,8 +319,18 @@ async function requestAi(
         failureKind,
       );
     }
-    const responseContent = data.choices?.[0]?.message?.content;
-    if (!responseContent) throw new KimiError(`${config.label} 返回为空，请重试或减少截图数量。`);
+    const firstChoice = data.choices?.[0];
+    const responseContent = firstChoice?.message?.content;
+    if (!responseContent) {
+      const thinkingUsedAllTokens = Boolean(firstChoice?.message?.reasoning_content)
+        && firstChoice?.finish_reason === 'length';
+      throw new KimiError(
+        thinkingUsedAllTokens
+          ? `${config.label} 的思考过程用完了输出额度，未返回正文。`
+          : `${config.label} 返回为空，请重试或减少截图数量。`,
+        thinkingUsedAllTokens ? '系统已关闭 K2.6 思考模式；请再测试一次连接。' : undefined,
+      );
+    }
     return responseContent;
   }
 }
@@ -398,9 +406,17 @@ function networkHint(config: AiRuntimeConfig): string {
   return '请求还没成功返回。当前压缩已生效，若仍超时，多数是 Kimi 视觉请求处理慢或手机网络到 Moonshot 不稳。建议切换到智谱 GLM，或填入 Cloudflare Worker / Vercel 代理 URL。VPN/Clash 不能直接嵌入 GitHub Pages 网页。';
 }
 
-function temperatureForModel(provider: AiProvider, model: string): number {
-  if (provider === 'kimi' && model.startsWith('kimi-k2')) return 1;
-  return 0.1;
+function requestTuning(provider: AiProvider, model: string): Record<string, unknown> {
+  // Kimi K2.5/K2.6 enables thinking by default. These requests only extract
+  // structured facts, so thinking wastes the output budget and can leave an
+  // empty content field. K2.6 also rejects/ignores custom temperature values.
+  if (provider === 'kimi' && model.startsWith('kimi-k2')) {
+    return { thinking: { type: 'disabled' } };
+  }
+  if (provider === 'zhipu') {
+    return { temperature: 0.1, thinking: { type: 'disabled' } };
+  }
+  return { temperature: 0.1 };
 }
 
 function normalizeImportedPortfolio(raw: string): ImportedPortfolio {

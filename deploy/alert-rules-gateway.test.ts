@@ -64,13 +64,13 @@ async function stopGateway(harness: GatewayHarness): Promise<void> {
 async function postRule(origin: string, rule: Record<string, unknown>): Promise<Response> {
   return fetch(`${origin}/api/portfolio/alert-rules`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { Authorization: 'Bearer unit-secret', 'Content-Type': 'application/json' },
     body: JSON.stringify(rule),
   });
 }
 
 describe('portfolio alert-rules gateway', () => {
-  it('creates, updates, publicly lists, and deletes a target rule across devices', async () => {
+  it('creates, updates, lists, and deletes a protected target rule', async () => {
     const harness = await startGateway();
     try {
       const create = await postRule(harness.origin, {
@@ -95,7 +95,14 @@ describe('portfolio alert-rules gateway', () => {
         }),
       });
 
-      const firstDevice = await fetch(`${harness.origin}/api/portfolio/alert-rules`);
+      const publicRead = await fetch(`${harness.origin}/api/portfolio/alert-rules`);
+      expect(publicRead.status).toBe(200);
+      expect(await publicRead.json()).toEqual({
+        rules: [expect.objectContaining({ id: 'fngu-target', symbol: 'FNGU', target_price: 40 })],
+      });
+      const firstDevice = await fetch(`${harness.origin}/api/portfolio/alert-rules`, {
+        headers: { Authorization: 'Bearer unit-secret' },
+      });
       expect(firstDevice.status).toBe(200);
       expect(await firstDevice.json()).toEqual({
         rules: [expect.objectContaining({ id: 'fngu-target', symbol: 'FNGU', target_price: 40 })],
@@ -113,15 +120,21 @@ describe('portfolio alert-rules gateway', () => {
       });
       expect(update.status).toBe(200);
 
-      const secondDevice = await fetch(`${harness.origin}/api/portfolio/alert-rules`);
+      const secondDevice = await fetch(`${harness.origin}/api/portfolio/alert-rules`, {
+        headers: { Authorization: 'Bearer unit-secret' },
+      });
       expect(await secondDevice.json()).toEqual({
         rules: [expect.objectContaining({ id: 'fngu-target', target_price: 42, approach_pct: 3 })],
       });
 
-      const remove = await fetch(`${harness.origin}/api/portfolio/alert-rules/fngu-target`, { method: 'DELETE' });
+      const remove = await fetch(`${harness.origin}/api/portfolio/alert-rules/fngu-target`, {
+        method: 'DELETE', headers: { Authorization: 'Bearer unit-secret' },
+      });
       expect(remove.status).toBe(200);
       expect(await remove.json()).toEqual({ ok: true, id: 'fngu-target' });
-      expect(await (await fetch(`${harness.origin}/api/portfolio/alert-rules`)).json()).toEqual({ rules: [] });
+      expect(await (await fetch(`${harness.origin}/api/portfolio/alert-rules`, {
+        headers: { Authorization: 'Bearer unit-secret' },
+      })).json()).toEqual({ rules: [] });
     } finally {
       await stopGateway(harness);
     }

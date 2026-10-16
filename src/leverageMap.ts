@@ -8,6 +8,7 @@ export interface LeverageInfo {
 export const LEVERAGE_MAP: Readonly<Record<string, LeverageInfo>> = {
   TSLL: { factor: 2, underlying: 'TSLA' },
   MSFU: { factor: 2, underlying: 'MSFT' },
+  METU: { factor: 2, underlying: 'META' },
   NVDL: { factor: 2, underlying: 'NVDA' },
   TQQQ: { factor: 3, underlying: null },
   QLD: { factor: 2, underlying: null },
@@ -16,6 +17,7 @@ export const LEVERAGE_MAP: Readonly<Record<string, LeverageInfo>> = {
   SSO: { factor: 2, underlying: null },
   UDOW: { factor: 3, underlying: null },
   FNGU: { factor: 3, underlying: null },
+  FAS: { factor: 3, underlying: null },
   SOXL: { factor: 3, underlying: null },
   TECL: { factor: 3, underlying: null },
   TNA: { factor: 3, underlying: null },
