@@ -29,9 +29,13 @@ export function withSaneSellPrices(family: QuantSellFamily): QuantSellFamily {
   const reference = sellPriceReference(plan);
   if (reference === null) return family;
 
-  const keep = (price: number | null | undefined) => (
-    price === null || price === undefined || isSaneSellPrice(price, reference) ? price : null
-  );
+  let rejected = false;
+  const keep = (price: number | null | undefined): number | null => {
+    if (price === null || price === undefined) return null;
+    if (isSaneSellPrice(price, reference)) return price;
+    rejected = true;
+    return null;
+  };
   const sellPrice = keep(plan.sell_price);
   const triggerPrice = keep(plan.trigger_price);
   const clearPrice = keep(plan.clear_price);
@@ -39,18 +43,18 @@ export function withSaneSellPrices(family: QuantSellFamily): QuantSellFamily {
     const trigger = keep(stage.trigger_price);
     return trigger === stage.trigger_price ? stage : { ...stage, trigger_price: trigger, reached: false };
   });
-  const stagesChanged = Boolean(stages?.some((stage, index) => stage !== plan.stages?.[index]));
-  if (sellPrice === plan.sell_price && triggerPrice === plan.trigger_price
-    && clearPrice === plan.clear_price && !stagesChanged) return family;
+  if (!rejected) return family;
 
-  const nothingLeft = !positive(sellPrice) && !positive(triggerPrice)
-    && !(stages ?? []).some((stage) => positive(stage.trigger_price));
+  const nothingLeft = sellPrice === null && triggerPrice === null
+    && !(stages ?? []).some((stage) => stage.trigger_price !== null);
   const sanitized: QuantSellPricePlan = nothingLeft
     ? {
       ...plan,
       sell_price: null, trigger_price: null, clear_price: null, stages: [], active_stage: null,
       method: 'unavailable', status: 'unavailable', quality: 'unavailable', available: false,
     }
-    : { ...plan, sell_price: sellPrice, trigger_price: triggerPrice, clear_price: clearPrice, stages };
+    : {
+      ...plan, sell_price: sellPrice, trigger_price: triggerPrice, clear_price: clearPrice, stages,
+    };
   return { ...family, sell_price_plan: sanitized };
 }

@@ -30,8 +30,11 @@ export function saneSellPricePlan(plan, reference, onReject = () => {}) {
   const base = positive(reference) ?? sellPriceReference(plan);
   if (base === null) return plan;
 
+  let rejected = false;
   const keep = (field, price) => {
-    if (price === null || price === undefined || isSaneSellPrice(price, base)) return price;
+    if (price === null || price === undefined) return null;
+    if (isSaneSellPrice(price, base)) return price;
+    rejected = true;
     onReject({
       field, price: Number(price), reference: base, method: String(plan.method || ''),
       basis_symbol: plan.basis_symbol ?? null,
@@ -48,12 +51,10 @@ export function saneSellPricePlan(plan, reference, onReject = () => {}) {
     const trigger = keep(`stages.${stage?.key ?? ''}`, stage?.trigger_price);
     return trigger === stage?.trigger_price ? stage : { ...stage, trigger_price: trigger, reached: false };
   });
-  const stagesChanged = Boolean(stages?.some((stage, index) => stage !== rawStages[index]));
-  if (sellPrice === plan.sell_price && triggerPrice === plan.trigger_price
-    && clearPrice === plan.clear_price && !stagesChanged) return plan;
+  if (!rejected) return plan;
 
-  const nothingLeft = positive(sellPrice) === null && positive(triggerPrice) === null
-    && !(stages ?? []).some((stage) => positive(stage?.trigger_price) !== null);
+  const nothingLeft = sellPrice === null && triggerPrice === null
+    && !(stages ?? []).some((stage) => stage?.trigger_price !== null);
   return nothingLeft
     ? {
       ...plan,
