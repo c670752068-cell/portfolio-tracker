@@ -36,6 +36,8 @@ export function emptyDecisionLog() {
     version: DECISION_LOG_VERSION,
     revision: 0,
     updated_at: null,
+    // 起算点：这个时刻（含）之前的推算成交不再入账，用于「从空白开始」。
+    trades_from: null,
     trades: [],
     nav_series: [],
     cash_flows: [],
@@ -48,6 +50,7 @@ export function normalizeDecisionLog(value) {
     version: DECISION_LOG_VERSION,
     revision: numeric(store.revision) ?? 0,
     updated_at: typeof store.updated_at === 'string' ? store.updated_at : null,
+    trades_from: typeof store.trades_from === 'string' ? store.trades_from : null,
     trades: rows(store.trades).filter((item) => typeof record(item).id === 'string'),
     nav_series: rows(store.nav_series).filter((item) => typeof record(item).date === 'string'),
     cash_flows: rows(store.cash_flows).filter((item) => typeof record(item).id === 'string'),
@@ -223,6 +226,8 @@ export function captureTrades(store, snapshot, { now = new Date(), channelReview
     const quantity = numeric(item.quantity);
     const recordedAt = typeof item.recorded_at === 'string' ? item.recorded_at : null;
     if (!symbol || !['BUY', 'SELL'].includes(side) || quantity === null || quantity === 0 || !recordedAt) continue;
+    // 用户清过一次日志之后，起算点之前的旧成交不再抓回来。
+    if (current.trades_from && new Date(recordedAt).toISOString() <= current.trades_from) continue;
     const key = tradeKey(item);
     if (known.has(key)) continue;
     known.add(key);
@@ -410,6 +415,23 @@ export function removeCashFlow(store, id, now = new Date()) {
   const cash_flows = current.cash_flows.filter((flow) => flow.id !== id);
   if (cash_flows.length === current.cash_flows.length) throw Object.assign(new Error('找不到这条出入金'), { status: 404 });
   return { ...current, cash_flows, revision: current.revision + 1, updated_at: now.toISOString() };
+}
+
+/** 清空交易记录并把起算点定在最后一笔成交上；净值和出入金不动。 */
+export function clearTrades(store, now = new Date()) {
+  const current = normalizeDecisionLog(store);
+  if (current.trades.length === 0) return store;
+  const latest = current.trades
+    .map((trade) => Date.parse(String(trade.trade_time || '')))
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => right - left)[0];
+  return {
+    ...current,
+    trades: [],
+    trades_from: new Date(Number.isFinite(latest) ? latest : +now).toISOString(),
+    revision: current.revision + 1,
+    updated_at: now.toISOString(),
+  };
 }
 
 export async function readDecisionLog(root) {

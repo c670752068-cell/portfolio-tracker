@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  addManualTrade, applyCashFlow, applyTradeNote, captureNav, captureTrades, createDecisionLogRoute,
+  addManualTrade, applyCashFlow, applyTradeNote, captureNav, captureTrades, clearTrades, createDecisionLogRoute,
   dropStoredSnapshotArtifacts, emptyDecisionLog, readDecisionLog, removeCashFlow, sameSiteWrite,
   tradeKey, writeDecisionLog,
 } from './decision-log.mjs';
@@ -439,5 +439,66 @@ describe('整批读空伪影', () => {
     const leftovers = cleaned.trades.filter((trade) => trade.recorded_by === 'position_ledger' && !trade.note);
     expect(leftovers).toHaveLength(1);
     expect(leftovers[0]).toMatchObject({ side: 'BUY', symbol: stored.trades[0].symbol, qty: stored.trades[0].qty });
+  });
+});
+
+describe('从空白开始', () => {
+  const events = [
+    { broker: 'IBKR', symbol: 'TSLL', side: 'BUY', quantity: 230, price: 10.162424, price_source: 'broker_cost_delta', estimated: false, asset_type: 'etf', recorded_at: '2026-10-11T20:26:17.000-04:00' },
+    { broker: 'IBKR', symbol: 'NAIL', side: 'BUY', quantity: 60, price: 38.660633, price_source: 'broker_cost_delta', estimated: false, asset_type: 'etf', recorded_at: '2026-10-11T20:26:17.000-04:00' },
+  ];
+
+  it('清空交易并记下起算点，净值和出入金不动', () => {
+    const seeded = captureNav(
+      captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: events } }, { now: new Date('2026-10-16T08:00:00Z') }),
+      { ammo_overview: { nav_usd: 185_419.71 } },
+      { date: '2026-10-16' },
+    );
+    const withFlow = applyCashFlow(seeded, { date: '2026-10-16', amount: 100 });
+    expect(withFlow.trades).toHaveLength(2);
+
+    const cleared = clearTrades(withFlow, new Date('2026-10-16T10:00:00Z'));
+
+    expect(cleared.trades).toEqual([]);
+    expect(cleared.nav_series).toHaveLength(1);
+    expect(cleared.cash_flows).toHaveLength(1);
+    expect(cleared.trades_from).toBe('2026-10-12T00:26:17.000Z');
+    expect(cleared.revision).toBe(withFlow.revision + 1);
+  });
+
+  it('起算点之前的成交不会再被抓回来，之后的照常入账', () => {
+    const cleared = clearTrades(
+      captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: events } }, { now: new Date('2026-10-16T08:00:00Z') }),
+      new Date('2026-10-16T10:00:00Z'),
+    );
+
+    const again = captureTrades(cleared, { position_ledger: { recent_events: events } }, { now: new Date('2026-10-16T11:00:00Z') });
+    expect(again.trades).toEqual([]);
+    // 没有新增就不该产生新版本
+    expect(again.revision).toBe(cleared.revision);
+    expect(again.trades_from).toBe(cleared.trades_from);
+
+    const later = captureTrades(cleared, {
+      position_ledger: {
+        recent_events: [...events, { ...events[0], symbol: 'TQQQ', recorded_at: '2026-10-16T10:30:00.000-04:00' }],
+      },
+    }, { now: new Date('2026-10-16T15:00:00Z') });
+    expect(later.trades.map((trade) => trade.symbol)).toEqual(['TQQQ']);
+  });
+
+  it('没有交易可清时原样返回', () => {
+    const empty = emptyDecisionLog();
+    expect(clearTrades(empty, new Date('2026-10-16T10:00:00Z'))).toBe(empty);
+  });
+
+  it('存盘读盘保留起算点', async () => {
+    const dir = await root();
+    const cleared = clearTrades(
+      captureTrades(emptyDecisionLog(), { position_ledger: { recent_events: events } }, { now: new Date('2026-10-16T08:00:00Z') }),
+      new Date('2026-10-16T10:00:00Z'),
+    );
+    await writeDecisionLog(dir, cleared);
+
+    expect((await readDecisionLog(dir)).trades_from).toBe('2026-10-12T00:26:17.000Z');
   });
 });
