@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildQuantDecisionEvents,
   deliverQuantDecisionAlerts,
@@ -455,5 +455,49 @@ describe('quant decision mobile alerts', () => {
       title: '🟢 AVGO · 可买 · $360.81',
       body: expect.stringContaining('斜率 -12.34%（强势下跌，仅风险提示）'),
     })]);
+  });
+});
+
+describe('离谱的卖出线不触发推送', () => {
+  const tslaSnapshot = {
+    symbols: { TSLA: { market_price: { available: true, current_price: 382.7 } } },
+    sell: { symbols: { TSLA: {
+      sell_price_plan: {
+        available: true, method: 'recovery_valuation', status: 'reached', quality: 'current_estimate',
+        basis_symbol: 'TSLA', current_price: 367.16, basis_current_price: 367.16,
+        current_forward_pe: 355.53, implied_forward_eps: 1.032712,
+        sell_price: 30.98, trigger_price: 30.98, clear_price: 33.05,
+        action_stage_key: 'reduce_risk', active_stage: 'trim_stock',
+        stages: [{
+          key: 'trim_stock', label: '正股分批减仓', trigger_price: 30.98,
+          trigger_kind: 'forward_valuation', reached: true, action: '正股只分批减仓',
+        }],
+      },
+      decision: {
+        verdict: 'SELL', notification_state: 'sell', reason: '已到卖出价', recommended_sell_pct: 20,
+        evidence: { history: { basis_symbol: 'TSLA' } },
+      },
+    } } },
+  };
+
+  it('TSLA 现价 $382.70、卖出线 $30.98 时不推送，并把输入数据写进日志', () => {
+    const logWarning = vi.fn();
+
+    expect(buildQuantDecisionEvents(tslaSnapshot, { logWarning })).toEqual([]);
+    expect(logWarning).toHaveBeenCalled();
+    expect(String(logWarning.mock.calls[0][0])).toContain('TSLA');
+    expect(String(logWarning.mock.calls[0][0])).toContain('30.98');
+  });
+
+  it('合理的卖出线照常推送', () => {
+    const logWarning = vi.fn();
+    const snapshot = structuredClone(tslaSnapshot);
+    snapshot.sell.symbols.TSLA.sell_price_plan.sell_price = 498.83;
+    snapshot.sell.symbols.TSLA.sell_price_plan.trigger_price = 380;
+    snapshot.sell.symbols.TSLA.sell_price_plan.clear_price = 520;
+    snapshot.sell.symbols.TSLA.sell_price_plan.stages[0].trigger_price = 380;
+
+    expect(buildQuantDecisionEvents(snapshot, { logWarning })).toHaveLength(1);
+    expect(logWarning).not.toHaveBeenCalled();
   });
 });

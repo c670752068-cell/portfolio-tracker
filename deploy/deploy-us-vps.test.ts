@@ -51,3 +51,11 @@ describe('US VPS deployment bundle', () => {
     expect(script).toContain("REMOTE_STABLE_WEB='/opt/portfolio-tracker-web'");
   });
 });
+
+describe('新增的网关模块必须一起上传', () => {
+  it('上传并语法检查 sell-price-sanity.mjs（网关 import 它，漏传会起不来）', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/sell-price-sanity.mjs "${SERVER}:${REMOTE_RELEASE_APP}/sell-price-sanity.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/sell-price-sanity.mjs'");
+  });
+});

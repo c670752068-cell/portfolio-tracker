@@ -7,6 +7,7 @@ import type {
 } from '../types';
 import { SellWindowSection } from './SellWindowSection';
 import { isDustSellFamily } from '../dustPosition';
+import { withSaneSellPrices } from '../sellPriceSanity';
 import { hasSellValuationConflict as valuationConflict } from '../sellStatus';
 
 interface Props {
@@ -173,7 +174,10 @@ export function SellDecisionDashboard({
   refreshState = { phase: 'idle', message: '' },
   refreshCooldownSeconds = 0,
 }: Props) {
-  const families = useMemo(() => Object.values(snapshot?.sell?.symbols || {}).filter((item) => !isDustSellFamily(item)).sort((a, b) => {
+  const families = useMemo(() => Object.values(snapshot?.sell?.symbols || {})
+    .filter((item) => !isDustSellFamily(item))
+    .map(withSaneSellPrices)
+    .sort((a, b) => {
     const aSell = a.decision?.verdict === 'SELL' ? 0 : 1;
     const bSell = b.decision?.verdict === 'SELL' ? 0 : 1;
     return aSell - bSell || b.market_value - a.market_value || a.family.localeCompare(b.family);

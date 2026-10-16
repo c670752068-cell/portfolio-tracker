@@ -12,6 +12,7 @@ import {
   formatVixPositionFloorNotification,
 } from './notification-copy.mjs';
 import { classifyMarketSession, etParts } from './market-session.mjs';
+import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 
 const BEIJING_TIME_ZONE = 'Asia/Shanghai';
 const NOTIFICATION_WINDOW_MINUTES = 5;
@@ -168,16 +169,34 @@ function actionableSellDecisionSymbols(snapshot) {
     .filter(Boolean));
 }
 
-function sellDecisionEvents(snapshot, now) {
+// 卖出线离谱时（低于现价一半或高于三倍）不当作有效卖出线，也不拿它触发推送；
+// 被丢弃的价格连同输入数据写进服务器日志，便于排查量化侧的估值口径。
+function sanePlanFor(snapshot, symbol, raw, logWarning) {
+  const plan = record(record(raw).sell_price_plan);
+  // 触发价的价格口径跟着 basis：指数方案的触发价是底层指数价（TQQQ 看 QQQ），
+  // 个股方案才是自身价；只有方案自己没带价时才退回快照现价。
+  return saneSellPricePlan(
+    plan,
+    sellPriceReference(plan) ?? snapshotPrice(snapshot, symbol),
+    (rejected) => logWarning(
+      `sell price out of range: ${symbol} ${rejected.field}=${rejected.price}`
+      + ` reference=${rejected.reference} method=${rejected.method}`
+      + ` basis=${rejected.basis_symbol} forward_pe=${rejected.current_forward_pe}`
+      + ` forward_eps=${rejected.implied_forward_eps}`,
+    ),
+  );
+}
+
+function sellDecisionEvents(snapshot, now, logWarning) {
   return Object.entries(record(record(snapshot.sell).symbols)).flatMap(([rawSymbol, raw]) => {
     const symbol = symbolOf(rawSymbol);
     const decision = record(record(raw).decision);
     if (!symbol || decision.verdict !== 'SELL' || decision.notification_state !== 'sell') return [];
-    if (!sellDecisionStillActive(snapshot, symbol, raw)) return [];
+    const pricePlan = sanePlanFor(snapshot, symbol, raw, logWarning);
+    if (!sellDecisionStillActive(snapshot, symbol, raw, pricePlan)) return [];
     const protectedEvent = earningsProtection(snapshot, symbol, now)?.event;
     if (protectedEvent) return [protectedEvent];
     const history = record(record(decision.evidence).history);
-    const pricePlan = record(record(raw).sell_price_plan);
     const notification = formatSellNotification(
       symbol,
       String(decision.reason || '网站卖出条件已满足'),
@@ -201,12 +220,13 @@ function sellDecisionEvents(snapshot, now) {
   });
 }
 
-function sellDecisionStillActive(snapshot, symbol, raw) {
-  const plan = record(record(raw).sell_price_plan);
-  const method = String(plan.method || '');
+function sellDecisionStillActive(snapshot, symbol, raw, plan) {
+  const method = String(record(record(raw).sell_price_plan).method || '');
   if (!['forward_pe', 'recovery_valuation'].includes(method)) return true;
   const currentPrice = snapshotPrice(snapshot, symbol);
   if (currentPrice === null) return false;
+  // 校验后整份方案已不可用，说明卖出线离谱，不把它当成「已到价」。
+  if (String(plan.method || '') === 'unavailable') return false;
   let triggerPrice = Number(plan.trigger_price);
   if (!Number.isFinite(triggerPrice)) triggerPrice = Number(plan.sell_price);
   if (method === 'recovery_valuation' && !Number.isFinite(triggerPrice)) {
@@ -275,7 +295,7 @@ function valuationEvents(snapshot, now, excludedSymbols = new Set()) {
   });
 }
 
-export function buildQuantDecisionEvents(snapshot, { now = new Date() } = {}) {
+export function buildQuantDecisionEvents(snapshot, { now = new Date(), logWarning = console.warn } = {}) {
   const sellSymbols = actionableSellDecisionSymbols(snapshot);
   const events = [
     ...unresolvedWatchlistEvents(snapshot),
@@ -284,7 +304,7 @@ export function buildQuantDecisionEvents(snapshot, { now = new Date() } = {}) {
     ...vixPositionFloorEvents(snapshot),
     ...tqqqFirstEntryEvents(snapshot),
     ...earningsProtectionEvents(snapshot, now),
-    ...sellDecisionEvents(snapshot, now),
+    ...sellDecisionEvents(snapshot, now, logWarning),
     ...valuationEvents(snapshot, now, sellSymbols),
   ];
   return [...new Map(events.filter(Boolean).map((item) => [item.key, item])).values()];
@@ -323,7 +343,7 @@ async function writeState(root, state) {
 export async function deliverQuantDecisionAlerts({ snapshot, alertsRoot, notify, now = new Date(), logError = console.error, notificationSlot }) {
   const slot = notificationSlot === undefined ? quantNotificationSlot(now) : notificationSlot;
   if (!slot) return { events: [], delivered: [], skipped: true };
-  const events = buildQuantDecisionEvents(snapshot, { now });
+  const events = buildQuantDecisionEvents(snapshot, { now, logWarning: logError });
   const previous = await readState(join(alertsRoot, 'quant-decision-state.json'));
   const previousKeys = new Set(previous.active);
   const processedSlots = new Set(Array.isArray(previous.processed_slots) ? previous.processed_slots : []);

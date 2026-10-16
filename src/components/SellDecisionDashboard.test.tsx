@@ -614,3 +614,38 @@ describe('零碎持仓不进卖出军令', () => {
     expect(html).toContain('>MSFT<');
   });
 });
+
+describe('离谱的卖出线不显示', () => {
+  const tslaSnapshot = (() => {
+    const snapshot = structuredClone(synchronizedSnapshot) as unknown as QuantAnalysisSnapshot;
+    const family = snapshot.sell!.symbols.NVDA;
+    family.family = 'TSLA';
+    family.held_symbols = ['TSLA'];
+    family.market_value = 8_445.12;
+    family.sell_price_plan = {
+      method: 'recovery_valuation', available: true, status: 'reached', quality: 'current_estimate',
+      basis_symbol: 'TSLA', current_price: 367.16, basis_current_price: 367.16,
+      current_forward_pe: 355.53, sell_price: 30.98, trigger_price: 30.98, clear_price: 33.05,
+      action_stage_key: 'reduce_risk', active_stage: 'trim_stock',
+      stages: [
+        { key: 'clear_derivatives', label: '清理衍生仓', trigger_price: 33.05, trigger_kind: 'forward_valuation', reached: true, action: 'a' },
+        { key: 'trim_stock', label: '正股分批减仓', trigger_price: 30.98, trigger_kind: 'forward_valuation', reached: true, action: 'b' },
+      ],
+    } as never;
+    delete (snapshot.sell!.symbols as Record<string, unknown>).MSFT;
+    snapshot.sell!.symbols.TSLA = family;
+    delete (snapshot.sell!.symbols as Record<string, unknown>).NVDA;
+    return snapshot;
+  })();
+
+  it('TSLA 现价 $367 时不显示 $30.98 的卖出线，改用现有的「暂时无法测算」', () => {
+    const html = renderToStaticMarkup(
+      <SellDecisionDashboard snapshot={tslaSnapshot} holdings={[]} displayCurrency="USD" rates={rates} />,
+    );
+
+    expect(html).not.toContain('$30.98');
+    expect(html).not.toContain('$33.05');
+    expect(html).toContain('暂时无法测算');
+    expect(html).toContain('>TSLA<');
+  });
+});
