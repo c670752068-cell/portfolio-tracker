@@ -142,3 +142,13 @@ describe('实时监控上线所需', () => {
     expect(gateway).toContain("icon: '🧾'");
   });
 });
+
+describe('实时卖出线也要过合理性校验', () => {
+  it('网关把卖出方案先过一遍 saneSellPricePlan 再拿来比价', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    const block = gateway.slice(gateway.indexOf('const sellLines = {}'), gateway.indexOf('const cnnScore'));
+
+    expect(block).toContain('saneSellPricePlan(');
+    expect(block).not.toMatch(/const trigger = Number\(plan\.trigger_price \?\? plan\.sell_price\);/);
+  });
+});

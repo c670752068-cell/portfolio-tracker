@@ -31,6 +31,8 @@ function tag(session, confirmation = false) {
 }
 
 function finite(value) {
+  // Number(null) 是 0：不挡掉就会写出「较上次 0 回升 21 点」这种假话
+  if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }

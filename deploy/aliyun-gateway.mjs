@@ -48,6 +48,7 @@ import {
   readAlertLog,
   writeAlertLog,
 } from './alert-log.mjs';
+import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 import { SESSION_CADENCE_MS } from './realtime-alerts.mjs';
 import { intradayZFromDashboard, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
 import { quietSummaryEvent, realtimeDefaults } from './realtime-push.mjs';
@@ -1197,9 +1198,12 @@ async function runRealtimeMonitorCycle() {
 
     const sellLines = {};
     for (const [symbol, family] of Object.entries(snapshot?.sell?.symbols || {})) {
-      const plan = family?.sell_price_plan || {};
-      const trigger = Number(plan.trigger_price ?? plan.sell_price);
-      if (Number.isFinite(trigger) && trigger > 0) {
+      // 先过一遍合理性校验：离谱的卖出线（低于现价一半或高于三倍）不参与比价，
+      // 否则 TSLA 那种 $30.98 的坏数据会天天报「已到卖出线」。
+      const raw = family?.sell_price_plan || {};
+      const plan = saneSellPricePlan(raw, sellPriceReference(raw) ?? quotes[symbol]?.price ?? null);
+      const trigger = Number(plan?.trigger_price ?? plan?.sell_price);
+      if (String(plan?.method || '') !== 'unavailable' && Number.isFinite(trigger) && trigger > 0) {
         sellLines[symbol] = { trigger, label: plan.action_stage_key === 'trim_stock' ? '正股分批' : '开始降风险' };
       }
     }

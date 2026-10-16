@@ -184,3 +184,25 @@ describe('个股大幅波动与多指标共振', () => {
     expect(resonanceAlert({ qqqDrawdownPct: -6.3, vixChangePct: 33, cnnScore: 30, session: 'regular', firedKeys: new Set(), day: '2026-10-16' })).toBeNull();
   });
 });
+
+describe('空值不能当成 0', () => {
+  it('没有上一次 CNN 时不写「较上次 0」', () => {
+    const alerts = cnnAlerts({ score: 21, previousScore: null, firedKeys: new Set(), day: '2026-10-16' });
+
+    expect(alerts.some((item) => item.kind === 'relief')).toBe(false);
+    expect(alerts.some((item) => item.kind === 'deeper')).toBe(false);
+    expect(alerts.every((item) => !item.text.includes('较上次 0'))).toBe(true);
+  });
+
+  it('没有昨收时不算 VIX 涨幅，只按绝对档位', () => {
+    const alerts = vixAlerts({ price: 24, previousClose: null, session: 'regular', firedKeys: new Set(), day: '2026-10-16' });
+
+    expect(alerts.every((item) => item.kind !== 'rise')).toBe(true);
+    expect(alerts.some((item) => item.kind === 'level')).toBe(true);
+  });
+
+  it('没有现价时不产生任何提醒', () => {
+    expect(qqqRealtimeAlerts({ price: null, previousHigh: 759.66, session: 'regular', firedKeys: new Set(), peakDate: '2026-10-15' })).toEqual([]);
+    expect(bigMoveAlert({ symbol: 'AVGO', price: 100, changePercent: null, held: true, session: 'regular', firedKeys: new Set(), day: '2026-10-16' })).toBeNull();
+  });
+});
