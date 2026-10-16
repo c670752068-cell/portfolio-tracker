@@ -38,8 +38,11 @@ export const OBSERVATION_RANGES: Record<QuantChannelAlertState, string> = {
   neutral: 'Z = 0 · 中性', insufficient: '等待可靠数据',
 };
 
+// 一次刷新失败只说明没拿到新数据，不代表上一份完整收盘作废：观察分区继续
+// 显示最近一份完整收盘的 Z，日期就在旁边。±1.5 的推送仍走 signalInbox，
+// 那里不接受 stale 数据，所以刷新失败不会推送。
 export function reviewedZ(alert: QuantChannelAlert | undefined): number | null {
-  return alert?.available && !alert.stale && alert.as_of && Number.isFinite(alert.z_score)
+  return alert?.available && alert.as_of && Number.isFinite(alert.z_score)
     ? alert.z_score! : null;
 }
 

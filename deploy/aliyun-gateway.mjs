@@ -29,6 +29,7 @@ import { deliverQuantDecisionAlerts } from './quant-decision-alerts.mjs';
 import { createNotificationControl, scheduleDue, zonedParts } from './notification-control.mjs';
 import { classifyMarketSession } from './market-session.mjs';
 import { buildYahooChartUrl, parseYahooChartQuote } from './yahoo-quote.mjs';
+import { createLastGoodCache } from './last-good-cache.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
   buildYahooSlopeChartUrl,
@@ -63,7 +64,7 @@ const MA_SLOPE_DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
 const MA_SLOPE_CACHE_MAX = 256;
 const MA_SLOPE_RATE_WINDOW_MS = 60 * 1000;
 const MA_SLOPE_RATE_MAX = 60;
-const maSlopeCache = new Map();
+const maSlopeCache = createLastGoodCache({ maxEntries: MA_SLOPE_CACHE_MAX });
 const maSlopeRateWindows = new Map();
 const handleSectorRotationRoute = createSectorRotationRoute({
   fetchJson: getJsonOverIpv4,
@@ -571,7 +572,22 @@ async function handleMaSlopeDashboard(url, symbol, res) {
     const result = parseYahooSlopeDashboard(symbol, data, { range, slopeWindow });
     writeMaSlopeCache(cacheKey, result);
     sendJson(res, 200, result);
-  } catch {
+  } catch (error) {
+    // 行情刷新失败时保留上一份完整数据，页面不清空；日期仍是那份数据自己的日期。
+    const lastGood = maSlopeCache.lastGood(cacheKey);
+    if (lastGood) {
+      console.warn(
+        `ma-slope dashboard refresh failed, serving last complete data: ${symbol} ${range}/${slopeWindow}`
+        + ` as_of=${lastGood.as_of ?? 'unknown'}`
+        + ` reason=${error instanceof Error ? error.message : String(error)}`,
+      );
+      sendJson(res, 200, lastGood);
+      return;
+    }
+    console.warn(
+      `ma-slope dashboard unavailable and no previous data cached: ${symbol} ${range}/${slopeWindow}`
+      + ` reason=${error instanceof Error ? error.message : String(error)}`,
+    );
     sendJson(res, 422, {
       error: { code: 'slope_dashboard_unavailable', message: '找不到该股票或 K 线历史行情不足' },
     });
@@ -609,19 +625,11 @@ function consumeMaSlopeRate(req) {
 }
 
 function readMaSlopeCache(symbol, ttlMs = MA_SLOPE_CACHE_TTL_MS) {
-  const cached = maSlopeCache.get(symbol);
-  if (!cached || Date.now() - cached.createdAt >= ttlMs) {
-    maSlopeCache.delete(symbol);
-    return null;
-  }
-  return cached.result;
+  return maSlopeCache.fresh(symbol, ttlMs);
 }
 
 function writeMaSlopeCache(symbol, result) {
-  if (maSlopeCache.size >= MA_SLOPE_CACHE_MAX) {
-    maSlopeCache.delete(maSlopeCache.keys().next().value);
-  }
-  maSlopeCache.set(symbol, { createdAt: Date.now(), result });
+  maSlopeCache.store(symbol, result);
 }
 
 function asNumber(value) {
@@ -757,7 +765,7 @@ async function runStoredChannelReviewCycle() {
     const snapshot = JSON.parse(await readFile(join(PORTFOLIO_ANALYSIS_ROOT, 'latest.json'), 'utf8'));
     const positions = await readFile(join(PORTFOLIO_POSITIONS_ROOT, 'latest.json'), 'utf8')
       .then(raw => JSON.parse(raw)?.payload?.positions).catch(() => []);
-    await runChannelReviewCycle({
+    const review = await runChannelReviewCycle({
       snapshot,
       positions: Array.isArray(positions) ? positions : [],
       alertsRoot: PORTFOLIO_ALERTS_ROOT,
@@ -773,6 +781,13 @@ async function runStoredChannelReviewCycle() {
         return parseYahooSlopeDashboard(symbol, data, { range: '5y', slopeWindow: 8, now });
       },
     });
+    // 刷新失败只记日志，服务器上保留的仍是上一份完整收盘审查。
+    if (review?.failed_symbols?.length) {
+      console.warn(
+        `channel review kept the previous complete close for ${review.failed_symbols.length} symbols:`
+        + ` ${review.failed_symbols.join(',')}`,
+      );
+    }
   } catch (error) {
     if (error?.code !== 'ENOENT') {
       console.error('stored channel review cycle failed:', error instanceof Error ? error.message : String(error));

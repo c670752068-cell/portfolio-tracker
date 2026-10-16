@@ -87,3 +87,45 @@ describe('daily channel review', () => {
     expect(fetchDashboard).toHaveBeenCalledTimes(calls);
   });
 });
+
+describe('刷新失败不清空上一份完整收盘', () => {
+  it('零点刚过仍以上一个交易日为审查目标，不去找没开盘的当天', () => {
+    // 2026-10-16T04:17Z = 美东 10-16 00:17
+    expect(channelReviewTargetDate(new Date('2026-10-16T04:17:00Z'))).toBe('2026-10-15');
+    // 美东 10-15 23:31，收盘审查已完成
+    expect(channelReviewTargetDate(new Date('2026-10-16T03:31:00Z'))).toBe('2026-10-15');
+    // 美东 10-16 16:20 之后才轮到当天
+    expect(channelReviewTargetDate(new Date('2026-10-16T20:20:00Z'))).toBe('2026-10-16');
+  });
+
+  it('日线读取失败时保留上一份 Z 与审查日期，并在 failed_symbols 里报出来', async () => {
+    const alertsRoot = await root();
+    const snapshot = { symbols: { NVDA: { ma_slope: { available: true } } } };
+    const dashboard = (symbol: string) => ({
+      dashboard: {
+        channel_alert: { ...alert('sell_near', '接近卖'), as_of: '2026-10-15' },
+        series: [{ date: '2026-10-15', zscore200: 0.82, is_partial: false }],
+      },
+      symbol,
+    });
+
+    const first = await runChannelReviewCycle({
+      now: new Date('2026-10-15T20:30:00Z'), snapshot, alertsRoot, force: true,
+      fetchDashboard: async (symbol: string) => dashboard(symbol),
+    });
+    expect(first.review_date).toBe('2026-10-15');
+    expect(first.failed_symbols).toEqual([]);
+
+    const second = await runChannelReviewCycle({
+      now: new Date('2026-10-16T04:17:00Z'), snapshot, alertsRoot, force: true,
+      fetchDashboard: async () => { throw new Error('upstream 429'); },
+    });
+
+    expect(second.failed_symbols).toContain('NVDA');
+    expect(second.review_date).toBe('2026-10-15');
+    const stored = JSON.parse(await readFile(join(alertsRoot, 'channel-review.json'), 'utf8'));
+    expect(stored.symbols.NVDA.z_score).toBe(1.6);
+    expect(stored.symbols.NVDA.as_of).toBe('2026-10-15');
+    expect(stored.review_date).toBe('2026-10-15');
+  });
+});

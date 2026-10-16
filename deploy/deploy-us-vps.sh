@@ -48,6 +48,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
 "${SCP_CMD[@]}" deploy/z-extreme.mjs "${SERVER}:${REMOTE_RELEASE_APP}/z-extreme.mjs"
 "${SCP_CMD[@]}" deploy/quant-decision-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/quant-decision-alerts.mjs"
 "${SCP_CMD[@]}" deploy/sell-price-sanity.mjs "${SERVER}:${REMOTE_RELEASE_APP}/sell-price-sanity.mjs"
+"${SCP_CMD[@]}" deploy/last-good-cache.mjs "${SERVER}:${REMOTE_RELEASE_APP}/last-good-cache.mjs"
 "${SCP_CMD[@]}" deploy/notification-copy.mjs "${SERVER}:${REMOTE_RELEASE_APP}/notification-copy.mjs"
 "${SCP_CMD[@]}" deploy/notification-control.mjs "${SERVER}:${REMOTE_RELEASE_APP}/notification-control.mjs"
 "${SCP_CMD[@]}" deploy/market-session.mjs "${SERVER}:${REMOTE_RELEASE_APP}/market-session.mjs"
@@ -65,6 +66,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
   node --check '${REMOTE_RELEASE_APP}/z-extreme.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/quant-decision-alerts.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/sell-price-sanity.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/last-good-cache.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/notification-control.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/ma-slope-query.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/sector-rotation.mjs' && \

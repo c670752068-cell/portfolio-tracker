@@ -256,9 +256,14 @@ function closedRawPoints(payload, now) {
   if (!Array.isArray(closes)) return [];
   const today = newYorkDate(now);
   const regularEnd = Number(result?.meta?.currentTradingPeriod?.regular?.end);
-  const isRegularSessionOpen = Number.isFinite(regularEnd)
+  // 盘后 20:00 一过，上游的 currentTradingPeriod 已经指向下一个交易日，
+  // 不能再拿它判断「今天这根日线还没走完」，否则当天收盘价会被当成盘中数据，
+  // 一直到美东零点才算完整收盘。
+  const regularEndBelongsToToday = Number.isFinite(regularEnd)
+    && newYorkDate(new Date(regularEnd * 1000)) === today;
+  const isRegularSessionOpen = regularEndBelongsToToday
     ? now.getTime() < regularEnd * 1000
-    : true;
+    : !Number.isFinite(regularEnd);
   return timestamps.flatMap((timestamp, index) => {
     const date = newYorkDate(new Date(Number(timestamp) * 1000));
     const close = finitePositive(closes[index]);

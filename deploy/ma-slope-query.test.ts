@@ -167,3 +167,52 @@ describe('custom MA slope query', () => {
     expect(result.reason).toContain('至少需要 220 个已收盘交易日');
   });
 });
+
+// 2026-10-16 00:17（美东）打开决策页时，Z-Score 全部变「数据不足」、200DMA「待更新」。
+// 这组用例把「刚过美东零点」钉住：最后一根完整日线仍是 10-15，不该因为日期翻页被丢掉。
+describe('美东零点刚过的完整收盘日线', () => {
+  function overnightPayload() {
+    const closes = Array.from({ length: 260 }, (_, index) => 200 + Math.sin(index / 7) * 12 + index * 0.1);
+    const payload = yahooHistory(closes);
+    const result = payload.chart.result[0];
+    // 最后一根日线是 10-15 开盘时间戳；上游的 currentTradingPeriod 已指向 10-16 的交易时段。
+    const lastTimestamp = Date.UTC(2026, 9, 15, 13, 30) / 1000;
+    result.timestamp = closes.map((_, index) => lastTimestamp - (closes.length - 1 - index) * 86_400);
+    Object.assign(result.meta, {
+      currentTradingPeriod: {
+        regular: {
+          start: Date.UTC(2026, 9, 16, 13, 30) / 1000,
+          end: Date.UTC(2026, 9, 16, 20, 0) / 1000,
+        },
+      },
+    });
+    return payload;
+  }
+
+  it('零点后仍以 10-15 作为最新完整收盘，Z-Score 正常给出', () => {
+    const midnight = new Date('2026-10-16T04:17:00Z');
+    const dashboard = parseYahooSlopeDashboard('NVDA', overnightPayload(), {
+      range: '1y', slopeWindow: 8, now: midnight,
+    });
+
+    expect(dashboard.available).toBe(true);
+    expect(dashboard.as_of).toBe('2026-10-15');
+    expect(dashboard.dashboard.latest_closed_as_of).toBe('2026-10-15');
+    expect(dashboard.dashboard.latest_bar_status).toBe('closed');
+    expect(dashboard.dashboard.channel_alert.available).toBe(true);
+    expect(dashboard.dashboard.channel_alert.label).not.toBe('数据不足');
+    expect(dashboard.dashboard.series.at(-1)?.is_partial).toBe(false);
+  });
+
+  it('零点前后给出同一份结论', () => {
+    const before = parseYahooSlopeDashboard('NVDA', overnightPayload(), {
+      range: '1y', slopeWindow: 8, now: new Date('2026-10-16T03:31:00Z'),
+    });
+    const after = parseYahooSlopeDashboard('NVDA', overnightPayload(), {
+      range: '1y', slopeWindow: 8, now: new Date('2026-10-16T04:17:00Z'),
+    });
+
+    expect(after.dashboard.channel_alert).toEqual(before.dashboard.channel_alert);
+    expect(after.dashboard.summary).toEqual(before.dashboard.summary);
+  });
+});

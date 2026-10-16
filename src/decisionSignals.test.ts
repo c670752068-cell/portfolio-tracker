@@ -16,14 +16,20 @@ describe('decision signal presentation', () => {
     [NaN, 'insufficient'], [Infinity, 'insufficient'], [null, 'insufficient'], [undefined, 'insufficient'],
   ] as const)('places reviewed Z %s in observation bucket %s', (z, state) => expect(zObservationSignal(z)).toBe(state));
 
-  it('does not turn failed/stale reviews or missing values into a trading signal', () => {
+  it('does not turn missing values into a trading signal', () => {
     const alert = { available: true, as_of: '2026-09-15', z_score: -1.6 } as QuantChannelAlert;
     expect(reviewedZ(alert)).toBe(-1.6);
-    expect(reviewedZ({ ...alert, stale: true })).toBeNull();
     expect(reviewedZ({ ...alert, available: false })).toBeNull();
     expect(reviewedZ({ ...alert, as_of: null })).toBeNull();
     expect(reviewedZ({ ...alert, z_score: undefined })).toBeNull();
     expect(reviewedZ({ ...alert, z_score: NaN })).toBeNull();
+  });
+
+  it('刷新失败时保留上一份完整收盘的 Z，观察分区不清空', () => {
+    const alert = { available: true, as_of: '2026-10-15', z_score: 0.819362, stale: true } as QuantChannelAlert;
+
+    expect(reviewedZ(alert)).toBe(0.819362);
+    expect(zObservationSignal(reviewedZ(alert))).toBe('sell_near');
   });
 
   it('annualizes exactly 20 trading sessions instead of multiplying the 8-day slope', () => {

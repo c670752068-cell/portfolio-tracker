@@ -58,4 +58,17 @@ describe('新增的网关模块必须一起上传', () => {
     expect(script).toContain('deploy/sell-price-sanity.mjs "${SERVER}:${REMOTE_RELEASE_APP}/sell-price-sanity.mjs"');
     expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/sell-price-sanity.mjs'");
   });
+
+  it('上传并语法检查 last-good-cache.mjs', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/last-good-cache.mjs "${SERVER}:${REMOTE_RELEASE_APP}/last-good-cache.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/last-good-cache.mjs'");
+  });
+
+  it('行情刷新失败时网关保留上一份完整数据而不是返回 422', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('maSlopeCache.lastGood(cacheKey)');
+    expect(gateway).toContain('serving last complete data');
+    expect(gateway).toContain('channel review kept the previous complete close');
+  });
 });
