@@ -30,6 +30,11 @@ interface ViewProps {
   showHidden: boolean;
   categoryFilter: AlertCategory | 'all';
   onCategoryFilterChange: (filter: AlertCategory | 'all') => void;
+  importantOnly?: boolean;
+  onImportantOnlyChange?: (value: boolean) => void;
+  liveStatus?: 'live' | 'disconnected' | 'paused';
+  secondsSinceUpdate?: number | null;
+  highlightedIds?: string[];
   log: DecisionLog | null;
   qqqSeries: ClosePoint[];
   sgovSeries: ClosePoint[];
@@ -49,6 +54,8 @@ export function JournalPageView(props: ViewProps) {
     tab, onTabChange, alerts, hiddenAlertIds, onToggleHidden, showHidden, categoryFilter,
     onCategoryFilterChange, log, qqqSeries, sgovSeries, displayCurrency, rates, error, loading,
     onHideAlert, onSaveNote, onAddTrade, onAddFlow, onRemoveFlow,
+    importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
+    highlightedIds = [],
   } = props;
 
   return (
@@ -95,6 +102,11 @@ export function JournalPageView(props: ViewProps) {
           onCategoryFilterChange={onCategoryFilterChange}
           onHideAlert={onHideAlert}
           loading={loading}
+          importantOnly={importantOnly}
+          onImportantOnlyChange={onImportantOnlyChange}
+          liveStatus={liveStatus}
+          secondsSinceUpdate={secondsSinceUpdate}
+          highlightedIds={highlightedIds}
         />
       )}
       {tab === 'decisions' && (
@@ -124,6 +136,8 @@ export function JournalPageView(props: ViewProps) {
 
 function AlertLogPanel({
   alerts, hiddenAlertIds, showHidden, categoryFilter, onCategoryFilterChange, onHideAlert, loading,
+  importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
+  highlightedIds = [],
 }: {
   alerts: AlertLogEntry[];
   hiddenAlertIds: string[];
@@ -132,16 +146,40 @@ function AlertLogPanel({
   onCategoryFilterChange: (filter: AlertCategory | 'all') => void;
   onHideAlert?: (id: string) => void;
   loading?: boolean;
+  importantOnly?: boolean;
+  onImportantOnlyChange?: (value: boolean) => void;
+  liveStatus?: 'live' | 'disconnected' | 'paused';
+  secondsSinceUpdate?: number | null;
+  highlightedIds?: string[];
 }) {
   const hidden = useMemo(() => new Set(hiddenAlertIds), [hiddenAlertIds]);
+  const highlighted = useMemo(() => new Set(highlightedIds), [highlightedIds]);
   const rows = useMemo(() => [...alerts]
     .filter((item) => categoryFilter === 'all' || item.category === categoryFilter)
+    .filter((item) => !importantOnly || item.indicators?.level === 1)
     .filter((item) => showHidden || !hidden.has(item.id))
     // 最新的在最上面
-    .sort((left, right) => right.occurred_at.localeCompare(left.occurred_at)), [alerts, categoryFilter, hidden, showHidden]);
+    .sort((left, right) => right.occurred_at.localeCompare(left.occurred_at)), [alerts, categoryFilter, hidden, importantOnly, showHidden]);
 
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          aria-pressed={importantOnly}
+          onClick={() => onImportantOnlyChange?.(!importantOnly)}
+          className={`min-h-8 rounded-full px-2.5 text-[11px] font-medium ${importantOnly ? 'bg-loss text-white' : 'bg-neutral/25 text-ink-secondary'}`}
+        >
+          只看重要
+        </button>
+        <span className="text-[10px] tabular-nums text-ink-muted" role="status">
+          {liveStatus === 'disconnected'
+            ? '● 已断开 · 正在重连'
+            : liveStatus === 'paused'
+              ? '● 已暂停 · 回到页面后继续'
+              : `● 实时 · 上次更新 ${secondsSinceUpdate === null ? '刚刚' : `${secondsSinceUpdate} 秒前`}`}
+        </span>
+      </div>
       <div className="flex flex-wrap gap-1.5">
         {ALERT_FILTER_ORDER.map((key) => (
           <button
@@ -167,7 +205,10 @@ function AlertLogPanel({
         ) : (
           <ul className="space-y-1">
             {rows.map((item) => (
-              <li key={item.id} className="flex items-start gap-2 whitespace-pre-wrap break-words">
+              <li
+                key={item.id}
+                className={`flex items-start gap-2 whitespace-pre-wrap break-words ${highlighted.has(item.id) ? 'alert-row-new rounded bg-white/10' : ''}`}
+              >
                 <time
                   dateTime={item.occurred_at}
                   title={`美东 ${easternText(item.occurred_at)}`}
@@ -214,6 +255,12 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
   const [hiddenAlertIds, setHiddenAlertIds] = useState<string[]>(() => loadHiddenAlertIds());
   const [showHidden, setShowHidden] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState<AlertCategory | 'all'>('all');
+  const [importantOnly, setImportantOnly] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<'live' | 'disconnected' | 'paused'>('live');
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [secondsSinceUpdate, setSecondsSinceUpdate] = useState<number | null>(null);
+  const [highlightedIds, setHighlightedIds] = useState<string[]>([]);
+  const knownAlertIds = useRef<Set<string>>(new Set());
   const [series, setSeries] = useState<{ qqq: ClosePoint[]; sgov: ClosePoint[] }>({ qqq: [], sgov: [] });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -226,7 +273,11 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
         .then((next) => { revision.current = next.revision; setLog(next); })
         .catch((reason) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : '决策日志读取失败'); }),
       fetchAlertLog(alertEndpoint, controller.signal)
-        .then((next) => setAlerts(next.alerts))
+        .then((next) => {
+          knownAlertIds.current = new Set(next.alerts.map((item) => item.id));
+          setAlerts(next.alerts);
+          setUpdatedAt(Date.now());
+        })
         .catch((reason) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : '提醒日志读取失败'); }),
     ]).finally(() => { if (!controller.signal.aborted) setLoading(false); });
 
@@ -243,6 +294,62 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
     });
     return () => controller.abort();
   }, [decisionEndpoint, alertEndpoint]);
+
+  // 日志页自动刷新：每 30 秒拉一次；标签页切到后台就暂停，切回来立刻补拉。
+  useEffect(() => {
+    let timer = 0;
+    let stopped = false;
+    const controller = new AbortController();
+
+    const pull = async () => {
+      if (stopped || document.visibilityState === 'hidden') return;
+      try {
+        const next = await fetchAlertLog(alertEndpoint, controller.signal);
+        if (stopped) return;
+        const fresh = next.alerts.filter((item) => !knownAlertIds.current.has(item.id)).map((item) => item.id);
+        const firstLoad = knownAlertIds.current.size === 0;
+        knownAlertIds.current = new Set(next.alerts.map((item) => item.id));
+        setAlerts(next.alerts);
+        setLiveStatus('live');
+        setUpdatedAt(Date.now());
+        if (!firstLoad && fresh.length) {
+          setHighlightedIds(fresh);
+          window.setTimeout(() => setHighlightedIds([]), 3000);
+        }
+      } catch (reason) {
+        if (!stopped && !controller.signal.aborted) {
+          setLiveStatus('disconnected');
+          void reason;
+        }
+      }
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === 'hidden') {
+        setLiveStatus('paused');
+        return;
+      }
+      void pull();
+    };
+
+    timer = window.setInterval(() => void pull(), 30_000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      stopped = true;
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [alertEndpoint]);
+
+  // 「上次更新 xx 秒前」每 5 秒走一次字
+  useEffect(() => {
+    if (updatedAt === null) return undefined;
+    const tick = () => setSecondsSinceUpdate(Math.max(0, Math.round((Date.now() - updatedAt) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 5_000);
+    return () => window.clearInterval(timer);
+  }, [updatedAt]);
 
   function apply(action: Promise<DecisionLog>) {
     action
@@ -272,6 +379,11 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
       showHidden={showHidden}
       categoryFilter={categoryFilter}
       onCategoryFilterChange={setCategoryFilter}
+      importantOnly={importantOnly}
+      onImportantOnlyChange={setImportantOnly}
+      liveStatus={liveStatus}
+      secondsSinceUpdate={secondsSinceUpdate}
+      highlightedIds={highlightedIds}
       log={log}
       qqqSeries={series.qqq}
       sgovSeries={series.sgov}

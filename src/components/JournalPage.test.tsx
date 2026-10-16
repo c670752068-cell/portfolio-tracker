@@ -132,3 +132,45 @@ describe('日志页框架', () => {
     expect(render()).toContain('还没有记录');
   });
 });
+
+describe('日志页自动刷新', () => {
+  const live = (overrides: Partial<Parameters<typeof JournalPageView>[0]> = {}) => render({
+    alerts: [alert({ id: 'a1', text: '旧的一条' }), alert({ id: 'a2', occurred_at: '2026-10-17T08:00:00.000Z', text: '刚进来的一条' })],
+    ...overrides,
+  });
+
+  it('面板上有实时状态和上次更新时间', () => {
+    const html = live({ liveStatus: 'live', secondsSinceUpdate: 12 });
+
+    expect(html).toContain('实时');
+    expect(html).toContain('12 秒前');
+  });
+
+  it('断开时显示正在重连', () => {
+    const html = live({ liveStatus: 'disconnected', secondsSinceUpdate: 95 });
+
+    expect(html).toContain('已断开');
+    expect(html).toContain('正在重连');
+  });
+
+  it('新进来的那一行会高亮', () => {
+    const html = live({ highlightedIds: ['a2'] });
+    const row = html.slice(html.indexOf('刚进来的一条') - 400, html.indexOf('刚进来的一条'));
+
+    expect(row).toContain('alert-row-new');
+  });
+
+  it('「只看重要」只留下重要提醒', () => {
+    const html = render({
+      alerts: [
+        alert({ id: 'i1', text: '重要的一条', indicators: { level: 1 } }),
+        alert({ id: 'n1', text: '普通的一条', indicators: { level: 2 } }),
+      ],
+      importantOnly: true,
+    });
+
+    expect(html).toContain('重要的一条');
+    expect(html).not.toContain('普通的一条');
+    expect(html).toContain('只看重要');
+  });
+});

@@ -3,7 +3,7 @@ import type { QuantAnalysisSnapshot } from '../types';
 import { fetchNotificationSettings, NOTIFICATION_ZONES, scheduleRepeatText, WEEKDAY_NAMES,
   type NotificationSchedule, type NotificationSettings, type NotificationStatus } from '../notificationSettings';
 import { DataFreshnessPanel } from './DataFreshnessPanel';
-import { NotificationEventSettings } from './NotificationEventSettings';
+import { NotificationEventSettings, RealtimeNotificationSettings } from './NotificationEventSettings';
 import './NotificationCenter.css';
 
 const dateTime = (value: string | null) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '未提供';
@@ -91,6 +91,7 @@ export function NotificationCenter({ snapshot }: { snapshot: QuantAnalysisSnapsh
                 <p className="notification-note">网站任务由 VPS 执行。本机任务需量化服务在线；错过时间不会补发。</p>
               </section>
               <NotificationEventSettings settings={settings} eventTypes={status.eventTypes} disabled={saving} onSave={save} />
+              <RealtimeNotificationSettings settings={settings} disabled={saving} onSave={save} />
               <QuietHoursEditor settings={settings} disabled={saving} onSave={save} />
               <div className="notification-info">重新开启后，不会集中补发关闭或免打扰期间的提醒。已送达手机的通知无法撤回。</div>
               <p className="notification-note">按你的设置，此处无需密码；任何可访问网站的人均可修改通知偏好。</p>

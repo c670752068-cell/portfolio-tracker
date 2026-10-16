@@ -188,3 +188,13 @@ a:focus-visible {
     position: static;
   }
 }
+
+
+/* 日志页：新进来的那一行短暂高亮 */
+@keyframes alert-row-flash {
+  from { background-color: rgb(255 255 255 / 22%); }
+  to { background-color: rgb(255 255 255 / 0%); }
+}
+.alert-row-new {
+  animation: alert-row-flash 3s ease-out 1;
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { defaultExtremeNotification, defaultNotificationWindow, NOTIFICATION_ZONES, WEEKDAY_NAMES,
-  type NotificationSettings, type NotificationStatus, type NotificationWindow, type NotificationWindowKey } from '../notificationSettings';
+import { defaultExtremeNotification, defaultNotificationWindow, defaultRealtimeNotification, NOTIFICATION_ZONES, WEEKDAY_NAMES,
+  type NotificationSettings, type NotificationStatus, type NotificationWindow, type NotificationWindowKey,
+  type RealtimeNotificationSettingsValue } from '../notificationSettings';
 
 export function NotificationEventSettings({ settings, eventTypes, disabled, onSave }: {
   settings: NotificationSettings; eventTypes: NotificationStatus['eventTypes']; disabled: boolean;
@@ -43,6 +44,48 @@ export function NotificationEventSettings({ settings, eventTypes, disabled, onSa
       <p className="notification-info">按完整收盘审查，不是均线斜率。持续在同一区域不重复提醒；回到阈值内后再次进入才产生新提醒。网页 ±1.5 买卖区和回撤规则不变。</p>
     </div>
     <p className="notification-note">露头及极值附近提醒通常在美东 16:20 审查后产生（夏令时北京时间次日 04:20、冬令时 05:20）。允许时段不移动审查时间；如该时刻被时段或免打扰拦截，本次不会补发。同批合并，网页 +N 与手机推送独立。</p>
+  </section>;
+}
+
+const REALTIME_ITEMS: ReadonlyArray<{ key: keyof RealtimeNotificationSettingsValue; name: string; description: string }> = [
+  { key: 'qqqDrawdown', name: 'QQQ 回撤', description: '任何时段跌破 -5% / -10% / -15% / -20% / -25% / -30%，收盘后再确认一条。' },
+  { key: 'vix', name: 'VIX', description: '较昨收涨 15% / 25% / 35%，升破 20 / 23 / 30，以及从当日高点回落。' },
+  { key: 'cnn', name: '恐慌指数', description: 'CNN 恐惧贪婪跌破 30 / 25 / 20 / 15、恐慌加剧或缓解。' },
+  { key: 'intradayZ', name: '盘中 Z-Score', description: '盘中 Z 穿过 ±0.5 / ±1.0 / ±1.5 / ±2.0 / ±2.5。' },
+  { key: 'bigMove', name: '个股大幅波动', description: '持仓或观察标的当天涨跌超过 ±5%（QQQ ±2%）。' },
+  { key: 'sellLine', name: '卖出线', description: '实时价格达到卖出军令的卖出线。' },
+  { key: 'holdings', name: '持仓变化', description: '券商同步发现新买、加仓、减仓或清仓。' },
+  { key: 'resonance', name: '多指标共振', description: 'QQQ ≤ -5% 且 VIX ≥ +25% 且 CNN ≤ 25 同时成立，附历史参考。' },
+];
+
+/** 实时提醒分组。只新增，不改动已有的任何开关和文字。 */
+export function RealtimeNotificationSettings({ settings, disabled, onSave }: {
+  settings: NotificationSettings; disabled: boolean; onSave: (next: NotificationSettings) => Promise<boolean>;
+}) {
+  const realtime = settings.realtime ?? defaultRealtimeNotification();
+  const update = (patch: Partial<RealtimeNotificationSettingsValue>) =>
+    void onSave({ ...settings, realtime: { ...realtime, ...patch } });
+  return <section className="notification-card notification-event-settings" data-testid="realtime-notification-settings">
+    <h3>实时提醒</h3>
+    <p>新增 · 默认关闭。盘前、盘中、盘后、夜盘都监控；重要提醒连发多条，普通提醒 1 条，其余只写进「日志」页不推送。免打扰时段沿用上面的设置，期间只记日志，结束后汇总 1 条。</p>
+    <div className="notification-event">
+      <div><h4>实时提醒总开关</h4><p>关掉时所有实时提醒只写日志、不推送手机。</p></div>
+      <EventSwitch label="实时提醒总开关" checked={realtime.enabled} disabled={disabled}
+        onChange={enabled => update({ enabled })} />
+    </div>
+    {REALTIME_ITEMS.map(item => <div className="notification-row" key={String(item.key)}>
+      <span>{item.name}<small>{item.description}</small></span>
+      <EventSwitch label={item.name} checked={realtime[item.key] === true} disabled={disabled || !realtime.enabled}
+        onChange={value => update({ [item.key]: value } as Partial<RealtimeNotificationSettingsValue>)} />
+    </div>)}
+    <label className="notification-row">
+      <span>重要提醒连发次数</span>
+      <select value={realtime.importantRepeat} disabled={disabled || !realtime.enabled}
+        onChange={event => update({ importantRepeat: Number(event.target.value) as 1 | 2 | 3 })}>
+        {[1, 2, 3].map(value => <option key={value} value={value}>{value} 条</option>)}
+      </select>
+    </label>
+    <p className="notification-info">这些档位只用于提醒，不改变网页上的任何买卖判定。</p>
   </section>;
 }
 

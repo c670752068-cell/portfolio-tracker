@@ -17,6 +17,30 @@ export interface NotificationSettings {
   breakout?: { enabled: boolean; up: boolean; down: boolean };
   zExtreme?: ExtremeNotificationSettings;
   eventWindows?: Partial<Record<NotificationWindowKey, NotificationWindow>>;
+  realtime?: RealtimeNotificationSettingsValue;
+}
+
+/** 第三阶段新增的实时提醒开关，全部默认关闭，由用户自己在设置里打开。 */
+export interface RealtimeNotificationSettingsValue {
+  enabled: boolean;
+  qqqDrawdown: boolean;
+  vix: boolean;
+  cnn: boolean;
+  intradayZ: boolean;
+  bigMove: boolean;
+  sellLine: boolean;
+  holdings: boolean;
+  resonance: boolean;
+  importantRepeat: 1 | 2 | 3;
+  quietSummary: boolean;
+}
+
+export function defaultRealtimeNotification(): RealtimeNotificationSettingsValue {
+  return {
+    enabled: false, qqqDrawdown: false, vix: false, cnn: false, intradayZ: false,
+    bigMove: false, sellLine: false, holdings: false, resonance: false,
+    importantRepeat: 3, quietSummary: true,
+  };
 }
 export interface NotificationStatus {
   settings: NotificationSettings; state: 'on' | 'off' | 'quiet'; serverTime: string; workerSeenAt: string | null;
