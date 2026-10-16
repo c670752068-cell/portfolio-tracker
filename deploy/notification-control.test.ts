@@ -213,3 +213,23 @@ describe('notification preferences and send-time authority', () => {
     expect(h.send).not.toHaveBeenCalled();
   });
 });
+
+describe('第三阶段：实时提醒开关', () => {
+  it('老设置文件没有 realtime 时，读出来是全部关闭', () => {
+    const base = defaultNotificationSettings();
+    delete (base as { realtime?: unknown }).realtime;
+
+    const validated = validateNotificationSettings(base, base, new Date('2026-10-16T00:00:00.000Z'));
+
+    expect(validated.realtime).toMatchObject({ enabled: false, qqqDrawdown: false, vix: false, importantRepeat: 3 });
+  });
+
+  it('保存时保留用户打开的开关', () => {
+    const base = defaultNotificationSettings();
+    const input = { ...base, realtime: { ...base.realtime, enabled: true, qqqDrawdown: true, importantRepeat: 2 } };
+
+    const validated = validateNotificationSettings(input, base, new Date('2026-10-16T00:00:00.000Z'));
+
+    expect(validated.realtime).toMatchObject({ enabled: true, qqqDrawdown: true, vix: false, importantRepeat: 2 });
+  });
+});

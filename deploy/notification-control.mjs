@@ -189,7 +189,8 @@ export function createNotificationControl({ root, token, sendJson, send, now = (
     // Corrupt state fails closed. Never silently restore enabled defaults.
     if (value.version !== 1 || !Number.isInteger(value.revision)) throw new Error('通知设置不可用');
     const validated = validateNotificationSettings(value, value, now());
-    return { ...value, breakout: validated.breakout, zExtreme: validated.zExtreme, eventWindows: validated.eventWindows };
+    // realtime 是第三阶段新增的，老设置文件里没有就按「全部关闭」的默认值读出来
+    return { ...value, breakout: validated.breakout, zExtreme: validated.zExtreme, eventWindows: validated.eventWindows, realtime: validated.realtime };
   }
   async function status() {
     const value = await settings();
