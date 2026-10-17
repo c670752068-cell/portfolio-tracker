@@ -169,3 +169,41 @@ export function intradayZFromDashboard(dashboard, price) {
   if (!(deviation > 0)) return null;
   return { previousZ, currentZ: (current - ma) / deviation, price: current };
 }
+
+// 行情数据源中断超过这么久就报一条系统提醒。
+export const FEED_OUTAGE_MS = 10 * 60 * 1000;
+
+/**
+ * 行情源的状态读数，交给 applyStateAlerts 做「只在状态翻转时记一行」。
+ * 还没成功取过价时返回 null，免得刚启动就报警。
+ */
+export function feedStateReading({ lastOkAt, now = new Date(), outageMinutes = null }) {
+  // Number(null) 是 0，会被当成 1970 年那一刻取过价，于是一启动就报「中断」
+  if (lastOkAt === null || lastOkAt === undefined || !Number.isFinite(Number(lastOkAt))) return null;
+  const elapsed = +now - Number(lastOkAt);
+  if (elapsed >= FEED_OUTAGE_MS) {
+    const minutes = Math.round(elapsed / 60_000);
+    return {
+      key: 'realtime-feed',
+      state: 'triggered',
+      category: 'system',
+      symbol: null,
+      icon: '❗',
+      value: minutes,
+      threshold: FEED_OUTAGE_MS / 60_000,
+      text: `行情数据源中断 ${minutes} 分钟 · 实时提醒暂停，恢复后会自动继续`,
+    };
+  }
+  return {
+    key: 'realtime-feed',
+    state: 'normal',
+    category: 'system',
+    symbol: null,
+    icon: '✅',
+    value: null,
+    threshold: null,
+    text: outageMinutes
+      ? `行情数据源已恢复 · 中断约 ${outageMinutes} 分钟`
+      : '行情数据源正常',
+  };
+}

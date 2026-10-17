@@ -152,3 +152,12 @@ describe('实时卖出线也要过合理性校验', () => {
     expect(block).not.toMatch(/const trigger = Number\(plan\.trigger_price \?\? plan\.sell_price\);/);
   });
 });
+
+describe('数据源中断提醒接进网关', () => {
+  it('轮询里记录最近一次成功取价，并按状态变化写系统提醒', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+
+    expect(gateway).toContain('feedStateReading(');
+    expect(gateway).toContain('lastQuoteOkAt');
+  });
+});

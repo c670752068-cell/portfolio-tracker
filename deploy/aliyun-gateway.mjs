@@ -50,7 +50,7 @@ import {
 } from './alert-log.mjs';
 import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 import { SESSION_CADENCE_MS } from './realtime-alerts.mjs';
-import { intradayZFromDashboard, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
+import { feedStateReading, intradayZFromDashboard, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
 import { quietSummaryEvent, realtimeDefaults } from './realtime-push.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
@@ -1150,7 +1150,7 @@ server.listen(PORT, HOST, () => {
 
 // 实时监控：盘中 1 分钟、盘前盘后 2 分钟、夜盘 5 分钟，休市 15 分钟。
 // 新提醒默认只写日志不推送（开关在设置里，默认全关）。
-const REALTIME_STATE = { lastTickAt: 0, lastCnn: null, quietQueue: [], wasQuiet: false, running: false };
+const REALTIME_STATE = { lastTickAt: 0, lastCnn: null, quietQueue: [], wasQuiet: false, running: false, lastQuoteOkAt: null, outageSince: null };
 const REALTIME_TICK_MS = 30 * 1000;
 
 async function runRealtimeMonitorCycle() {
@@ -1184,6 +1184,29 @@ async function runRealtimeMonitorCycle() {
         const quote = await fetchFreeQuote(symbol === 'VIX' ? '^VIX' : symbol);
         if (quote) quotes[symbol] = quote;
       } catch { /* 单个标的取价失败不影响其他 */ }
+    }
+
+    // 行情源中断超过 10 分钟写一条系统提醒；恢复后再写一条。
+    if (Object.keys(quotes).length > 0) {
+      const outageMinutes = REALTIME_STATE.outageSince
+        ? Math.round((+now - REALTIME_STATE.outageSince) / 60_000)
+        : null;
+      REALTIME_STATE.lastQuoteOkAt = +now;
+      REALTIME_STATE.outageSince = null;
+      const reading = feedStateReading({ lastOkAt: REALTIME_STATE.lastQuoteOkAt, now, outageMinutes });
+      if (reading) {
+        const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+        const next = applyStateAlerts(store, [reading], now);
+        if (next !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
+      }
+    } else {
+      if (!REALTIME_STATE.outageSince) REALTIME_STATE.outageSince = +now;
+      const reading = feedStateReading({ lastOkAt: REALTIME_STATE.lastQuoteOkAt, now });
+      if (reading) {
+        const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+        const next = applyStateAlerts(store, [reading], now);
+        if (next !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
+      }
     }
 
     const qqqSeries = await closedDailySeries('QQQ');

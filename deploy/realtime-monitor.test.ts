@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { emptyAlertLog } from './alert-log.mjs';
 import { realtimeDefaults } from './realtime-push.mjs';
-import { intradayZFromDashboard, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
+import { feedStateReading, intradayZFromDashboard, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
 
 const base = {
   now: new Date('2026-10-17T01:30:00.000Z'), // 美东 21:30 → 夜盘
@@ -139,5 +139,33 @@ describe('盘中 Z 用现价和已收盘的通道算', () => {
     expect(intradayZFromDashboard(null, 100)).toBeNull();
     expect(intradayZFromDashboard(dashboard, null)).toBeNull();
     expect(intradayZFromDashboard({ dashboard: { series: [] } }, 100)).toBeNull();
+  });
+});
+
+describe('数据源中断提醒', () => {
+  const lastOkAt = Date.parse('2026-10-16T18:00:00.000Z');
+
+  it('断超过 10 分钟报一条 ❗，并说明实时提醒暂停', () => {
+    const reading = feedStateReading({ lastOkAt, now: new Date('2026-10-16T18:12:00.000Z') });
+
+    expect(reading).toMatchObject({ key: 'realtime-feed', state: 'triggered', category: 'system', icon: '❗' });
+    expect(reading!.text).toContain('12 分钟');
+    expect(reading!.text).toContain('实时提醒暂停');
+  });
+
+  it('没断或刚断几分钟都算正常', () => {
+    expect(feedStateReading({ lastOkAt, now: new Date('2026-10-16T18:05:00.000Z') })!.state).toBe('normal');
+    expect(feedStateReading({ lastOkAt, now: new Date('2026-10-16T18:00:30.000Z') })!.state).toBe('normal');
+  });
+
+  it('恢复后的那条写清楚断了多久', () => {
+    const reading = feedStateReading({ lastOkAt: Date.parse('2026-10-16T18:20:00.000Z'), now: new Date('2026-10-16T18:20:05.000Z'), outageMinutes: 14 });
+
+    expect(reading).toMatchObject({ state: 'normal', icon: '✅' });
+    expect(reading!.text).toContain('恢复');
+  });
+
+  it('还没成功取过价时不报警', () => {
+    expect(feedStateReading({ lastOkAt: null, now: new Date('2026-10-16T18:12:00.000Z') })).toBeNull();
   });
 });
