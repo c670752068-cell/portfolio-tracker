@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { emptyAlertLog } from './alert-log.mjs';
 import { realtimeDefaults } from './realtime-push.mjs';
-import { feedStateReading, intradayZFromDashboard, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
+import { feedStateReading, intradayZPreview, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
 
 const base = {
   now: new Date('2026-10-17T01:30:00.000Z'), // 美东 21:30 → 夜盘
@@ -68,7 +68,7 @@ describe('实时监控的一次轮询', () => {
 
     expect(dispatch).not.toHaveBeenCalled();
     expect(result.quietQueue.length).toBeGreaterThan(0);
-    expect(result.store.alerts.some((item) => item.text.includes('[免打扰]'))).toBe(true);
+    expect(result.store.alerts.some((item) => item.push_state === 'quiet_hours')).toBe(true);
   });
 
   it('盘中 Z 从 -0.75 到 -1.01 写一行「跌得更深」', async () => {
@@ -88,7 +88,7 @@ describe('实时监控的一次轮询', () => {
       ...base,
       session: 'post',
       quotes: { ...base.quotes, AVGO: { price: 447.1, previousClose: 441, changePercent: 0.014, session: 'post' } },
-      sellLines: { AVGO: { trigger: 446.56, label: '正股分批' } },
+      sellLines: { AVGO: { trigger: 446.56, reference: 447.1, label: '正股分批' } },
       heldSymbols: ['AVGO'],
       store: emptyAlertLog(),
       dispatch: vi.fn(),
@@ -110,35 +110,6 @@ describe('实时监控的一次轮询', () => {
     expect(symbols).toContain('AVGO');
     expect(symbols.length).toBeLessThanOrEqual(24);
     expect(new Set(symbols).size).toBe(symbols.length);
-  });
-});
-
-describe('盘中 Z 用现价和已收盘的通道算', () => {
-  const dashboard = {
-    dashboard: {
-      band_sigma: 1.5,
-      series: [
-        { date: '2026-10-14', close: 360, ma200: 380, band200: [350, 410], zscore200: -1.0, is_partial: false },
-        { date: '2026-10-15', close: 362.44, ma200: 380, band200: [350, 410], zscore200: -0.75, is_partial: false },
-        { date: '2026-10-16', close: 355, ma200: 380, band200: [350, 410], zscore200: -0.9, is_partial: true },
-      ],
-    },
-  };
-
-  it('用最后一根完整收盘的均线和带宽，把现价折成 Z', () => {
-    const reading = intradayZFromDashboard(dashboard, 353.14);
-
-    expect(reading).not.toBeNull();
-    expect(reading!.previousZ).toBeCloseTo(-0.75, 6);
-    // (353.14 - 380) / ((410 - 380) / 1.5) = -1.343
-    expect(reading!.currentZ).toBeCloseTo(-1.343, 2);
-    expect(reading!.price).toBe(353.14);
-  });
-
-  it('缺数据就返回空，不猜', () => {
-    expect(intradayZFromDashboard(null, 100)).toBeNull();
-    expect(intradayZFromDashboard(dashboard, null)).toBeNull();
-    expect(intradayZFromDashboard({ dashboard: { series: [] } }, 100)).toBeNull();
   });
 });
 
@@ -167,5 +138,130 @@ describe('数据源中断提醒', () => {
 
   it('还没成功取过价时不报警', () => {
     expect(feedStateReading({ lastOkAt: null, now: new Date('2026-10-16T18:12:00.000Z') })).toBeNull();
+  });
+});
+
+describe('实时卖出线必须过合理性校验', () => {
+  const sellBase = {
+    ...base,
+    session: 'regular',
+    now: new Date('2026-10-16T17:54:38.479Z'),
+    quotes: { TSLA: { price: 353.18, previousClose: 362.44, changePercent: -0.0256 } },
+  };
+
+  it('卖出线低于现价一半时一条都不写（TSLA $31.41 回放）', async () => {
+    const result = await runRealtimeTick({
+      ...sellBase,
+      store: emptyAlertLog(),
+      sellLines: { TSLA: { trigger: 31.41, reference: 353.18, label: '开始降风险' } },
+    });
+    expect(result.alerts.filter((alert) => alert.kind === 'sell_line')).toEqual([]);
+  });
+
+  it('没有基准价时跳过，不拿来提醒', async () => {
+    const result = await runRealtimeTick({
+      ...sellBase,
+      store: emptyAlertLog(),
+      sellLines: { TSLA: { trigger: 31.41, reference: null, label: '开始降风险' } },
+    });
+    expect(result.alerts.filter((alert) => alert.kind === 'sell_line')).toEqual([]);
+  });
+
+  it('合理的卖出线照常提醒', async () => {
+    const result = await runRealtimeTick({
+      ...sellBase,
+      store: emptyAlertLog(),
+      sellLines: { TSLA: { trigger: 350, reference: 353.18, label: '开始降风险' } },
+    });
+    const line = result.alerts.find((alert) => alert.kind === 'sell_line');
+    expect(line?.text).toBe('[盘中] TSLA $353.18 ≥ 卖出线 $350.00 · 开始降风险');
+  });
+});
+
+describe('盘中 Z 用决策页「盘中预览」同一口径', () => {
+  const dashboard = (series: unknown[]) => ({ dashboard: { band_sigma: 1.5, series } });
+
+  it('取未收盘那根的 zscore200 当现值，最后一根完整收盘当起点', () => {
+    const reading = intradayZPreview(dashboard([
+      { date: '2026-10-15', close: 362.44, zscore200: -0.749115, is_partial: false },
+      { date: '2026-10-16', close: 353.14, zscore200: -1.0122, is_partial: true },
+    ]));
+    expect(reading).toEqual({ previousZ: -0.749115, currentZ: -1.0122, price: 353.14, date: '2026-10-16' });
+  });
+
+  it('没有盘中日线时返回 null，不拿收盘价当盘中价', () => {
+    expect(intradayZPreview(dashboard([
+      { date: '2026-10-16', close: 354.72, zscore200: -0.963323, is_partial: false },
+    ]))).toBeNull();
+    expect(intradayZPreview(null)).toBeNull();
+  });
+
+  it('TSLA 从 -0.75 跌到 -1.01 时写一行「跌得更深」，再跑一次不重复', async () => {
+    const reading = intradayZPreview(dashboard([
+      { date: '2026-10-15', close: 362.44, zscore200: -0.749115, is_partial: false },
+      { date: '2026-10-16', close: 353.14, zscore200: -1.0122, is_partial: true },
+    ]));
+    const first = await runRealtimeTick({
+      ...base, session: 'regular', now: new Date('2026-10-16T17:54:38.479Z'),
+      store: emptyAlertLog(), quotes: {}, intradayZ: { TSLA: reading },
+    });
+    const crossed = first.alerts.filter((alert) => alert.kind === 'z_cross');
+    expect(crossed).toHaveLength(1);
+    expect(crossed[0].text).toContain('TSLA');
+    expect(crossed[0].text).toContain('Z -0.75 → -1.01');
+    expect(crossed[0].text).toContain('跌得更深');
+
+    const second = await runRealtimeTick({
+      ...base, session: 'regular', now: new Date('2026-10-16T17:56:38.479Z'),
+      store: first.store, quotes: {}, intradayZ: { TSLA: reading },
+    });
+    expect(second.alerts.filter((alert) => alert.kind === 'z_cross')).toEqual([]);
+  });
+});
+
+describe('日志记下推送到底有没有发出去', () => {
+  const pushBase = { ...base, session: 'regular', now: new Date('2026-10-16T17:54:38.479Z'), store: emptyAlertLog() };
+
+  it('开关没开时写「未推送 · 实时提醒未开」的状态', async () => {
+    const result = await runRealtimeTick({ ...pushBase });
+    expect(result.entries[0].push_state).toBe('realtime_disabled');
+  });
+
+  it('免打扰期间写 quiet_hours', async () => {
+    const result = await runRealtimeTick({
+      ...pushBase,
+      settings: { ...realtimeDefaults(), enabled: true, qqqDrawdown: true, vix: true, cnn: true },
+      quiet: true,
+    });
+    expect(result.entries[0].push_state).toBe('quiet_hours');
+  });
+
+  it('真发出去时写 sent 和连发次数', async () => {
+    const result = await runRealtimeTick({
+      ...pushBase,
+      settings: { ...realtimeDefaults(), enabled: true, qqqDrawdown: true, vix: true, cnn: true, importantRepeat: 3 },
+      dispatch: async () => ({ status: 'sent' }),
+    });
+    const important = result.entries.find((entry) => entry.push_state === 'sent');
+    expect(important?.push_repeat).toBe(3);
+  });
+});
+
+describe('「到达开仓线」和「跌破 30」算同一个事件', () => {
+  it('开仓线已经记过时，这一轮不再写「跌破 30」', async () => {
+    const result = await runRealtimeTick({
+      ...base, session: 'regular', now: new Date('2026-10-16T17:54:38.479Z'),
+      store: emptyAlertLog(), quotes: {}, cnnScore: 28, previousCnnScore: null,
+      cnnFloorReported: true,
+    });
+    expect(result.alerts.filter((alert) => alert.category === 'sentiment')).toEqual([]);
+  });
+
+  it('开仓线没记过时照常写一行', async () => {
+    const result = await runRealtimeTick({
+      ...base, session: 'regular', now: new Date('2026-10-16T17:54:38.479Z'),
+      store: emptyAlertLog(), quotes: {}, cnnScore: 28, previousCnnScore: null,
+    });
+    expect(result.alerts.some((alert) => alert.text.includes('跌破 30'))).toBe(true);
   });
 });

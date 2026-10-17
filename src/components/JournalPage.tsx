@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ALERT_CATEGORY_LABELS, ALERT_FILTER_ORDER, beijingText, easternText, fetchAlertLog,
-  loadHiddenAlertIds, saveHiddenAlertIds, type AlertCategory, type AlertLogEntry,
+  loadHiddenAlertIds, pushStateLabel, saveHiddenAlertIds, type AlertCategory, type AlertLogEntry,
 } from '../alertLog';
 import {
   addCashFlow, addManualTrade, fetchDecisionLog, removeCashFlow, saveTradeNote,
@@ -218,10 +218,14 @@ function AlertLogPanel({
                 </time>
                 <span aria-hidden="true" className="shrink-0">{item.icon}</span>
                 <span className="min-w-0 flex-1">
-                  {item.text}
+                  <span className={item.voided ? 'text-white/40 line-through' : undefined}>{item.text}</span>
+                  {item.voided && (
+                    <span className="ml-1 text-white/45" title={item.voided_reason ?? undefined}>[已作废]</span>
+                  )}
                   {item.backfilled && <span className="ml-1 text-white/45">[回填]</span>}
-                  {!item.backfilled && item.pushed && <span className="ml-1 text-white/45">[已推送]</span>}
-                  {!item.backfilled && !item.pushed && <span className="ml-1 text-white/45">[未推送]</span>}
+                  {!item.backfilled && !item.voided && (
+                    <span className="ml-1 text-white/45">{pushStateLabel(item)}</span>
+                  )}
                   {item.session === 'intraday' && <span className="ml-1 text-white/45">[盘中]</span>}
                 </span>
                 {onHideAlert && !hidden.has(item.id) && (

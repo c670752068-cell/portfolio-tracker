@@ -14,6 +14,8 @@ export const VIX_RISE_TIERS = [15, 25, 35];
 export const VIX_LEVEL_TIERS = [20, 23, 30];
 export const VIX_RELIEF_DROP_PCT = 15;
 export const CNN_TIERS = [30, 25, 20, 15];
+// 30 就是原有的「到达开仓线」，两边算同一个事件，不重复记。
+export const CNN_OPEN_FLOOR = 30;
 export const CNN_STEP = 5;
 export const Z_TIERS = [0.5, 1, 1.5, 2, 2.5];
 export const STOCK_BIG_MOVE_PCT = 5;
@@ -111,19 +113,29 @@ export function vixAlerts({ price, previousClose, dayHigh = null, session, fired
   return alerts;
 }
 
-/** CNN 恐惧贪婪：跌破档位、比上次又降一截、以及回升。 */
-export function cnnAlerts({ score, previousScore = null, firedKeys, day }) {
+/**
+ * CNN 恐惧贪婪：跌破档位、比上次又降一截、以及回升。
+ * floorReported = 原有的「到达开仓线」已经记过，这一轮就不再单独写「跌破 30」。
+ */
+export function cnnAlerts({ score, previousScore = null, firedKeys, day, floorReported = false }) {
   const current = finite(score);
   if (current === null) return [];
   const previous = finite(previousScore);
   const alerts = [];
-  for (const tier of CNN_TIERS) {
-    const key = `cnn-tier:${tier}:${day}`;
-    if (firedKeys.has(key) || current >= tier) continue;
+  // 一次跨过多档合并成一行，用最深那一档；更深的档位已经记过就不再回头补浅档。
+  const firedDeepest = Math.min(...CNN_TIERS.filter((tier) => firedKeys.has(`cnn-tier:${tier}:${day}`)), Infinity);
+  const crossed = CNN_TIERS
+    .filter((tier) => current < tier && tier < firedDeepest)
+    .filter((tier) => !(floorReported && tier === CNN_OPEN_FLOOR));
+  if (crossed.length > 0) {
+    const deepest = Math.min(...crossed);
     alerts.push({
-      kind: 'tier', tier, dedupe_key: key, category: 'sentiment', symbol: 'CNN', icon: '😱',
-      level: tier <= 20 ? 'important' : 'normal', value: current, threshold: tier, session: null,
-      text: `CNN 恐惧贪婪 ${current.toFixed(0)} · 跌破 ${tier}${current < 25 ? ' · 极度恐惧' : ''}`,
+      kind: 'tier', tier: deepest, dedupe_key: `cnn-tier:${deepest}:${day}`,
+      category: 'sentiment', symbol: 'CNN', icon: '😱',
+      level: deepest <= 20 ? 'important' : 'normal', value: current, threshold: deepest, session: null,
+      text: `CNN 恐惧贪婪 ${current.toFixed(0)} · 跌破 ${
+        [...crossed].sort((left, right) => right - left).join(' / ')
+      }${current < 25 ? ' · 极度恐惧' : ''}`,
     });
   }
   if (previous !== null && previous - current >= CNN_STEP) {

@@ -206,3 +206,41 @@ describe('空值不能当成 0', () => {
     expect(bigMoveAlert({ symbol: 'AVGO', price: 100, changePercent: null, held: true, session: 'regular', firedKeys: new Set(), day: '2026-10-16' })).toBeNull();
   });
 });
+
+describe('CNN 多档合并与开仓线同源', () => {
+  const day = '2026-10-16';
+
+  it('一次跨过 30、25、20 三档只写一行，用最深那一档', () => {
+    const alerts = cnnAlerts({ score: 19, previousScore: null, firedKeys: new Set(), day });
+    const tiers = alerts.filter((alert) => alert.kind === 'tier');
+    expect(tiers).toHaveLength(1);
+    expect(tiers[0].tier).toBe(20);
+    expect(tiers[0].dedupe_key).toBe(`cnn-tier:20:${day}`);
+    expect(tiers[0].text).toBe('CNN 恐惧贪婪 19 · 跌破 30 / 25 / 20 · 极度恐惧');
+  });
+
+  it('已经报过更深的档位后，不再回头补浅档', () => {
+    const fired = new Set([`cnn-tier:20:${day}`]);
+    const alerts = cnnAlerts({ score: 19, previousScore: 19, firedKeys: fired, day });
+    expect(alerts.filter((alert) => alert.kind === 'tier')).toEqual([]);
+  });
+
+  it('「到达开仓线」已经记过时，不再单独写一条「跌破 30」', () => {
+    const alerts = cnnAlerts({ score: 28, previousScore: null, firedKeys: new Set(), day, floorReported: true });
+    expect(alerts.filter((alert) => alert.kind === 'tier')).toEqual([]);
+  });
+
+  it('开仓线记过之后，更深的档位照常写，文案里不带已经报过的 30', () => {
+    const alerts = cnnAlerts({ score: 19, previousScore: 28, firedKeys: new Set(), day, floorReported: true });
+    const tiers = alerts.filter((alert) => alert.kind === 'tier');
+    expect(tiers).toHaveLength(1);
+    expect(tiers[0].tier).toBe(20);
+    expect(tiers[0].text).toBe('CNN 恐惧贪婪 19 · 跌破 25 / 20 · 极度恐惧');
+  });
+
+  it('第一次运行没有上一次读数时，不写任何变化提醒', () => {
+    const alerts = cnnAlerts({ score: 21, previousScore: null, firedKeys: new Set(), day });
+    expect(alerts.some((alert) => alert.kind === 'relief' || alert.kind === 'deeper')).toBe(false);
+    expect(alerts.every((alert) => !alert.text.includes('较上次 0'))).toBe(true);
+  });
+});

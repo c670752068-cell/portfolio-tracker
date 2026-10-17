@@ -55,6 +55,20 @@ export function etParts(date) {
   };
 }
 
+// 美东 16:30（常规时段收盘）那一刻的 UTC 时间：夏令时 20:30Z，冬令时 21:30Z。
+// 回填记录以前固定写 20:30Z，冬令时那几条会显示成北京时间 04:30 而不是 05:30。
+export function etCloseInstant(dateKey, { hour = 16, minute = 30 } = {}) {
+  // 夏令时 UTC-4、冬令时 UTC-5，哪个换算回来正好是当天那个时刻就用哪个。
+  for (const offsetHours of [4, 5]) {
+    const stamp = `${String(hour + offsetHours).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    const guess = new Date(`${dateKey}T${stamp}:00.000Z`);
+    if (Number.isNaN(+guess)) return null;
+    const parts = etParts(guess);
+    if (parts.date === dateKey && parts.minutes === hour * 60 + minute) return guess.toISOString();
+  }
+  return null;
+}
+
 function sessionFromTradingPeriod(date, currentTradingPeriod) {
   if (!currentTradingPeriod || typeof currentTradingPeriod !== 'object') return null;
   const timestamp = Math.floor(date.getTime() / 1000);

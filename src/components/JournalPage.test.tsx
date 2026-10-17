@@ -174,3 +174,30 @@ describe('日志页自动刷新', () => {
     expect(html).toContain('只看重要');
   });
 });
+
+describe('推送状态和作废标记', () => {
+  it('被免打扰拦下的标「[免打扰]」', () => {
+    const html = render({ alerts: [alert({ pushed: false, push_state: 'quiet_hours' })] });
+    expect(html).toContain('[免打扰]');
+    expect(html).not.toContain('[未推送]');
+  });
+
+  it('发出去的标「[已推送]」，连发多条带次数', () => {
+    expect(render({ alerts: [alert({ pushed: true, push_state: 'sent' })] })).toContain('[已推送]');
+    expect(render({ alerts: [alert({ pushed: true, push_state: 'sent', push_repeat: 3 })] })).toContain('[已推送 ×3]');
+  });
+
+  it('类别开关没开时说清为什么没推送', () => {
+    const html = render({ alerts: [alert({ pushed: false, push_state: 'category_disabled' })] });
+    expect(html).toContain('[未推送 · 类别开关未开]');
+  });
+
+  it('已作废的那条带「[已作废]」并划掉，但还在列表里', () => {
+    const html = render({
+      alerts: [alert({ text: 'TSLA $353.18 ≥ 卖出线 $31.41', voided: true, voided_reason: '卖出线未过合理性校验' })],
+    });
+    expect(html).toContain('[已作废]');
+    expect(html).toContain('line-through');
+    expect(html).toContain('TSLA $353.18 ≥ 卖出线 $31.41');
+  });
+});

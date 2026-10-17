@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { classifyMarketSession } from './market-session.mjs';
+import { classifyMarketSession, etCloseInstant } from './market-session.mjs';
 
 describe('classifyMarketSession', () => {
   it.each([
@@ -67,5 +67,19 @@ describe('classifyMarketSession', () => {
     expect(classifyMarketSession(new Date('2026-07-23T18:00:00Z'), {
       hasMinuteSeries: true,
     })).toBe('regular');
+  });
+});
+
+describe('美东收盘时刻换算（冬夏令时）', () => {
+  it('夏令时收盘是 20:30Z（北京 04:30）', () => {
+    expect(etCloseInstant('2026-10-16')).toBe('2026-10-16T20:30:00.000Z');
+  });
+
+  it('冬令时收盘是 21:30Z（北京 05:30）', () => {
+    expect(etCloseInstant('2025-11-17')).toBe('2025-11-17T21:30:00.000Z');
+  });
+
+  it('日期不合法时返回 null，不编一个时间出来', () => {
+    expect(etCloseInstant('不是日期')).toBeNull();
   });
 });

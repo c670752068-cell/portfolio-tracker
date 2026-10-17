@@ -27,7 +27,12 @@ export function buildTwr(
   const points = [...navSeries]
     .filter((point) => typeof point.date === 'string' && (!from || point.date >= from))
     .sort((left, right) => left.date.localeCompare(right.date));
-  if (points.length < 2) return EMPTY;
+  // 只有一天净值时算不出收益率，但起止日期是已知的：页面要显示「净值序列从 X 开始」。
+  if (points.length < 2) {
+    return points.length === 0
+      ? EMPTY
+      : { ...EMPTY, start: points[0].date, end: points[points.length - 1].date };
+  }
 
   let index = 1;
   let peak = 1;

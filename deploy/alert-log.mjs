@@ -102,6 +102,9 @@ export function appendAlerts(store, entries, now = new Date()) {
       value: numeric(item.value),
       threshold: numeric(item.threshold),
       pushed: item.pushed === true,
+      // 「到底有没有发出去」：sent / quiet_hours / 其他拦下的原因，日志里照实写
+      push_state: typeof item.push_state === 'string' ? item.push_state : null,
+      push_repeat: numeric(item.push_repeat),
       backfilled: item.backfilled === true,
       session: typeof item.session === 'string' ? item.session : null,
       indicators: item.indicators && typeof item.indicators === 'object' ? item.indicators : null,
@@ -116,11 +119,66 @@ export function appendAlerts(store, entries, now = new Date()) {
 }
 
 /**
+ * 推送事件归到哪个筛选分类。「可买」走回撤，「低估值」走估值，
+ * 这样日志页的筛选和决策日志的关联都能用同一套分类。
+ */
+export function alertCategoryForEvent(event) {
+  const key = `${String(event?.key || '')} ${String(event?.title || '')}`;
+  if (/drawdown|回撤|深回撤|可买/.test(key)) return 'drawdown';
+  if (/cnn|vix|恐慌|情绪/i.test(key)) return 'sentiment';
+  if (/pe|估值/i.test(key)) return 'valuation';
+  if (/z|通道|露头/i.test(key)) return 'zscore';
+  if (/sell|卖出|止盈/i.test(key)) return 'sell_line';
+  if (/仓位|预算|杠杆|期权/.test(key)) return 'position';
+  return 'other';
+}
+
+/** 推送事件自己不带标的，标的写在 key 的第二段里（buy:NKE:…、valuation:AVGO:low）。 */
+export function symbolFromEventKey(event) {
+  if (typeof event?.symbol === 'string' && event.symbol) return event.symbol.toUpperCase();
+  const candidate = String(String(event?.key || '').split(':')[1] || '').toUpperCase();
+  return /^[A-Z][A-Z0-9.]{0,5}$/.test(candidate) ? candidate : null;
+}
+
+/**
+ * 把写错的提醒标成「已作废」。只加标记，不删任何一行，也不改原文。
+ * 命中不到任何 dedupe_key 时原样返回，避免白写一次盘。
+ */
+export function voidAlerts(store, { dedupeKeys = [], ids = [], reason = '' } = {}, now = new Date()) {
+  const current = normalizeAlertLog(store);
+  const keys = new Set(rows(dedupeKeys).map((value) => String(value)));
+  const identifiers = new Set(rows(ids).map((value) => String(value)));
+  let changed = false;
+  const alerts = current.alerts.map((item) => {
+    if (item.voided === true) return item;
+    if (!keys.has(String(item.dedupe_key)) && !identifiers.has(String(item.id))) return item;
+    changed = true;
+    return {
+      ...item, voided: true, voided_reason: String(reason || ''), voided_at: now.toISOString(),
+    };
+  });
+  if (!changed) return store;
+  return { ...current, alerts, updated_at: now.toISOString() };
+}
+
+/** 日志里最后一条带数值的 CNN 记录，用来给重启后的实时监控补上起点。 */
+export function lastKnownCnnScore(store) {
+  const current = normalizeAlertLog(store);
+  for (let index = current.alerts.length - 1; index >= 0; index -= 1) {
+    const item = current.alerts[index];
+    if (String(item.symbol || '').toUpperCase() !== 'CNN') continue;
+    const value = numeric(item.value);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+/**
  * QQQ 离前高的回撤按收盘价首次跌破各档位时各给一条；创新高时给一条
  * 「本轮回撤结束」，各档随之重置。一轮用那一轮前高的日期做 dedupe_key，
  * 所以同一轮里每档只会记一次。
  */
-export function qqqDrawdownEvents(series, { from = null } = {}) {
+export function qqqDrawdownEvents(series, { from = null, liveFiredTiers = new Set() } = {}) {
   const closes = rows(series)
     .filter((point) => typeof point?.date === 'string' && numeric(point.close) !== null && Number(point.close) > 0)
     .map((point) => ({ date: point.date, close: Number(point.close) }))
@@ -165,17 +223,23 @@ export function qqqDrawdownEvents(series, { from = null } = {}) {
     for (const tier of QQQ_DRAWDOWN_TIERS) {
       if (firedTiers.has(tier) || drawdown > -tier) continue;
       firedTiers.add(tier);
+      // 盘中已经报过同一档时，收盘这条是确认而不是「首次跌破」。
+      const confirmation = liveFiredTiers.has(`${tier}:${peakDate}`);
       events.push({
-        kind: 'tier',
+        kind: confirmation ? 'tier_confirm' : 'tier',
         tier,
-        dedupe_key: `qqq-drawdown:${tier}:${peakDate}`,
+        dedupe_key: confirmation
+          ? `qqq-drawdown-confirm:${tier}:${peakDate}`
+          : `qqq-drawdown:${tier}:${peakDate}`,
         category: 'drawdown',
         symbol: 'QQQ',
         icon: '📉',
         date: point.date,
         value: drawdown,
         threshold: -tier,
-        text: `QQQ 回撤 ${drawdown.toFixed(2)}%（前高 ${peak.toFixed(2)} → 收盘 ${point.close.toFixed(2)}）· 本轮首次跌破 -${tier}%`,
+        text: confirmation
+          ? `[收盘确认] QQQ 收盘 ${point.close.toFixed(2)} · 离前高 ${drawdown.toFixed(2)}% · 仍在 -${tier}% 档`
+          : `QQQ 回撤 ${drawdown.toFixed(2)}%（前高 ${peak.toFixed(2)} → 收盘 ${point.close.toFixed(2)}）· 本轮首次跌破 -${tier}%`,
       });
     }
   }

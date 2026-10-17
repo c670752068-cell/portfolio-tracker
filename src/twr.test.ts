@@ -116,3 +116,17 @@ describe('基准的最大回撤', () => {
     expect(blendedMaxDrawdownPct(series, [], '2026-09-30', '2026-11-30', 0.6)).toBeNull();
   });
 });
+
+describe('净值序列的起始日期', () => {
+  it('只有一天净值时也报得出起始日期，收益率仍然是暂无', () => {
+    const result = buildTwr([{ date: '2026-10-16', nav: 186325.01, captured_at: '2026-10-16T17:15:08.631Z' }], []);
+    expect(result.start).toBe('2026-10-16');
+    expect(result.end).toBe('2026-10-16');
+    expect(result.returnPct).toBeNull();
+    expect(result.periods).toBe(0);
+  });
+
+  it('一天净值都没有时才是 null', () => {
+    expect(buildTwr([], []).start).toBeNull();
+  });
+});

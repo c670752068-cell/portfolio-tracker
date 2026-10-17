@@ -13,9 +13,36 @@ export interface AlertLogEntry {
   value: number | null;
   threshold: number | null;
   pushed: boolean;
+  /** 推送到底有没有发出去：sent / quiet_hours / 其他被拦下的原因。老记录没有这个字段。 */
+  push_state?: string | null;
+  /** 重要提醒连发的条数，只在连发时有值。 */
+  push_repeat?: number | null;
+  /** 写错的提醒只标作废、不删除。 */
+  voided?: boolean;
+  voided_reason?: string | null;
+  voided_at?: string | null;
   backfilled: boolean;
   session: string | null;
   indicators: Record<string, number | null> | null;
+}
+
+export const PUSH_BLOCK_LABELS: Readonly<Record<string, string>> = {
+  realtime_disabled: '实时提醒未开',
+  category_disabled: '类别开关未开',
+  disabled: '推送总开关关闭',
+  log_only: '只记录不推送',
+};
+
+/** 日志每行末尾的推送状态标签。老记录没有 push_state，就按原来的 pushed 显示。 */
+export function pushStateLabel(entry: Pick<AlertLogEntry, 'pushed' | 'push_state' | 'push_repeat'>): string {
+  const state = entry.push_state ?? (entry.pushed ? 'sent' : null);
+  if (state === 'sent') {
+    return entry.push_repeat && entry.push_repeat > 1 ? `[已推送 ×${entry.push_repeat}]` : '[已推送]';
+  }
+  if (state === 'quiet_hours') return '[免打扰]';
+  if (state === 'dry_run') return '[测试推送]';
+  const reason = state ? PUSH_BLOCK_LABELS[state] : null;
+  return reason ? `[未推送 · ${reason}]` : '[未推送]';
 }
 
 export interface AlertLogPayload {

@@ -28,7 +28,7 @@ import {
 import { createRefreshRequestRoute } from './refresh-request-route.mjs';
 import { deliverQuantDecisionAlerts } from './quant-decision-alerts.mjs';
 import { createNotificationControl, inQuietHours, scheduleDue, zonedParts } from './notification-control.mjs';
-import { classifyMarketSession } from './market-session.mjs';
+import { classifyMarketSession, etCloseInstant } from './market-session.mjs';
 import { buildYahooChartUrl, parseYahooChartQuote } from './yahoo-quote.mjs';
 import { createLastGoodCache } from './last-good-cache.mjs';
 import {
@@ -44,13 +44,16 @@ import {
   appendAlerts,
   applyStateAlerts,
   createAlertLogRoute,
+  alertCategoryForEvent,
+  lastKnownCnnScore,
   qqqDrawdownEvents,
   readAlertLog,
+  symbolFromEventKey,
   writeAlertLog,
 } from './alert-log.mjs';
 import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
-import { SESSION_CADENCE_MS } from './realtime-alerts.mjs';
-import { feedStateReading, intradayZFromDashboard, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
+import { SESSION_CADENCE_MS, sessionLabel } from './realtime-alerts.mjs';
+import { feedStateReading, intradayZPreview, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
 import { quietSummaryEvent, realtimeDefaults } from './realtime-push.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
@@ -763,13 +766,20 @@ async function dispatchAndLogAlert(event, extra = {}) {
   const result = await notificationControl.dispatch(event);
   try {
     const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    const occurredAt = typeof event?.createdAt === 'string' ? new Date(event.createdAt) : new Date();
+    const session = classifyMarketSession(
+      Number.isNaN(+occurredAt) ? new Date() : occurredAt, { hasMinuteSeries: true },
+    );
     const next = appendAlerts(store, [{
       dedupe_key: `push:${String(event?.dedupeKey || event?.key || '')}`,
       category: alertCategoryForEvent(event),
-      symbol: typeof event?.symbol === 'string' ? event.symbol : null,
+      symbol: symbolFromEventKey(event),
       icon: '🔔',
-      text: [event?.title, event?.body].filter(Boolean).join(' · ') || '推送',
+      text: `[${sessionLabel(session)}] ${[event?.title, event?.body].filter(Boolean).join(' · ') || '推送'}`,
       pushed: result?.status === 'sent',
+      // 没发出去时把原因一起记下来，日志页照实显示，不再一律写「未推送」
+      push_state: result?.status === 'sent' ? 'sent' : result?.reason || result?.status || 'not_pushed',
+      session,
       occurred_at: typeof event?.createdAt === 'string' ? event.createdAt : undefined,
       ...extra,
     }]);
@@ -780,38 +790,32 @@ async function dispatchAndLogAlert(event, extra = {}) {
   return result;
 }
 
-function alertCategoryForEvent(event) {
-  const key = `${String(event?.key || '')} ${String(event?.title || '')}`;
-  if (/drawdown|回撤|深回撤/.test(key)) return 'drawdown';
-  if (/cnn|vix|恐慌|情绪/i.test(key)) return 'sentiment';
-  if (/pe|估值/i.test(key)) return 'valuation';
-  if (/z|通道|露头/i.test(key)) return 'zscore';
-  if (/sell|卖出|止盈/i.test(key)) return 'sell_line';
-  if (/仓位|预算|杠杆|期权/.test(key)) return 'position';
-  return 'other';
+// 取某个标的的日线仪表盘：缓存没过期就用缓存，过期就抓一次 Yahoo，
+// 抓失败退回上一次成功的数据，绝不返回空白。
+async function loadDashboard(symbol) {
+  const cacheKey = `dashboard:${symbol}:5y:8`;
+  const fresh = readMaSlopeCache(cacheKey, MA_SLOPE_DASHBOARD_CACHE_TTL_MS);
+  if (fresh) return fresh;
+  try {
+    const data = await getJsonOverIpv4(
+      buildYahooSlopeChartUrl(symbol, '5y'),
+      { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      15_000,
+    );
+    if (!data?.chart?.result?.[0]) throw new Error('no chart result');
+    const result = parseYahooSlopeDashboard(symbol, data, { range: '5y', slopeWindow: 8 });
+    writeMaSlopeCache(cacheKey, result);
+    return result;
+  } catch (error) {
+    console.warn(`dashboard load failed: ${symbol} ${error instanceof Error ? error.message : String(error)}`);
+    return maSlopeCache.lastGood(cacheKey);
+  }
 }
 
-// 取某个标的的完整收盘日线：先用缓存（含过期兜底），没有再抓一次 Yahoo。
+// 取某个标的的完整收盘日线。
 async function closedDailySeries(symbol) {
-  const cacheKey = `dashboard:${symbol}:5y:8`;
-  const cached = readMaSlopeCache(cacheKey, MA_SLOPE_DASHBOARD_CACHE_TTL_MS) || maSlopeCache.lastGood(cacheKey);
-  let result = cached;
-  if (!result) {
-    try {
-      const data = await getJsonOverIpv4(
-        buildYahooSlopeChartUrl(symbol, '5y'),
-        { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
-        15_000,
-      );
-      if (!data?.chart?.result?.[0]) throw new Error('no chart result');
-      result = parseYahooSlopeDashboard(symbol, data, { range: '5y', slopeWindow: 8 });
-      writeMaSlopeCache(cacheKey, result);
-    } catch (error) {
-      console.warn(`decision log resolve could not load ${symbol}: ${error instanceof Error ? error.message : String(error)}`);
-      return [];
-    }
-  }
-  return (result.dashboard?.series || [])
+  const result = await loadDashboard(symbol);
+  return (result?.dashboard?.series || [])
     .filter((point) => point && point.is_partial !== true && Number.isFinite(point.close))
     .map((point) => ({ date: point.date, close: point.close }));
 }
@@ -838,6 +842,8 @@ async function runDecisionLogResolveCycle(today) {
 }
 
 function alertNumber(value) {
+  // Number(null) 是 0：不挡掉就会写出「CNN 0 < 30 · 到达开仓线」这种假话
+  if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -850,7 +856,12 @@ async function captureAlertsFromSnapshot(snapshot) {
     const series = await closedDailySeries('QQQ');
     const oneYearAgo = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
     const today = etDateString(new Date());
-    const drawdowns = qqqDrawdownEvents(series, { from: oneYearAgo }).map((event) => ({
+    // 盘中已经报过同一档的，收盘这条写成「收盘确认 · 仍在 -5% 档」。
+    const liveFiredTiers = new Set((store.alerts || [])
+      .map((item) => /^qqq-drawdown-live:(\d+):(.+)$/.exec(String(item.dedupe_key || '')))
+      .filter(Boolean)
+      .map((match) => `${match[1]}:${match[2]}`));
+    const drawdowns = qqqDrawdownEvents(series, { from: oneYearAgo, liveFiredTiers }).map((event) => ({
       dedupe_key: event.dedupe_key,
       category: event.category,
       symbol: event.symbol,
@@ -862,7 +873,7 @@ async function captureAlertsFromSnapshot(snapshot) {
       // 今天之前的都是用历史行情补的，标「回填」，也不算推送过
       backfilled: event.date < today,
       pushed: false,
-      occurred_at: `${event.date}T20:30:00.000Z`,
+      occurred_at: etCloseInstant(event.date),
     }));
     const withDrawdowns = appendAlerts(store, drawdowns);
 
@@ -1150,7 +1161,9 @@ server.listen(PORT, HOST, () => {
 
 // 实时监控：盘中 1 分钟、盘前盘后 2 分钟、夜盘 5 分钟，休市 15 分钟。
 // 新提醒默认只写日志不推送（开关在设置里，默认全关）。
-const REALTIME_STATE = { lastTickAt: 0, lastCnn: null, quietQueue: [], wasQuiet: false, running: false, lastQuoteOkAt: null, outageSince: null };
+const REALTIME_STATE = { lastTickAt: 0, lastCnn: null, quietQueue: [], wasQuiet: false, running: false, lastQuoteOkAt: null, outageSince: null, dashboardCursor: 0 };
+// 一轮只刷这么多个标的的日线，避免把行情源打爆；24 个标的约 6 分钟轮一遍。
+const REALTIME_DASHBOARD_PER_TICK = 4;
 const REALTIME_TICK_MS = 30 * 1000;
 
 async function runRealtimeMonitorCycle() {
@@ -1212,10 +1225,18 @@ async function runRealtimeMonitorCycle() {
     const qqqSeries = await closedDailySeries('QQQ');
     const peak = qqqSeries.reduce((best, point) => (!best || point.close > best.close ? point : best), null);
 
+    // 盘中 Z 用决策页「盘中预览」那一根未收盘日线，只有常规时段才有；
+    // 每轮按游标刷几个标的的日线缓存，整个监控范围都能轮到，不再只看前 8 个。
+    const zSymbols = symbols.filter((symbol) => symbol !== 'VIX');
+    if (session === 'regular' && zSymbols.length > 0) {
+      for (let step = 0; step < REALTIME_DASHBOARD_PER_TICK; step += 1) {
+        await loadDashboard(zSymbols[(REALTIME_STATE.dashboardCursor + step) % zSymbols.length]);
+      }
+      REALTIME_STATE.dashboardCursor = (REALTIME_STATE.dashboardCursor + REALTIME_DASHBOARD_PER_TICK) % zSymbols.length;
+    }
     const intradayZ = {};
-    for (const symbol of ['QQQ', ...held].slice(0, 8)) {
-      const cached = maSlopeCache.lastGood(`dashboard:${symbol}:5y:8`);
-      const reading = intradayZFromDashboard(cached, quotes[symbol]?.price);
+    for (const symbol of zSymbols) {
+      const reading = intradayZPreview(maSlopeCache.lastGood(`dashboard:${symbol}:5y:8`));
       if (reading) intradayZ[symbol] = reading;
     }
 
@@ -1224,15 +1245,20 @@ async function runRealtimeMonitorCycle() {
       // 先过一遍合理性校验：离谱的卖出线（低于现价一半或高于三倍）不参与比价，
       // 否则 TSLA 那种 $30.98 的坏数据会天天报「已到卖出线」。
       const raw = family?.sell_price_plan || {};
-      const plan = saneSellPricePlan(raw, sellPriceReference(raw) ?? quotes[symbol]?.price ?? null);
-      const trigger = Number(plan?.trigger_price ?? plan?.sell_price);
-      if (String(plan?.method || '') !== 'unavailable' && Number.isFinite(trigger) && trigger > 0) {
-        sellLines[symbol] = { trigger, label: plan.action_stage_key === 'trim_stock' ? '正股分批' : '开始降风险' };
+      const reference = sellPriceReference(raw) ?? alertNumber(quotes[symbol]?.price);
+      const plan = saneSellPricePlan(raw, reference);
+      const trigger = alertNumber(plan?.trigger_price ?? plan?.sell_price);
+      if (String(plan?.method || '') !== 'unavailable' && trigger !== null && trigger > 0) {
+        // 基准价一起传过去：判定那一侧再按卖出页的同一规则校验一次，无效的直接跳过。
+        sellLines[symbol] = { trigger, reference, label: plan.action_stage_key === 'trim_stock' ? '正股分批' : '开始降风险' };
       }
     }
 
-    const cnnScore = Number(snapshot?.context?.cnn_fear_greed?.score);
+    const cnnScore = alertNumber(snapshot?.context?.cnn_fear_greed?.score);
     const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    // 刚重启时没有「上一次的 CNN」：从日志里取最近一次已知值当起点，
+    // 取不到就这一轮不做比较，绝不拿 0 当起点。
+    if (REALTIME_STATE.lastCnn === null) REALTIME_STATE.lastCnn = lastKnownCnnScore(store);
     const result = await runRealtimeTick({
       now,
       session,
@@ -1243,13 +1269,15 @@ async function runRealtimeMonitorCycle() {
       heldSymbols: held,
       qqqPreviousHigh: peak?.close ?? null,
       qqqPeakDate: peak?.date ?? null,
-      cnnScore: Number.isFinite(cnnScore) ? cnnScore : null,
+      cnnScore,
       previousCnnScore: REALTIME_STATE.lastCnn,
+      // 「跌破 30」和原有的「到达开仓线」算同一个事件，不重复记一行
+      cnnFloorReported: store.states?.cnn === 'triggered',
       settings: realtime,
       quiet,
       dispatch: (event) => notificationControl.dispatch(event),
     });
-    if (Number.isFinite(cnnScore)) REALTIME_STATE.lastCnn = cnnScore;
+    if (cnnScore !== null) REALTIME_STATE.lastCnn = cnnScore;
     if (result.store !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, result.store);
     if (result.quietQueue.length) REALTIME_STATE.quietQueue.push(...result.quietQueue);
 

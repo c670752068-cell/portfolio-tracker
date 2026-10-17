@@ -161,3 +161,40 @@ describe('数据源中断提醒接进网关', () => {
     expect(gateway).toContain('lastQuoteOkAt');
   });
 });
+
+describe('第三阶段实测问题的网关接线', () => {
+  it('实时卖出线把基准价一起交给判定，用的是卖出页同一套校验', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+
+    expect(gateway).toMatch(/sellLines\[symbol\] = \{ trigger, reference/);
+  });
+
+  it('盘中 Z 用决策页「盘中预览」的读数，范围不再砍到 8 个', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+
+    expect(gateway).toContain('intradayZPreview(');
+    expect(gateway).not.toContain('intradayZFromDashboard');
+    expect(gateway).not.toContain("['QQQ', ...held].slice(0, 8)");
+  });
+
+  it('CNN 读数不把空值当 0，并从日志里取最近一次已知值做起点', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+
+    expect(gateway).not.toMatch(/const cnnScore = Number\(snapshot\?\.context\?\.cnn_fear_greed\?\.score\)/);
+    expect(gateway).toContain('lastKnownCnnScore(');
+  });
+
+  it('回填的收盘时间按美东 16:30 换算，冬令时不再写成 20:30Z', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+
+    expect(gateway).not.toContain('T20:30:00.000Z');
+    expect(gateway).toContain('etCloseInstant(');
+  });
+
+  it('推送日志记下真实状态和标的、时段', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+
+    expect(gateway).toContain('push_state:');
+    expect(gateway).toContain('symbolFromEventKey(');
+  });
+});

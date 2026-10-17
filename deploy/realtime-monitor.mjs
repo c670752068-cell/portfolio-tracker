@@ -3,6 +3,7 @@ import {
   bigMoveAlert, cnnAlerts, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
 import { pushPlanFor, realtimeDefaults } from './realtime-push.mjs';
+import { isSaneSellPrice } from './sell-price-sanity.mjs';
 
 // 一次轮询：拿到的行情 → 该写哪些提醒 → 按开关决定推不推。
 // 纯靠入参，没有网络和文件操作，方便测试；网关负责喂数据和落盘。
@@ -13,6 +14,13 @@ export function monitorSymbols({ held = [], decision = [] } = {}) {
     .map((symbol) => String(symbol || '').trim().toUpperCase())
     .filter(Boolean);
   return [...new Set(list)].slice(0, MONITOR_SYMBOL_LIMIT);
+}
+
+function finite(value) {
+  // Number(null) 是 0：不挡掉就会把「没有数」算成 0
+  if (value === null || value === undefined || value === '' || typeof value === 'boolean') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function etDay(now) {
@@ -34,6 +42,7 @@ export async function runRealtimeTick({
   qqqPeakDate = null,
   cnnScore = null,
   previousCnnScore = null,
+  cnnFloorReported = false,
   settings = realtimeDefaults(),
   dispatch = async () => ({ status: 'skipped' }),
   quiet = false,
@@ -58,7 +67,9 @@ export async function runRealtimeTick({
     }));
   }
   if (cnnScore !== null && cnnScore !== undefined) {
-    alerts.push(...cnnAlerts({ score: cnnScore, previousScore: previousCnnScore, firedKeys, day }));
+    alerts.push(...cnnAlerts({
+      score: cnnScore, previousScore: previousCnnScore, firedKeys, day, floorReported: cnnFloorReported,
+    }));
   }
   for (const [symbol, reading] of Object.entries(intradayZ)) {
     alerts.push(...intradayZAlerts({
@@ -76,9 +87,12 @@ export async function runRealtimeTick({
   }
   for (const [symbol, line] of Object.entries(sellLines)) {
     const quote = quotes[symbol];
-    const trigger = Number(line?.trigger);
-    const price = Number(quote?.price);
-    if (!Number.isFinite(trigger) || !Number.isFinite(price) || price < trigger) continue;
+    const trigger = finite(line?.trigger);
+    const price = finite(quote?.price);
+    if (trigger === null || price === null || price < trigger) continue;
+    // 和卖出页同一套校验：卖出线必须和基准价同一个数量级，没有基准价就不提醒。
+    // 真实事故：TSLA 现价 $353 时拿 $31.41 当卖出线写了一行「已到卖出线」。
+    if (!isSaneSellPrice(trigger, finite(line?.reference))) continue;
     const key = `sell-line-live:${symbol}:${trigger}:${day}`;
     if (firedKeys.has(key)) continue;
     alerts.push({
@@ -102,6 +116,7 @@ export async function runRealtimeTick({
   for (const alert of alerts) {
     const plan = pushPlanFor(alert, settings, { quiet });
     let pushed = false;
+    let sentCount = 0;
     if (plan.push && dryRun) {
       dryRunPushes.push({ text: alert.text, level: alert.level, repeat: plan.repeat });
     } else if (plan.push) {
@@ -117,22 +132,27 @@ export async function runRealtimeTick({
           body: [alert.text, alert.detail].filter(Boolean).join('\n'),
           createdAt: new Date(+now + index).toISOString(),
         });
-        if (result?.status === 'sent') pushed = true;
+        if (result?.status === 'sent') {
+          pushed = true;
+          sentCount += 1;
+        }
       }
     }
     if (plan.queueSummary) quietQueue.push({ text: alert.text });
-    const marks = [];
-    if (dryRun) marks.push('[测试]');
-    if (plan.reason === 'quiet_hours') marks.push('[免打扰]');
+    // 推不推、为什么没推，都照实写进日志；日志页按这个字段显示
+    // [已推送 ×3] / [免打扰] / [未推送 · 原因]。
+    const pushState = pushed ? 'sent' : dryRun && plan.push ? 'dry_run' : plan.reason || 'not_pushed';
     entries.push({
       dedupe_key: alert.dedupe_key,
       category: alert.category,
       symbol: alert.symbol,
       icon: alert.icon,
-      text: `${alert.text}${marks.length ? ` ${marks.join(' ')}` : ''}${alert.detail ? `\n${alert.detail}` : ''}`,
+      text: `${alert.text}${dryRun ? ' [测试]' : ''}${alert.detail ? `\n${alert.detail}` : ''}`,
       value: alert.value,
       threshold: alert.threshold,
       pushed,
+      push_state: pushState,
+      push_repeat: sentCount > 1 ? sentCount : null,
       session: alert.session || session,
       indicators: { level: alert.level === 'important' ? 1 : alert.level === 'normal' ? 2 : 3 },
       occurred_at: now.toISOString(),
@@ -149,25 +169,22 @@ export async function runRealtimeTick({
 }
 
 /**
- * 盘中 Z：用最后一根完整收盘的 200 日均线和通道宽度，把现价折算成 Z-Score。
- * 不额外抓行情，只用已经缓存的 K 线仪表盘 + 实时报价，和决策页「盘中预览」同一口径。
+ * 盘中 Z：直接取决策页「盘中预览」用的那一根未收盘日线的 zscore200，
+ * 起点取最后一根完整收盘的 zscore200，口径和页面完全一致，不另算一遍。
+ * 没有盘中日线（盘前、盘后、夜盘、休市）时返回 null，不拿收盘价充当盘中价。
  */
-export function intradayZFromDashboard(dashboard, price) {
-  // Number(null) 是 0，会把「没有价格」算成 0 元，必须先挡掉
-  if (price === null || price === undefined || price === '' || typeof price === 'boolean') return null;
-  const current = Number(price);
+export function intradayZPreview(dashboard) {
   const series = dashboard?.dashboard?.series;
-  if (!Number.isFinite(current) || current <= 0 || !Array.isArray(series) || series.length === 0) return null;
-  const closed = [...series].reverse().find((point) => point && point.is_partial !== true);
-  const ma = Number(closed?.ma200);
-  const band = Array.isArray(closed?.band200) ? closed.band200 : [];
-  const upper = Number(band[1]);
-  const sigma = Number(dashboard?.dashboard?.band_sigma) || 1.5;
-  const previousZ = Number(closed?.zscore200);
-  if (!Number.isFinite(ma) || !Number.isFinite(upper) || upper <= ma || !Number.isFinite(previousZ)) return null;
-  const deviation = (upper - ma) / sigma;
-  if (!(deviation > 0)) return null;
-  return { previousZ, currentZ: (current - ma) / deviation, price: current };
+  if (!Array.isArray(series) || series.length === 0) return null;
+  const reversed = [...series].reverse();
+  const partial = reversed.find((point) => point && point.is_partial === true);
+  const closed = reversed.find((point) => point && point.is_partial !== true);
+  const currentZ = finite(partial?.zscore200);
+  const previousZ = finite(closed?.zscore200);
+  if (currentZ === null || previousZ === null) return null;
+  return {
+    previousZ, currentZ, price: finite(partial?.close), date: partial?.date ?? null,
+  };
 }
 
 // 行情数据源中断超过这么久就报一条系统提醒。

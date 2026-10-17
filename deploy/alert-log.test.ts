@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  QQQ_DRAWDOWN_TIERS, appendAlerts, applyStateAlerts, createAlertLogRoute, emptyAlertLog,
-  qqqDrawdownEvents, readAlertLog, writeAlertLog,
+  QQQ_DRAWDOWN_TIERS, alertCategoryForEvent, appendAlerts, applyStateAlerts, createAlertLogRoute,
+  emptyAlertLog, lastKnownCnnScore, qqqDrawdownEvents, readAlertLog, symbolFromEventKey, voidAlerts,
+  writeAlertLog,
 } from './alert-log.mjs';
+import { formatBuyNotification, formatValuationNotification } from './notification-copy.mjs';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -163,5 +165,107 @@ describe('阈值线与卖出军令的状态变化', () => {
 
     expect(ready.alerts[0]).toMatchObject({ category: 'sell_line', symbol: 'AVGO' });
     expect(ready.states['sell:AVGO']).toBe('triggered');
+  });
+});
+
+describe('作废标记（只标不删）', () => {
+  it('按 dedupe_key 标记已作废，条目本身一条都不少', () => {
+    const store = appendAlerts(emptyAlertLog(), [
+      { dedupe_key: 'sell-line-live:TSLA:31.41:2026-10-16', category: 'sell_line', symbol: 'TSLA', text: 'TSLA $353.18 ≥ 卖出线 $31.41' },
+      { dedupe_key: 'keep-me', category: 'other', symbol: 'QQQ', text: '正常的一条' },
+    ], new Date('2026-10-16T17:54:38.479Z'));
+
+    const next = voidAlerts(store, {
+      dedupeKeys: ['sell-line-live:TSLA:31.41:2026-10-16'],
+      reason: '卖出线未过合理性校验',
+    }, new Date('2026-10-17T03:00:00.000Z'));
+
+    expect(next.alerts).toHaveLength(2);
+    const voided = next.alerts.find((item) => item.dedupe_key.startsWith('sell-line-live'));
+    expect(voided).toMatchObject({
+      voided: true,
+      voided_reason: '卖出线未过合理性校验',
+      voided_at: '2026-10-17T03:00:00.000Z',
+    });
+    expect(next.alerts.find((item) => item.dedupe_key === 'keep-me')?.voided).toBeUndefined();
+  });
+
+  it('没有命中任何 key 时原样返回', () => {
+    const store = appendAlerts(emptyAlertLog(), [{ dedupe_key: 'a', category: 'other', text: '一条' }]);
+    expect(voidAlerts(store, { dedupeKeys: ['不存在'], reason: 'x' })).toBe(store);
+  });
+
+  it('追加时保留作废和推送状态字段', () => {
+    const store = appendAlerts(emptyAlertLog(), [{
+      dedupe_key: 'x', category: 'other', text: '一条', push_state: 'quiet_hours', push_repeat: 3,
+    }]);
+    expect(store.alerts[0]).toMatchObject({ push_state: 'quiet_hours', push_repeat: 3 });
+  });
+});
+
+describe('最近一次已知的 CNN 读数', () => {
+  it('取日志里最后一条带数值的 CNN 记录', () => {
+    const store = appendAlerts(emptyAlertLog(), [
+      { dedupe_key: 'cnn-a', category: 'sentiment', symbol: 'CNN', text: 'CNN 28', value: 28, occurred_at: '2026-10-16T15:43:43.307Z' },
+      { dedupe_key: 'cnn-b', category: 'sentiment', symbol: 'CNN', text: 'CNN 19', value: 19, occurred_at: '2026-10-16T18:01:31.097Z' },
+      { dedupe_key: 'vix-a', category: 'sentiment', symbol: 'VIX', text: 'VIX 20', value: 20, occurred_at: '2026-10-16T18:09:31.746Z' },
+    ]);
+    expect(lastKnownCnnScore(store)).toBe(19);
+  });
+
+  it('没有 CNN 记录时返回 null，不返回 0', () => {
+    expect(lastKnownCnnScore(emptyAlertLog())).toBeNull();
+  });
+});
+
+describe('收盘确认的回撤文案', () => {
+  const series = [
+    { date: '2026-10-14', close: 759.66 },
+    { date: '2026-10-15', close: 728.0 },
+    { date: '2026-10-16', close: 709.8 },
+  ];
+
+  it('盘中已经报过同一档时，收盘那条写成「仍在 -5% 档」', () => {
+    const events = qqqDrawdownEvents(series, { liveFiredTiers: new Set(['5:2026-10-14']) });
+    const tier5 = events.filter((event) => event.tier === 5);
+    expect(tier5).toHaveLength(1);
+    expect(tier5[0].text).toBe('[收盘确认] QQQ 收盘 709.80 · 离前高 -6.56% · 仍在 -5% 档');
+    expect(tier5[0].dedupe_key).toBe('qqq-drawdown-confirm:5:2026-10-14');
+  });
+
+  it('盘中没报过就沿用原来的「本轮首次跌破」，回填记录不受影响', () => {
+    const events = qqqDrawdownEvents(series);
+    const tier5 = events.filter((event) => event.tier === 5);
+    expect(tier5[0].text).toContain('本轮首次跌破 -5%');
+    expect(tier5[0].dedupe_key).toBe('qqq-drawdown:5:2026-10-14');
+  });
+});
+
+describe('推送事件写进日志时的标的和分类', () => {
+  it('「可买」归到回撤，并从 key 里取出标的（真实事件格式）', () => {
+    const event = formatBuyNotification('NKE', '自身深度位已达标；斜率 -68.37%（强势下跌，仅风险提示）', 37.45);
+
+    expect(event).not.toBeNull();
+    expect(symbolFromEventKey(event)).toBe('NKE');
+    expect(alertCategoryForEvent(event)).toBe('drawdown');
+  });
+
+  it('「低估值」归到估值（真实事件格式）', () => {
+    const event = formatValuationNotification('AVGO', {
+      current: 23.26, zone: 'low', icon: '🟢', message: '按计划分批买入或继续持有', available: true, stale: false,
+    }, 341.61);
+
+    expect(event).not.toBeNull();
+    expect(symbolFromEventKey(event)).toBe('AVGO');
+    expect(alertCategoryForEvent(event)).toBe('valuation');
+  });
+
+  it('key 第二段不是标的代码时返回 null，不硬塞一个', () => {
+    expect(symbolFromEventKey({ key: 'growth-watchlist-unresolved:NVDA,MSFT' })).toBeNull();
+    expect(symbolFromEventKey({ key: 'system-heartbeat' })).toBeNull();
+  });
+
+  it('事件自带 symbol 时优先用它', () => {
+    expect(symbolFromEventKey({ key: 'buy:NKE:x', symbol: 'tsla' })).toBe('TSLA');
   });
 });
