@@ -132,7 +132,8 @@ export function ReturnsSection({
     from.setUTCFullYear(from.getUTCFullYear() - 1);
     return buildTwr(log?.nav_series ?? [], log?.cash_flows ?? [], { from: from.toISOString().slice(0, 10) });
   }, [log]);
-  const benchmark = twr.start && twr.end
+  // 起止同一天时区间长度是零，基准算出来是 0.00%，那不是「没回撤」而是「算不了」。
+  const benchmark = twr.start && twr.end && twr.end > twr.start
     ? {
       qqq: buyAndHoldReturn(qqqSeries, twr.start, twr.end),
       blended: blendedBenchmarkReturn(qqqSeries, sgovSeries, twr.start, twr.end, 0.6),

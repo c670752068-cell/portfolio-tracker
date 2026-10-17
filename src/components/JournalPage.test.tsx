@@ -201,3 +201,21 @@ describe('推送状态和作废标记', () => {
     expect(html).toContain('TSLA $353.18 ≥ 卖出线 $31.41');
   });
 });
+
+describe('只有一天净值时的收益对比', () => {
+  const oneDay: DecisionLog = {
+    ...log,
+    nav_series: [{ date: '2026-10-16', nav: 186325.01, captured_at: '2026-10-16T17:15:08.631Z' }],
+  };
+  const qqq = [
+    { date: '2026-10-15', close: 728 },
+    { date: '2026-10-16', close: 709.8 },
+  ];
+
+  it('显示起始日期，但基准区间长度为零时一律显示暂无', () => {
+    const html = render({ tab: 'returns', log: oneDay, qqqSeries: qqq, sgovSeries: qqq });
+
+    expect(html).toContain('净值序列从 2026-10-16 开始');
+    expect(html).not.toContain('0.00% / 0.00%');
+  });
+});
