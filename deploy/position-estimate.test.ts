@@ -16,8 +16,13 @@ const payload = () => ({
   ],
 });
 const now = new Date('2026-10-17T07:45:00Z');
+// fetchedAt = 我们什么时候取到这份报价；priceTime = 行情本身的时间戳。
+// 休市日拿到的就是周五收盘价，priceTime 是十几个小时前，但报价本身是刚取的。
 const quote = (price: number, minutesAgo = 1) => ({
-  price, priceTime: new Date(+now - minutesAgo * 60_000).toISOString(), session: 'closed',
+  price,
+  fetchedAt: new Date(+now - minutesAgo * 60_000).toISOString(),
+  priceTime: '2026-10-16T20:00:00.000Z',
+  session: 'closed',
 });
 
 describe('用最新价重算持仓市值', () => {
@@ -75,7 +80,9 @@ describe('用最新价重算持仓市值', () => {
       priced: ['TSLA', 'AVL'],
       skipped: ['MCD'],
     });
-    expect(next.estimate.price_as_of).toBe(new Date(+now - 60_000).toISOString());
+    // 报的是行情自己的时间（周五收盘），不是我们取数的时间
+    expect(next.estimate.price_as_of).toBe('2026-10-16T20:00:00.000Z');
+    expect(next.estimate.fetched_at).toBe(new Date(+now - 60_000).toISOString());
     // 券商对账日期不动：它是净值序列和数据新鲜度在用的
     expect(next.as_of).toBe('2026-10-15');
   });
@@ -90,7 +97,22 @@ describe('用最新价重算持仓市值', () => {
   });
 
   it('空值不当成 0', () => {
-    const next = estimatePositionValues(payload(), { TSLA: { price: null, priceTime: now.toISOString() } }, { now });
+    const next = estimatePositionValues(payload(), { TSLA: { price: null, fetchedAt: now.toISOString() } }, { now });
     expect(next.estimate).toBeUndefined();
+  });
+
+  it('休市日拿到的周五收盘价照样能用：看的是取数时间，不是行情时间', () => {
+    const fridayClose = {
+      TSLA: { price: 354.72, fetchedAt: now.toISOString(), priceTime: '2026-10-16T20:00:00.000Z', session: 'closed' },
+    };
+    const next = estimatePositionValues(payload(), fridayClose, { now });
+
+    expect(next.estimate.priced).toEqual(['TSLA']);
+    expect(next.positions.find((item) => item.symbol === 'TSLA')?.market_value).toBe(17 * 354.72);
+  });
+
+  it('没有取数时间就退回看行情时间，宁可不算也不用来历不明的价', () => {
+    const onlyPriceTime = { TSLA: { price: 354.72, priceTime: '2026-10-16T20:00:00.000Z' } };
+    expect(estimatePositionValues(payload(), onlyPriceTime, { now }).estimate).toBeUndefined();
   });
 });

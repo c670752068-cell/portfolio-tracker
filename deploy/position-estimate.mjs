@@ -5,7 +5,9 @@
 // 那个日期是净值序列和数据新鲜度在用的，必须留着。
 // 期权没有免费实时价，一律不重算；重算不了的保持券商原值。
 
-// 报价超过这么久就不用了（休市时段轮询间隔是 15 分钟）。
+// 我们取到这份报价有多久了，超过就不用（休市时段轮询间隔是 15 分钟）。
+// 注意看的是「取数时间」而不是「行情时间」：休市日拿到的就是上一个交易日的
+// 收盘价，行情时间是十几个小时前，但那正是我们要的最新收盘价。
 export const ESTIMATE_MAX_AGE_MS = 30 * 60 * 1000;
 // 新价离券商口径太远就不用：价格一天不可能跌一半或翻倍，
 // 这种数据更可能是取错了标的或者行情源出错。
@@ -23,10 +25,20 @@ function finite(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function quoteAt(quote) {
-  const raw = record(quote).priceTime ?? record(quote).timestamp;
+function instant(raw) {
   const parsed = typeof raw === 'string' ? Date.parse(raw) : finite(raw);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+// 取数时间：判断报价新不新鲜用它。没带就退回行情时间（宁可算不出来，
+// 也不拿来历不明的价去改总资产）。
+function fetchedAt(quote) {
+  return instant(record(quote).fetchedAt) ?? instant(record(quote).priceTime) ?? instant(record(quote).timestamp);
+}
+
+// 行情时间：写进 price_as_of，告诉人这是哪一刻的价。
+function priceAt(quote) {
+  return instant(record(quote).priceTime) ?? instant(record(quote).timestamp) ?? instant(record(quote).fetchedAt);
 }
 
 /**
@@ -43,6 +55,7 @@ export function estimatePositionValues(payload, quotes, { now = new Date(), maxA
   const skipped = [];
   let delta = 0;
   let latestPriceAt = null;
+  let latestFetchedAt = null;
 
   const positions = rows.map((row) => {
     const item = record(row);
@@ -56,8 +69,8 @@ export function estimatePositionValues(payload, quotes, { now = new Date(), maxA
     }
     const quote = quotes?.[symbol];
     const price = finite(record(quote).price);
-    const at = quoteAt(quote);
-    if (price === null || price <= 0 || at === null || +now - at > maxAgeMs) {
+    const fetched = fetchedAt(quote);
+    if (price === null || price <= 0 || fetched === null || +now - fetched > maxAgeMs) {
       skipped.push(symbol);
       return row;
     }
@@ -67,15 +80,17 @@ export function estimatePositionValues(payload, quotes, { now = new Date(), maxA
       return row;
     }
     const nextValue = price * quantity;
+    const at = priceAt(quote);
     delta += nextValue - marketValue;
     priced.push(symbol);
-    if (latestPriceAt === null || at > latestPriceAt) latestPriceAt = at;
+    if (at !== null && (latestPriceAt === null || at > latestPriceAt)) latestPriceAt = at;
+    if (latestFetchedAt === null || fetched > latestFetchedAt) latestFetchedAt = fetched;
     return {
       ...item,
       market_value: nextValue,
       market_value_source: 'live_quote',
       broker_market_value: marketValue,
-      price_at: new Date(at).toISOString(),
+      price_at: at === null ? null : new Date(at).toISOString(),
     };
   });
 
@@ -87,7 +102,8 @@ export function estimatePositionValues(payload, quotes, { now = new Date(), maxA
     positions,
     estimate: {
       source: 'live_quote',
-      price_as_of: new Date(latestPriceAt).toISOString(),
+      price_as_of: latestPriceAt === null ? null : new Date(latestPriceAt).toISOString(),
+      fetched_at: new Date(latestFetchedAt).toISOString(),
       broker_as_of: typeof source.as_of === 'string' ? source.as_of : null,
       priced,
       skipped,

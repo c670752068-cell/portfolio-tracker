@@ -1215,8 +1215,10 @@ async function runRealtimeMonitorCycle() {
         const quote = await fetchFreeQuote(symbol === 'VIX' ? '^VIX' : symbol);
         if (quote) {
           quotes[symbol] = quote;
-          // 持仓接口要用这份报价重算市值，存一份在内存里
-          if (symbol !== 'VIX') LIVE_QUOTES.set(symbol, quote);
+          // 持仓接口要用这份报价重算市值，存一份在内存里。
+          // fetchedAt 是「我们什么时候取到的」：休市日拿到的是上一个交易日的
+          // 收盘价，行情时间很旧但报价本身是新的，判新鲜度要用取数时间。
+          if (symbol !== 'VIX') LIVE_QUOTES.set(symbol, { ...quote, fetchedAt: new Date().toISOString() });
         }
       } catch { /* 单个标的取价失败不影响其他 */ }
     }
