@@ -219,3 +219,46 @@ describe('只有一天净值时的收益对比', () => {
     expect(html).not.toContain('0.00% / 0.00%');
   });
 });
+
+describe('基准收益算不出时最大回撤也不显示数字', () => {
+  it('同期收益是暂无时，对应的最大回撤也是暂无', () => {
+    const navs: DecisionLog = {
+      ...log,
+      nav_series: [
+        { date: '2026-10-16', nav: 100_000, captured_at: 'x' },
+        { date: '2026-10-19', nav: 110_000, captured_at: 'y' },
+      ],
+    };
+    // 区间里只有一根基准 K 线：收益算不出来（没有两端），但回撤会算成 0.00%
+    const single = [{ date: '2026-10-17', close: 700 }];
+    const html = render({ tab: 'returns', log: navs, qqqSeries: single, sgovSeries: single });
+
+    expect(html).toContain('暂无 / 暂无');
+    expect(html).not.toContain('0.00% / 0.00%');
+  });
+
+  it('净值样本天数只数能用的那几天，缺失的不算', () => {
+    const navs: DecisionLog = {
+      ...log,
+      nav_series: [
+        { date: '2026-10-16', nav: 100_000, captured_at: 'x' },
+        { date: '2026-10-19', nav: null as unknown as number, missing: true, captured_at: null },
+        { date: '2026-10-20', nav: 110_000, captured_at: 'y' },
+      ],
+    };
+    const html = render({ tab: 'returns', log: navs });
+
+    expect(html).toContain('2 天');
+    expect(html).not.toContain('3 天');
+  });
+});
+
+describe('推送失败和重试中的标记', () => {
+  it('彻底失败标「[推送失败]」', () => {
+    expect(render({ alerts: [alert({ pushed: false, push_state: 'failed' })] })).toContain('[推送失败]');
+  });
+
+  it('还在重试的标「[重试中]」', () => {
+    expect(render({ alerts: [alert({ pushed: false, push_state: 'pending_retry' })] })).toContain('[重试中]');
+  });
+});

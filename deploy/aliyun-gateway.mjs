@@ -48,6 +48,7 @@ import {
   lastKnownCnnScore,
   qqqDrawdownEvents,
   readAlertLog,
+  setPushState,
   symbolFromEventKey,
   writeAlertLog,
 } from './alert-log.mjs';
@@ -1297,13 +1298,38 @@ async function runRealtimeMonitorCycle() {
   }
 }
 
+// 推送失败重试：每分钟看一眼有没有到点要重发的，结果回填到提醒日志那一行。
+const PUSH_RETRY_TICK_MS = 60 * 1000;
+let pushRetryRunning = false;
+async function runPushRetryCycle() {
+  if (pushRetryRunning) return;
+  pushRetryRunning = true;
+  try {
+    const resolved = await notificationControl.retryPending();
+    if (resolved.length === 0) return;
+    const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    let next = store;
+    for (const item of resolved) {
+      if (!item?.dedupeKey) continue;
+      next = setPushState(next, item.dedupeKey, item.status === 'suppressed' ? item.reason || 'suppressed' : item.status);
+    }
+    if (next !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
+  } catch (error) {
+    console.warn(`push retry failed: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    pushRetryRunning = false;
+  }
+}
+
 const realtimeMonitorTimer = setInterval(runRealtimeMonitorCycle, REALTIME_TICK_MS);
+const pushRetryTimer = setInterval(runPushRetryCycle, PUSH_RETRY_TICK_MS);
 const quantDecisionTimer = setInterval(runStoredQuantDecisionCycle, QUANT_DECISION_INTERVAL_MS);
 const channelReviewTimer = setInterval(runStoredChannelReviewCycle, CHANNEL_REVIEW_INTERVAL_MS);
 void runStoredQuantDecisionCycle();
 void runStoredChannelReviewCycle();
 server.on('close', () => {
   clearInterval(realtimeMonitorTimer);
+  clearInterval(pushRetryTimer);
   clearInterval(quantDecisionTimer);
   clearInterval(channelReviewTimer);
 });

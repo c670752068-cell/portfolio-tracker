@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   QQQ_DRAWDOWN_TIERS, alertCategoryForEvent, appendAlerts, applyStateAlerts, createAlertLogRoute,
-  emptyAlertLog, lastKnownCnnScore, qqqDrawdownEvents, readAlertLog, symbolFromEventKey, voidAlerts,
-  writeAlertLog,
+  emptyAlertLog, lastKnownCnnScore, qqqDrawdownEvents, readAlertLog, setPushState, symbolFromEventKey,
+  voidAlerts, writeAlertLog,
 } from './alert-log.mjs';
 import { formatBuyNotification, formatValuationNotification } from './notification-copy.mjs';
 
@@ -267,5 +267,31 @@ describe('推送事件写进日志时的标的和分类', () => {
 
   it('事件自带 symbol 时优先用它', () => {
     expect(symbolFromEventKey({ key: 'buy:NKE:x', symbol: 'tsla' })).toBe('TSLA');
+  });
+});
+
+describe('推送结果回填到日志那一行', () => {
+  it('按 push: 前缀的去重键改写状态，其他行不动', () => {
+    const store = appendAlerts(emptyAlertLog(), [
+      { dedupe_key: 'push:cnn:2026-10-17', category: 'sentiment', symbol: 'CNN', text: 'CNN 18', push_state: 'pending_retry' },
+      { dedupe_key: 'push:vix:2026-10-17', category: 'sentiment', symbol: 'VIX', text: 'VIX 20', push_state: 'pending_retry' },
+    ]);
+
+    const next = setPushState(store, 'cnn:2026-10-17', 'failed');
+
+    expect(next.alerts.find((item) => item.symbol === 'CNN')).toMatchObject({ push_state: 'failed', pushed: false });
+    expect(next.alerts.find((item) => item.symbol === 'VIX')?.push_state).toBe('pending_retry');
+  });
+
+  it('改成 sent 时同时把 pushed 置真', () => {
+    const store = appendAlerts(emptyAlertLog(), [
+      { dedupe_key: 'push:cnn:2026-10-17', category: 'sentiment', symbol: 'CNN', text: 'CNN 18', push_state: 'pending_retry' },
+    ]);
+    expect(setPushState(store, 'cnn:2026-10-17', 'sent').alerts[0]).toMatchObject({ push_state: 'sent', pushed: true });
+  });
+
+  it('找不到对应那一行就原样返回', () => {
+    const store = appendAlerts(emptyAlertLog(), [{ dedupe_key: 'push:a', category: 'other', text: 'x' }]);
+    expect(setPushState(store, '不存在', 'failed')).toBe(store);
   });
 });

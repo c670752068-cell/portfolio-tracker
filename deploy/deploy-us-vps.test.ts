@@ -198,3 +198,20 @@ describe('第三阶段实测问题的网关接线', () => {
     expect(gateway).toContain('symbolFromEventKey(');
   });
 });
+
+describe('休市重复、净值和推送重试的网关接线', () => {
+  it('实时轮询用交易日去重，不用日历日期', async () => {
+    const monitor = await readFile('deploy/realtime-monitor.mjs', 'utf8');
+
+    expect(monitor).toContain('tradingDate(now)');
+    expect(monitor).not.toContain('etDay(now)');
+  });
+
+  it('推送失败有重试任务在跑，结果回填到日志', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+
+    expect(gateway).toContain('retryPending(');
+    expect(gateway).toContain('setPushState(');
+    expect(gateway).toContain('PUSH_RETRY_TICK_MS');
+  });
+});

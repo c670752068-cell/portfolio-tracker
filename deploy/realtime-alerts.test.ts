@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT,
-  bigMoveAlert, cnnAlerts, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert,
-  sessionLabel, vixAlerts,
+  QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT, bigMoveAlert, cnnAlerts, cnnTierStates, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
 
 describe('实时监控的节奏与时段', () => {
@@ -219,10 +217,22 @@ describe('CNN 多档合并与开仓线同源', () => {
     expect(tiers[0].text).toBe('CNN 恐惧贪婪 19 · 跌破 30 / 25 / 20 · 极度恐惧');
   });
 
-  it('已经报过更深的档位后，不再回头补浅档', () => {
-    const fired = new Set([`cnn-tier:20:${day}`]);
-    const alerts = cnnAlerts({ score: 19, previousScore: 19, firedKeys: fired, day });
+  it('已经在档下待着时，不论浅档深档都不再补记', () => {
+    const states = cnnTierStates(19, {});
+    const alerts = cnnAlerts({ score: 19, previousScore: 19, firedKeys: new Set(), day, tierStates: states });
     expect(alerts.filter((alert) => alert.kind === 'tier')).toEqual([]);
+  });
+
+  it('档位状态按读数翻转：跌到档下记 below，回到档上记 above', () => {
+    expect(cnnTierStates(19, {})).toMatchObject({
+      'cnn-tier:30': 'below', 'cnn-tier:25': 'below', 'cnn-tier:20': 'below', 'cnn-tier:15': 'above',
+    });
+    expect(cnnTierStates(33, cnnTierStates(19, {}))).toMatchObject({
+      'cnn-tier:30': 'above', 'cnn-tier:25': 'above', 'cnn-tier:20': 'above',
+    });
+    // 没有读数时原样返回，不猜
+    const previous = cnnTierStates(19, {});
+    expect(cnnTierStates(null, previous)).toBe(previous);
   });
 
   it('「到达开仓线」已经记过时，不再单独写一条「跌破 30」', () => {

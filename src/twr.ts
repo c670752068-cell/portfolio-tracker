@@ -13,6 +13,18 @@ export interface TwrResult {
 
 export interface ClosePoint { date: string; close: number }
 
+/** 缺失那天（本机没同步）和标了作废的点都不参与计算，但不打断前后的链接。 */
+function usableNavPoints(navSeries: readonly DecisionNavPoint[]): DecisionNavPoint[] {
+  return navSeries.filter((point) => (
+    point.voided !== true && point.missing !== true
+    && typeof point.nav === 'number' && Number.isFinite(point.nav)
+  ));
+}
+
+export function usableNavCount(navSeries: readonly DecisionNavPoint[] | undefined): number {
+  return usableNavPoints(navSeries ?? []).length;
+}
+
 const EMPTY: TwrResult = { returnPct: null, maxDrawdownPct: null, monthly: [], start: null, end: null, periods: 0 };
 
 function positive(value: unknown): number | null {
@@ -24,7 +36,7 @@ export function buildTwr(
   cashFlows: readonly DecisionCashFlow[],
   { from = null }: { from?: string | null } = {},
 ): TwrResult {
-  const points = [...navSeries]
+  const points = usableNavPoints(navSeries)
     .filter((point) => typeof point.date === 'string' && (!from || point.date >= from))
     .sort((left, right) => left.date.localeCompare(right.date));
   // 只有一天净值时算不出收益率，但起止日期是已知的：页面要显示「净值序列从 X 开始」。

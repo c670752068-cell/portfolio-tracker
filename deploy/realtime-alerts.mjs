@@ -113,19 +113,36 @@ export function vixAlerts({ price, previousClose, dayHigh = null, session, fired
   return alerts;
 }
 
+/** CNN 各档位当前在档上还是档下，用来判断「穿越」。 */
+export function cnnTierStateKey(tier) {
+  return `cnn-tier:${tier}`;
+}
+
+/** 把当前读数折成各档位的状态；没有读数时原样返回，不猜。 */
+export function cnnTierStates(score, previous = {}) {
+  const current = finite(score);
+  if (current === null) return previous;
+  const next = { ...previous };
+  for (const tier of CNN_TIERS) next[cnnTierStateKey(tier)] = current < tier ? 'below' : 'above';
+  return next;
+}
+
 /**
  * CNN 恐惧贪婪：跌破档位、比上次又降一截、以及回升。
+ * 档位按「状态穿越」记：从档上跌到档下记一次，一直待在档下不再记，
+ * 回到档上之后才重置。所以换一天日历日期不会把同一件事再记一遍。
  * floorReported = 原有的「到达开仓线」已经记过，这一轮就不再单独写「跌破 30」。
  */
-export function cnnAlerts({ score, previousScore = null, firedKeys, day, floorReported = false }) {
+export function cnnAlerts({
+  score, previousScore = null, firedKeys, day, floorReported = false, tierStates = {},
+}) {
   const current = finite(score);
   if (current === null) return [];
   const previous = finite(previousScore);
   const alerts = [];
-  // 一次跨过多档合并成一行，用最深那一档；更深的档位已经记过就不再回头补浅档。
-  const firedDeepest = Math.min(...CNN_TIERS.filter((tier) => firedKeys.has(`cnn-tier:${tier}:${day}`)), Infinity);
+  // 一次跨过多档合并成一行，用最深那一档。
   const crossed = CNN_TIERS
-    .filter((tier) => current < tier && tier < firedDeepest)
+    .filter((tier) => current < tier && tierStates[cnnTierStateKey(tier)] !== 'below')
     .filter((tier) => !(floorReported && tier === CNN_OPEN_FLOOR));
   if (crossed.length > 0) {
     const deepest = Math.min(...crossed);

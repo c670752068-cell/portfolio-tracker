@@ -265,3 +265,105 @@ describe('「到达开仓线」和「跌破 30」算同一个事件', () => {
     expect(result.alerts.some((alert) => alert.text.includes('跌破 30'))).toBe(true);
   });
 });
+
+describe('休市日不重复记涨跌类提醒', () => {
+  // 周五的行情：VIX 较昨收 +21%、QQQ -2.8%、AVL -7.8%，卖出线也到了
+  const friday = {
+    ...base,
+    session: 'regular',
+    now: new Date('2026-10-16T17:54:38Z'),
+    cnnScore: 21,
+    previousCnnScore: 28,
+    quotes: {
+      QQQ: { price: 707.87, previousClose: 728, changePercent: -0.028 },
+      VIX: { price: 19.98, previousClose: 16.46, changePercent: 0.214 },
+      AVL: { price: 31.26, previousClose: 33.9, changePercent: -0.078 },
+    },
+    heldSymbols: ['AVL'],
+    sellLines: { AVL: { trigger: 31, reference: 31.26, label: '开始降风险' } },
+  };
+
+  it('周五先记一轮', async () => {
+    const result = await runRealtimeTick({ ...friday, store: emptyAlertLog() });
+    const kinds = result.alerts.map((alert) => alert.kind);
+    expect(kinds).toContain('rise');
+    expect(kinds).toContain('big_move');
+    expect(kinds).toContain('drawdown');
+    expect(kinds).toContain('sell_line');
+  });
+
+  it('周六、周日同一份行情一条都不再记', async () => {
+    const first = await runRealtimeTick({ ...friday, store: emptyAlertLog() });
+
+    const saturday = await runRealtimeTick({
+      ...friday, session: 'closed', now: new Date('2026-10-17T04:10:24Z'), store: first.store,
+    });
+    const sunday = await runRealtimeTick({
+      ...friday, session: 'closed', now: new Date('2026-10-18T16:00:00Z'), store: saturday.store,
+    });
+
+    expect(saturday.alerts).toEqual([]);
+    expect(sunday.alerts).toEqual([]);
+    expect(sunday.store.alerts.length).toBe(first.store.alerts.length);
+  });
+
+  it('周一有新的涨跌才重新记', async () => {
+    const first = await runRealtimeTick({ ...friday, store: emptyAlertLog() });
+    const monday = await runRealtimeTick({
+      ...friday,
+      session: 'regular',
+      now: new Date('2026-10-19T14:00:00Z'),
+      store: first.store,
+    });
+
+    expect(monday.alerts.map((alert) => alert.kind)).toContain('big_move');
+  });
+
+  it('休市日仍然检查 CNN', async () => {
+    const result = await runRealtimeTick({
+      ...friday,
+      session: 'closed',
+      now: new Date('2026-10-17T04:10:24Z'),
+      store: emptyAlertLog(),
+      cnnScore: 18,
+      previousCnnScore: 28,
+    });
+
+    expect(result.alerts.length).toBeGreaterThan(0);
+    expect([...new Set(result.alerts.map((alert) => alert.symbol))]).toEqual(['CNN']);
+  });
+});
+
+describe('CNN 档位按状态穿越记', () => {
+  const at = (overrides: Record<string, unknown> = {}) => ({
+    ...base, session: 'regular', now: new Date('2026-10-16T17:54:38Z'), quotes: {}, ...overrides,
+  });
+
+  it('跌破一档记一次，继续待在下面不再记', async () => {
+    const first = await runRealtimeTick(at({ store: emptyAlertLog(), cnnScore: 18, previousCnnScore: 28 }));
+    expect(first.alerts.filter((alert) => alert.kind === 'tier')).toHaveLength(1);
+
+    const second = await runRealtimeTick(at({
+      store: first.store, cnnScore: 17, previousCnnScore: 18, now: new Date('2026-10-16T18:30:00Z'),
+    }));
+    expect(second.alerts.filter((alert) => alert.kind === 'tier')).toEqual([]);
+
+    // 换一天日历日期也不会再记，因为状态没变
+    const nextDay = await runRealtimeTick(at({
+      store: second.store, cnnScore: 18, previousCnnScore: 17, now: new Date('2026-10-19T14:00:00Z'),
+    }));
+    expect(nextDay.alerts.filter((alert) => alert.kind === 'tier')).toEqual([]);
+  });
+
+  it('回到档位上方再跌回去，才重新记一次', async () => {
+    const first = await runRealtimeTick(at({ store: emptyAlertLog(), cnnScore: 18, previousCnnScore: 28 }));
+    const recovered = await runRealtimeTick(at({
+      store: first.store, cnnScore: 33, previousCnnScore: 18, now: new Date('2026-10-19T14:00:00Z'),
+    }));
+    const dropped = await runRealtimeTick(at({
+      store: recovered.store, cnnScore: 18, previousCnnScore: 33, now: new Date('2026-10-20T14:00:00Z'),
+    }));
+
+    expect(dropped.alerts.filter((alert) => alert.kind === 'tier')).toHaveLength(1);
+  });
+});

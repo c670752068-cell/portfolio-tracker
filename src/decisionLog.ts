@@ -54,7 +54,17 @@ export interface DecisionTrade {
 }
 
 export interface DecisionCashFlow { id: string; date: string; amount: number; note: string; created_at: string }
-export interface DecisionNavPoint { date: string; nav: number; captured_at: string }
+export interface DecisionNavPoint {
+  date: string;
+  nav: number;
+  captured_at: string | null;
+  /** 这个交易日本机没同步，占位用，不拿旧数值顶上 */
+  missing?: boolean;
+  /** 记错的点只标作废，不删除 */
+  voided?: boolean;
+  voided_reason?: string | null;
+  note?: string | null;
+}
 
 export interface DecisionLog {
   version: number;

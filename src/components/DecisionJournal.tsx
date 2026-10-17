@@ -5,7 +5,7 @@ import type {
 import { buildDecisionStats, MIN_RELIABLE_SAMPLES, type DecisionStatGroup } from '../decisionLogStats';
 import {
   blendedBenchmarkReturn, blendedMaxDrawdownPct, buildTwr, buyAndHoldReturn, maxDrawdownPct,
-  type ClosePoint,
+  usableNavCount, type ClosePoint,
 } from '../twr';
 import { formatDisplayMoney } from '../displayCurrency';
 import { formatPct } from '../format';
@@ -133,14 +133,22 @@ export function ReturnsSection({
     return buildTwr(log?.nav_series ?? [], log?.cash_flows ?? [], { from: from.toISOString().slice(0, 10) });
   }, [log]);
   // 起止同一天时区间长度是零，基准算出来是 0.00%，那不是「没回撤」而是「算不了」。
-  const benchmark = twr.start && twr.end && twr.end > twr.start
-    ? {
-      qqq: buyAndHoldReturn(qqqSeries, twr.start, twr.end),
-      blended: blendedBenchmarkReturn(qqqSeries, sgovSeries, twr.start, twr.end, 0.6),
-      qqqDrawdown: maxDrawdownPct(qqqSeries, twr.start, twr.end),
-      blendedDrawdown: blendedMaxDrawdownPct(qqqSeries, sgovSeries, twr.start, twr.end, 0.6),
+  // 同期收益算不出来（区间里基准数据不足两端）时，对应的最大回撤也一律显示暂无。
+  const benchmark = useMemo(() => {
+    if (!twr.start || !twr.end || twr.end <= twr.start) {
+      return { qqq: null, blended: null, qqqDrawdown: null, blendedDrawdown: null };
     }
-    : { qqq: null, blended: null, qqqDrawdown: null, blendedDrawdown: null };
+    const qqq = buyAndHoldReturn(qqqSeries, twr.start, twr.end);
+    const blended = blendedBenchmarkReturn(qqqSeries, sgovSeries, twr.start, twr.end, 0.6);
+    return {
+      qqq,
+      blended,
+      qqqDrawdown: qqq === null ? null : maxDrawdownPct(qqqSeries, twr.start, twr.end),
+      blendedDrawdown: blended === null
+        ? null
+        : blendedMaxDrawdownPct(qqqSeries, sgovSeries, twr.start, twr.end, 0.6),
+    };
+  }, [twr.start, twr.end, qqqSeries, sgovSeries]);
 
   return (
     <div className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5">
@@ -154,7 +162,7 @@ export function ReturnsSection({
         <Metric label="今年以来 TWR" value={signedPct(ytd.returnPct)} />
         <Metric label="近 1 年 TWR" value={signedPct(lastYear.returnPct)} />
         <Metric label="自开始以来 TWR" value={signedPct(twr.returnPct)} />
-        <Metric label="净值样本天数" value={`${log?.nav_series.length ?? 0} 天`} />
+        <Metric label="净值样本天数" value={`${usableNavCount(log?.nav_series)} 天`} />
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Metric label="同期满仓 QQQ" value={signedPct(benchmark.qqq)} />

@@ -502,3 +502,56 @@ describe('从空白开始', () => {
     expect((await readDecisionLog(dir)).trades_from).toBe('2026-10-12T00:26:17.000Z');
   });
 });
+
+describe('每日净值按交易日、收盘后才记', () => {
+  const snap = (nav: number) => ({ ammo_overview: { nav_usd: nav } });
+
+  it('盘中同步不记（美东 13:15 那次就是这样记错的）', () => {
+    const store = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T17:15:08Z') });
+    expect(store.nav_series).toEqual([]);
+  });
+
+  it('收盘后（美东 16:30 以后）记一条，按交易日期存', () => {
+    const store = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T21:00:00Z') });
+    expect(store.nav_series).toEqual([
+      expect.objectContaining({ date: '2026-10-16', nav: 186_325.01 }),
+    ]);
+  });
+
+  it('周六周日不另记一条，只落在上一个交易日', () => {
+    const friday = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T21:00:00Z') });
+    const saturday = captureNav(friday, snap(186_325.01), { now: new Date('2026-10-17T04:40:09Z') });
+    const sunday = captureNav(saturday, snap(186_325.01), { now: new Date('2026-10-18T16:00:00Z') });
+
+    expect(sunday.nav_series.map((point) => point.date)).toEqual(['2026-10-16']);
+  });
+
+  it('美股节假日不记', () => {
+    // 感恩节 2026-11-26，美东 18:00
+    const store = captureNav(emptyDecisionLog(), snap(190_000), { now: new Date('2026-11-26T23:00:00Z') });
+    expect(store.nav_series.map((point) => point.date)).toEqual(['2026-11-25']);
+  });
+
+  it('中间某天没同步就标缺失，不拿旧数值顶上', () => {
+    const friday = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T21:00:00Z') });
+    // 周一、周二都没同步，周三收盘后才同步
+    const wednesday = captureNav(friday, snap(190_000), { now: new Date('2026-10-21T21:00:00Z') });
+
+    expect(wednesday.nav_series).toEqual([
+      expect.objectContaining({ date: '2026-10-16', nav: 186_325.01 }),
+      expect.objectContaining({ date: '2026-10-19', nav: null, missing: true }),
+      expect.objectContaining({ date: '2026-10-20', nav: null, missing: true }),
+      expect.objectContaining({ date: '2026-10-21', nav: 190_000 }),
+    ]);
+  });
+
+  it('补上同步后缺失那天会被真实数值替掉', () => {
+    const friday = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T21:00:00Z') });
+    const wednesday = captureNav(friday, snap(190_000), { now: new Date('2026-10-21T21:00:00Z') });
+    const backfilled = captureNav(wednesday, snap(188_000), { date: '2026-10-19', now: new Date('2026-10-21T22:00:00Z') });
+
+    expect(backfilled.nav_series.find((point) => point.date === '2026-10-19')).toMatchObject({
+      nav: 188_000, missing: false,
+    });
+  });
+});

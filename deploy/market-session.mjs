@@ -55,6 +55,27 @@ export function etParts(date) {
   };
 }
 
+// 去重用的「美东交易日」：当前这一刻属于哪个交易日的行情。
+// 盘前 4:00 之前（夜盘后半段）、周末和美股节假日都算回最近一个交易日，
+// 所以周六重新开一天日历日期时，不会把周五已经记过的提醒再记一遍。
+export function tradingDate(date) {
+  const parts = etParts(date);
+  const beforePreMarket = parts.minutes < minutes(4);
+  let cursor = parts.date;
+  for (let step = 0; step < 10; step += 1) {
+    const tradable = knownTradingDate(cursor) !== false;
+    if (tradable && !(step === 0 && beforePreMarket)) return cursor;
+    cursor = shiftDateKey(cursor, -1);
+  }
+  return parts.date;
+}
+
+function shiftDateKey(dateKey, days) {
+  const moved = new Date(`${dateKey}T12:00:00Z`);
+  moved.setUTCDate(moved.getUTCDate() + days);
+  return moved.toISOString().slice(0, 10);
+}
+
 // 美东 16:30（常规时段收盘）那一刻的 UTC 时间：夏令时 20:30Z，冬令时 21:30Z。
 // 回填记录以前固定写 20:30Z，冬令时那几条会显示成北京时间 04:30 而不是 05:30。
 export function etCloseInstant(dateKey, { hour = 16, minute = 30 } = {}) {

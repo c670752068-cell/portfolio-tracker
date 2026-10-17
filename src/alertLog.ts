@@ -41,6 +41,8 @@ export function pushStateLabel(entry: Pick<AlertLogEntry, 'pushed' | 'push_state
   }
   if (state === 'quiet_hours') return '[免打扰]';
   if (state === 'dry_run') return '[测试推送]';
+  if (state === 'failed') return '[推送失败]';
+  if (state === 'pending_retry') return '[重试中]';
   const reason = state ? PUSH_BLOCK_LABELS[state] : null;
   return reason ? `[未推送 · ${reason}]` : '[未推送]';
 }

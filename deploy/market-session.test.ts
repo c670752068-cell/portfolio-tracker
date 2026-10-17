@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { classifyMarketSession, etCloseInstant } from './market-session.mjs';
+import { classifyMarketSession, etCloseInstant, tradingDate } from './market-session.mjs';
 
 describe('classifyMarketSession', () => {
   it.each([
@@ -81,5 +81,28 @@ describe('美东收盘时刻换算（冬夏令时）', () => {
 
   it('日期不合法时返回 null，不编一个时间出来', () => {
     expect(etCloseInstant('不是日期')).toBeNull();
+  });
+});
+
+describe('美东交易日（去重用）', () => {
+  it('交易日盘中、盘后、夜盘都算当天', () => {
+    expect(tradingDate(new Date('2026-10-16T14:00:00Z'))).toBe('2026-10-16'); // 10:00 ET 盘中
+    expect(tradingDate(new Date('2026-10-16T21:00:00Z'))).toBe('2026-10-16'); // 17:00 ET 盘后
+    expect(tradingDate(new Date('2026-10-17T02:00:00Z'))).toBe('2026-10-16'); // 22:00 ET 夜盘
+  });
+
+  it('周六周日都算回上一个交易日，不开新的一天', () => {
+    expect(tradingDate(new Date('2026-10-17T04:10:00Z'))).toBe('2026-10-16'); // 周六 00:10 ET
+    expect(tradingDate(new Date('2026-10-17T16:00:00Z'))).toBe('2026-10-16'); // 周六 12:00 ET
+    expect(tradingDate(new Date('2026-10-18T16:00:00Z'))).toBe('2026-10-16'); // 周日 12:00 ET
+  });
+
+  it('周一凌晨还算上周五，开盘前 4:00 起才换成周一', () => {
+    expect(tradingDate(new Date('2026-10-19T07:00:00Z'))).toBe('2026-10-16'); // 周一 03:00 ET
+    expect(tradingDate(new Date('2026-10-19T09:00:00Z'))).toBe('2026-10-19'); // 周一 05:00 ET 盘前
+  });
+
+  it('美股节假日算回前一个交易日', () => {
+    expect(tradingDate(new Date('2026-11-26T15:00:00Z'))).toBe('2026-11-25'); // 感恩节 10:00 ET
   });
 });

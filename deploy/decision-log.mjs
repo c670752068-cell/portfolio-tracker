@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { etCloseInstant, knownTradingDate, tradingDate } from './market-session.mjs';
 
 // 决策日志：每笔买卖记下「当时的指标」和「用户的预判」，收盘后自动判定结果。
 // 成交来自量化快照的 position_ledger.recent_events（前后两次券商快照差分推算），
@@ -265,17 +266,50 @@ export function captureTrades(store, snapshot, { now = new Date(), channelReview
   return { ...current, trades, revision: current.revision + 1, updated_at: now.toISOString() };
 }
 
+/**
+ * 该不该记今天的净值：只在美股交易日收盘（美东 16:30）之后记，按交易日期存。
+ * 盘中同步不记（会把盘中市值当成当日净值），周末和节假日也不另开一天。
+ */
+export function navTradingDate(now) {
+  const day = tradingDate(now);
+  const close = etCloseInstant(day);
+  if (!close) return null;
+  return +now >= Date.parse(close) ? day : null;
+}
+
+function shiftDay(dateKey, days) {
+  const moved = new Date(`${dateKey}T12:00:00Z`);
+  moved.setUTCDate(moved.getUTCDate() + days);
+  return moved.toISOString().slice(0, 10);
+}
+
+/** 上一条和今天之间漏掉的交易日，标「缺失」占位，不拿旧数值顶上。 */
+function missingTradingDays(series, day) {
+  const last = series.at(-1)?.date;
+  if (!last || last >= day) return [];
+  const gaps = [];
+  for (let cursor = shiftDay(last, 1); cursor < day; cursor = shiftDay(cursor, 1)) {
+    if (knownTradingDate(cursor) === false) continue;
+    if (series.some((point) => point.date === cursor)) continue;
+    gaps.push({ date: cursor, nav: null, missing: true, captured_at: null });
+  }
+  return gaps;
+}
+
 export function captureNav(store, snapshot, { now = new Date(), date = null } = {}) {
   const current = normalizeDecisionLog(store);
   const nav = numeric(record(record(snapshot).ammo_overview).nav_usd);
-  const day = date || etDate(now);
+  const day = date || navTradingDate(now);
   if (nav === null || !day) return current;
   const existing = current.nav_series.findIndex((point) => point.date === day);
-  const point = { date: day, nav, captured_at: now.toISOString() };
+  const point = { date: day, nav, missing: false, captured_at: now.toISOString() };
+  const gaps = existing >= 0 ? [] : missingTradingDays(current.nav_series, day);
   const nav_series = existing >= 0
     ? current.nav_series.map((item, index) => (index === existing ? point : item))
-    : [...current.nav_series, point].sort((left, right) => left.date.localeCompare(right.date)).slice(-NAV_LIMIT);
-  if (existing >= 0 && current.nav_series[existing].nav === nav) return current;
+    : [...current.nav_series, ...gaps, point]
+      .sort((left, right) => left.date.localeCompare(right.date)).slice(-NAV_LIMIT);
+  if (existing >= 0 && current.nav_series[existing].nav === nav
+    && current.nav_series[existing].missing !== true) return current;
   return { ...current, nav_series, revision: current.revision + 1, updated_at: now.toISOString() };
 }
 

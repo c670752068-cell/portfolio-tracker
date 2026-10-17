@@ -161,6 +161,28 @@ export function voidAlerts(store, { dedupeKeys = [], ids = [], reason = '' } = {
   return { ...current, alerts, updated_at: now.toISOString() };
 }
 
+/**
+ * 推送重试有了结论之后，把日志里那一行的状态改掉（只改状态，不动原文、不删行）。
+ * dedupeKey 是推送事件的去重键，日志行的键是它加 push: 前缀。
+ */
+export function setPushState(store, dedupeKey, pushState, { repeat = null } = {}) {
+  const current = normalizeAlertLog(store);
+  const target = `push:${String(dedupeKey || '')}`;
+  let changed = false;
+  const alerts = current.alerts.map((item) => {
+    if (String(item.dedupe_key) !== target || item.push_state === pushState) return item;
+    changed = true;
+    return {
+      ...item,
+      push_state: pushState,
+      pushed: pushState === 'sent',
+      ...(repeat === null ? {} : { push_repeat: numeric(repeat) }),
+    };
+  });
+  if (!changed) return store;
+  return { ...current, alerts, updated_at: new Date().toISOString() };
+}
+
 /** 日志里最后一条带数值的 CNN 记录，用来给重启后的实时监控补上起点。 */
 export function lastKnownCnnScore(store) {
   const current = normalizeAlertLog(store);

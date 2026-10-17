@@ -1,7 +1,9 @@
 import { appendAlerts } from './alert-log.mjs';
 import {
-  bigMoveAlert, cnnAlerts, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
+  bigMoveAlert, cnnAlerts, cnnTierStates, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert,
+  sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
+import { tradingDate } from './market-session.mjs';
 import { pushPlanFor, realtimeDefaults } from './realtime-push.mjs';
 import { isSaneSellPrice } from './sell-price-sanity.mjs';
 
@@ -23,13 +25,6 @@ function finite(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function etDay(now) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(now).map((part) => [part.type, part.value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
 export async function runRealtimeTick({
   now = new Date(),
   session = 'closed',
@@ -49,35 +44,41 @@ export async function runRealtimeTick({
   dryRun = false,
   confirmation = false,
 }) {
-  const day = etDay(now);
+  // 去重用「美东交易日」，不是日历日期：周六重新开一天，不该把周五记过的再记一遍。
+  const day = tradingDate(now);
+  // 休市日（周末、美股节假日）没有新的交易时段，涨跌类提醒一律不产生，
+  // 只保留 CNN 这种和交易时段无关的低频检查。
+  const hasTradingSession = session !== 'closed';
   const firedKeys = new Set((store?.alerts || []).map((item) => item.dedupe_key));
   const held = new Set(heldSymbols.map((symbol) => String(symbol).toUpperCase()));
   const alerts = [];
 
   const qqq = quotes.QQQ;
-  if (qqq && qqqPreviousHigh && qqqPeakDate) {
+  if (hasTradingSession && qqq && qqqPreviousHigh && qqqPeakDate) {
     alerts.push(...qqqRealtimeAlerts({
       price: qqq.price, previousHigh: qqqPreviousHigh, session, firedKeys, peakDate: qqqPeakDate, confirmation,
     }));
   }
   const vix = quotes.VIX;
-  if (vix) {
+  if (hasTradingSession && vix) {
     alerts.push(...vixAlerts({
       price: vix.price, previousClose: vix.previousClose, dayHigh: vix.dayHigh ?? null, session, firedKeys, day,
     }));
   }
+  const tierStates = store?.states || {};
   if (cnnScore !== null && cnnScore !== undefined) {
     alerts.push(...cnnAlerts({
-      score: cnnScore, previousScore: previousCnnScore, firedKeys, day, floorReported: cnnFloorReported,
+      score: cnnScore, previousScore: previousCnnScore, firedKeys, day,
+      floorReported: cnnFloorReported, tierStates,
     }));
   }
-  for (const [symbol, reading] of Object.entries(intradayZ)) {
+  for (const [symbol, reading] of (hasTradingSession ? Object.entries(intradayZ) : [])) {
     alerts.push(...intradayZAlerts({
       symbol, price: reading?.price, previousZ: reading?.previousZ, currentZ: reading?.currentZ,
       session, firedKeys, day,
     }));
   }
-  for (const [symbol, quote] of Object.entries(quotes)) {
+  for (const [symbol, quote] of (hasTradingSession ? Object.entries(quotes) : [])) {
     if (symbol === 'VIX') continue;
     const move = bigMoveAlert({
       symbol, price: quote?.price, changePercent: quote?.changePercent,
@@ -85,7 +86,7 @@ export async function runRealtimeTick({
     });
     if (move) alerts.push(move);
   }
-  for (const [symbol, line] of Object.entries(sellLines)) {
+  for (const [symbol, line] of (hasTradingSession ? Object.entries(sellLines) : [])) {
     const quote = quotes[symbol];
     const trigger = finite(line?.trigger);
     const price = finite(quote?.price);
@@ -101,7 +102,7 @@ export async function runRealtimeTick({
       text: `[${sessionLabel(session)}] ${symbol} $${price.toFixed(2)} ≥ 卖出线 $${trigger.toFixed(2)}${line?.label ? ` · ${line.label}` : ''}`,
     });
   }
-  if (qqq && qqqPreviousHigh) {
+  if (hasTradingSession && qqq && qqqPreviousHigh) {
     const drawdown = (Number(qqq.price) / qqqPreviousHigh - 1) * 100;
     const vixChange = vix && vix.previousClose ? (Number(vix.price) / Number(vix.previousClose) - 1) * 100 : null;
     const resonance = resonanceAlert({
@@ -159,12 +160,15 @@ export async function runRealtimeTick({
     });
   }
 
+  // CNN 档位状态要留在日志里，下一轮才知道是不是「穿越」。
+  const nextStates = cnnTierStates(cnnScore, tierStates);
+  const withStates = nextStates === tierStates ? store : { ...store, states: nextStates };
   return {
     alerts,
     entries,
     quietQueue,
     dryRunPushes,
-    store: entries.length ? appendAlerts(store, entries, now) : store,
+    store: entries.length ? appendAlerts(withStates, entries, now) : withStates,
   };
 }
 

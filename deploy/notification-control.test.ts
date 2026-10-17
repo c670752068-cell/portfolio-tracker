@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createNotificationControl, defaultNotificationSettings, defaultDeliveryWindow, inDeliveryWindow, inQuietHours, notificationPermission,
-  scheduleDue, validateNotificationSettings } from './notification-control.mjs';
+  PUSH_RETRY_DELAYS_MS, scheduleDue, validateNotificationSettings } from './notification-control.mjs';
 
 const roots: string[] = []; const servers: Server[] = [];
 afterEach(async () => { await Promise.all(servers.splice(0).map(s => new Promise(resolve => s.close(resolve)))); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
@@ -231,5 +231,84 @@ describe('第三阶段：实时提醒开关', () => {
     const validated = validateNotificationSettings(input, base, new Date('2026-10-16T00:00:00.000Z'));
 
     expect(validated.realtime).toMatchObject({ enabled: true, qqqDrawdown: true, vix: false, importantRepeat: 2 });
+  });
+});
+
+describe('推送失败可以重试，不会被永久挡掉', () => {
+  const event = () => ({ key: 'cnn:2026-09-14', dedupeKey: 'cnn:2026-09-14', category: 'risk',
+    title: 'CNN 18', body: '极度恐惧', createdAt: at });
+
+  it('send 抛异常不再卡在 attempted，排进重试', async () => {
+    const h = await harness();
+    await writeFile(join(h.root, 'notification-settings.json'), JSON.stringify(preferences()));
+    h.send.mockRejectedValueOnce(new Error('Bark 推送失败'));
+
+    const first = await h.control.dispatch(event());
+    expect(first).toMatchObject({ status: 'pending_retry', attempts: 1 });
+
+    // 1 分钟之后重试，这次成功
+    h.advance(PUSH_RETRY_DELAYS_MS[0]);
+    const resolved = await h.control.retryPending();
+    expect(resolved).toEqual([expect.objectContaining({ status: 'sent', dedupeKey: 'cnn:2026-09-14' })]);
+    expect(h.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('还没到重试时间就不动它', async () => {
+    const h = await harness();
+    await writeFile(join(h.root, 'notification-settings.json'), JSON.stringify(preferences()));
+    h.send.mockRejectedValueOnce(new Error('network error'));
+    await h.control.dispatch(event());
+
+    h.advance(30_000);
+    expect(await h.control.retryPending()).toEqual([]);
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('按 1、5、15 分钟重试，三次都失败才标 failed', async () => {
+    const h = await harness();
+    await writeFile(join(h.root, 'notification-settings.json'), JSON.stringify(preferences()));
+    h.send.mockRejectedValue(new Error('network error'));
+    await h.control.dispatch(event());
+
+    for (const delay of PUSH_RETRY_DELAYS_MS) {
+      h.advance(delay);
+      await h.control.retryPending();
+    }
+
+    expect(h.send).toHaveBeenCalledTimes(1 + PUSH_RETRY_DELAYS_MS.length);
+    const last = (await h.control.retryPending());
+    expect(last).toEqual([]);
+    const ledger = JSON.parse(await (await import('node:fs/promises')).readFile(join(h.root, 'notification-deliveries.json'), 'utf8'));
+    expect(ledger.at(-1)).toMatchObject({ status: 'failed' });
+    // 彻底失败之后不再保留待发内容
+    expect(ledger.at(-1).event).toBeUndefined();
+  });
+
+  it('重试时如果已经进了免打扰，就不发，标成被免打扰拦下', async () => {
+    const h = await harness();
+    await writeFile(join(h.root, 'notification-settings.json'), JSON.stringify({
+      ...preferences(), quietHours: { enabled: true, start: '22:00', end: '08:00', timeZone: 'Asia/Shanghai' },
+    }));
+    h.send.mockRejectedValueOnce(new Error('network error'));
+    // 21:20 北京（13:20Z）先失败一次
+    await h.control.dispatch(event());
+    expect(h.send).toHaveBeenCalledTimes(1);
+
+    // 到 22:30 北京（14:30Z）才重试，已经在免打扰里
+    h.advance(70 * 60_000);
+    const resolved = await h.control.retryPending();
+    expect(resolved).toEqual([expect.objectContaining({ status: 'suppressed', reason: 'quiet_hours' })]);
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('同一条失败过的提醒不会被去重永久挡住', async () => {
+    const h = await harness();
+    await writeFile(join(h.root, 'notification-settings.json'), JSON.stringify(preferences()));
+    h.send.mockRejectedValueOnce(new Error('network error'));
+    await h.control.dispatch(event());
+
+    h.advance(PUSH_RETRY_DELAYS_MS[0]);
+    await h.control.retryPending();
+    expect(h.send).toHaveBeenCalledTimes(2);
   });
 });

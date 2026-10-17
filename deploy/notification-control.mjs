@@ -97,6 +97,11 @@ export function validateNotificationSettings(input, previous, now = new Date()) 
     realtime: mergeRealtimeSettings({ realtime: input.realtime }).realtime,
     eventWindows, schedules };
 }
+// 推送失败后的重试间隔：1、5、15 分钟，最多重试 3 次。
+// 一次网络抖动不能让这条提醒永远发不出去（以前失败会卡在 attempted，
+// 而且它的去重指纹已经记下了，后面同一条会被当成「已尝试过」直接跳过）。
+export const PUSH_RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000];
+
 export function zonedParts(date, timeZone) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short' }).formatToParts(date).map(p => [p.type, p.value]));
   return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}`,
@@ -132,16 +137,20 @@ export function notificationCategory(category = 'system', key = '') {
   if (/buy|sell|exit:|entry:|stock-depth|milestone|target|channel/.test(value)) return 'trade';
   return EVENT_TYPES.some(t => t.id === category) ? category : 'system';
 }
-export function notificationPermission(settings, event, now = new Date()) {
+// retry = 这是一条「已经被判定该发、只是发送失败」的提醒在重试：
+// 不再卡「太旧」和「定时窗口已过」这两条时间限制（否则按 1/5/15 分钟重试必然全被挡），
+// 但总开关、免打扰、类别开关、允许时段这些仍然照常生效。
+export function notificationPermission(settings, event, now = new Date(), { retry = false } = {}) {
   if (!settings.enabled) return 'disabled';
   if (inQuietHours(settings, now)) return 'quiet_hours';
   if (event.legacySchedule) return 'legacy_schedule_replaced';
   if (event.createdAt) {
     const created = Date.parse(event.createdAt);
-    if (!Number.isFinite(created) || created > +now + 30_000 || +now - created > 120_000) return 'expired';
+    if (!Number.isFinite(created) || created > +now + 30_000) return 'expired';
+    if (!retry && +now - created > 120_000) return 'expired';
     if (settings.deliveryEpoch && created < Date.parse(settings.deliveryEpoch)) return 'before_settings_change';
   }
-  if (event.scheduleId) {
+  if (event.scheduleId && !retry) {
     if (!scheduleDue(settings.schedules.find(s => s.id === event.scheduleId), now)) return 'schedule_disabled_or_outside_window';
   }
   if (event.category === 'breakout') {
@@ -197,23 +206,92 @@ export function createNotificationControl({ root, token, sendJson, send, now = (
     return { settings: value, state: !value.enabled ? 'off' : inQuietHours(value, now()) ? 'quiet' : 'on',
       serverTime: now().toISOString(), workerSeenAt, eventTypes: EVENT_TYPES };
   }
+  // 发一次：成功返回 true；失败（返回假值或抛异常）返回 false，绝不让异常逃出去。
+  async function attemptSend(event) {
+    try {
+      return (await send(event)) === true;
+    } catch (error) {
+      console.warn(`push send failed: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }
+
+  function retryRow(row, attempts, at) {
+    const delay = PUSH_RETRY_DELAYS_MS[attempts - 1];
+    if (delay === undefined) {
+      // 重试次数用完：标 failed，并把待发内容丢掉（日志里显示「推送失败」）
+      const { event: _unused, ...rest } = row;
+      return { ...rest, status: 'failed', attempts, next_retry_at: null };
+    }
+    return { ...row, status: 'pending_retry', attempts, next_retry_at: new Date(+at + delay).toISOString() };
+  }
+
   async function dispatch(event) {
     return serial(async () => {
       const value = await settings();
-      const reason = notificationPermission(value, event, now());
+      const at = now();
+      const reason = notificationPermission(value, event, at);
       if (event.dryRun === true) return { status: reason ? 'suppressed' : 'would_send', reason, dryRun: true };
       const hash = createHash('sha256').update(String(event.dedupeKey || event.key || '')).digest('hex');
       await mkdir(root, { recursive: true });
       const ledger = await readJson(ledgerFile, []);
       if (ledger.some(row => row.id === hash)) return { status: 'deduplicated' };
       // Record the attempt first: crash/restart/reenable must not re-send it.
-      ledger.push({ id: hash, at: now().toISOString(), status: reason || 'attempted' });
+      ledger.push({ id: hash, at: at.toISOString(), status: reason || 'attempted',
+        dedupe_key: String(event.dedupeKey || event.key || '') });
       await atomicJson(ledgerFile, ledger.slice(-10000));
       if (reason) return { status: 'suppressed', reason };
-      const delivered = await send(event);
-      ledger[ledger.length - 1].status = delivered ? 'sent' : 'failed';
+      const delivered = await attemptSend(event);
+      const index = ledger.length - 1;
+      if (delivered) {
+        ledger[index] = { ...ledger[index], status: 'sent', attempts: 1 };
+      } else {
+        ledger[index] = retryRow({ ...ledger[index], event }, 1, at);
+      }
       await atomicJson(ledgerFile, ledger.slice(-10000));
-      return { status: delivered ? 'sent' : 'failed' };
+      return { status: ledger[index].status, attempts: ledger[index].attempts };
+    });
+  }
+
+  /**
+   * 到点的失败推送再发一次。返回这一轮有结论的那些条目，
+   * 调用方用 dedupe_key 把提醒日志里对应那行的状态改掉。
+   */
+  async function retryPending() {
+    return serial(async () => {
+      const at = now();
+      const ledger = await readJson(ledgerFile, []);
+      const due = ledger
+        .map((row, index) => ({ row, index }))
+        .filter(({ row }) => row?.status === 'pending_retry' && row.next_retry_at
+          && Date.parse(row.next_retry_at) <= +at);
+      if (due.length === 0) return [];
+      const value = await settings();
+      const resolved = [];
+      for (const { row, index } of due) {
+        const attempts = Number(row.attempts) || 1;
+        // 重试前重新判一次权限：这中间可能已经进了免打扰，或者开关被关掉了。
+        const reason = notificationPermission(value, row.event || {}, at, { retry: true });
+        if (reason) {
+          const { event: _unused, ...rest } = row;
+          ledger[index] = { ...rest, status: 'suppressed', reason, next_retry_at: null };
+          resolved.push({ dedupeKey: row.dedupe_key, status: 'suppressed', reason });
+          continue;
+        }
+        const delivered = await attemptSend(row.event || {});
+        if (delivered) {
+          const { event: _unused, ...rest } = row;
+          ledger[index] = { ...rest, status: 'sent', attempts: attempts + 1, next_retry_at: null };
+          resolved.push({ dedupeKey: row.dedupe_key, status: 'sent' });
+          continue;
+        }
+        ledger[index] = retryRow(row, attempts + 1, at);
+        if (ledger[index].status === 'failed') {
+          resolved.push({ dedupeKey: row.dedupe_key, status: 'failed' });
+        }
+      }
+      await atomicJson(ledgerFile, ledger.slice(-10000));
+      return resolved;
     });
   }
   const isInternal = req => {
@@ -271,5 +349,5 @@ export function createNotificationControl({ root, token, sendJson, send, now = (
     } catch (error) { sendJson(res, 400, { error: error instanceof Error ? error.message : '通知服务不可用' }); }
     return true;
   }
-  return { settings, status, dispatch, route };
+  return { settings, status, dispatch, retryPending, route };
 }

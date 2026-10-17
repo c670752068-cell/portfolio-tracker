@@ -130,3 +130,29 @@ describe('净值序列的起始日期', () => {
     expect(buildTwr([], []).start).toBeNull();
   });
 });
+
+describe('缺失和作废的净值点', () => {
+  it('缺失那天跳过，不当成净值为 0，也不打断前后的链接', () => {
+    const result = buildTwr([
+      { date: '2026-10-16', nav: 100_000, captured_at: 'x' },
+      { date: '2026-10-19', nav: null as unknown as number, missing: true, captured_at: null },
+      { date: '2026-10-20', nav: 110_000, captured_at: 'y' },
+    ], []);
+
+    expect(result.start).toBe('2026-10-16');
+    expect(result.end).toBe('2026-10-20');
+    expect(result.returnPct).toBeCloseTo(10, 6);
+    expect(result.periods).toBe(1);
+  });
+
+  it('标了作废的净值点不参与计算', () => {
+    const result = buildTwr([
+      { date: '2026-10-16', nav: 100_000, captured_at: 'x' },
+      { date: '2026-10-17', nav: 100_000, captured_at: 'y', voided: true },
+    ], []);
+
+    expect(result.start).toBe('2026-10-16');
+    expect(result.end).toBe('2026-10-16');
+    expect(result.returnPct).toBeNull();
+  });
+});
