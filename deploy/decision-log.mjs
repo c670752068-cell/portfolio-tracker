@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { etCloseInstant, knownTradingDate, tradingDate } from './market-session.mjs';
+import { etCloseInstant, knownTradingDate } from './market-session.mjs';
 
 // 决策日志：每笔买卖记下「当时的指标」和「用户的预判」，收盘后自动判定结果。
 // 成交来自量化快照的 position_ledger.recent_events（前后两次券商快照差分推算），
@@ -267,11 +267,26 @@ export function captureTrades(store, snapshot, { now = new Date(), channelReview
 }
 
 /**
- * 该不该记今天的净值：只在美股交易日收盘（美东 16:30）之后记，按交易日期存。
- * 盘中同步不记（会把盘中市值当成当日净值），周末和节假日也不另开一天。
+ * 净值记在哪一天：用券商数据自己的 as_of（对账到的那个交易日），不是抓取时间。
+ * 真实事故：10-17 抓到的快照里 IBKR 的 as_of 还停在 10-15，按抓取时间记就会
+ * 把周四的收盘净值记成周五甚至周六的。
+ * 快照没给 as_of 就返回 null——不记，也绝不拿抓取时间猜一个日期。
  */
-export function navTradingDate(now) {
-  const day = tradingDate(now);
+export function navAsOfDate(snapshot) {
+  const freshness = record(record(snapshot).freshness);
+  for (const value of [freshness.positions_as_of, freshness.data_as_of]) {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  }
+  return null;
+}
+
+/**
+ * as_of 那一天必须是交易日、而且常规时段已经收盘，才把净值记下来。
+ * （as_of 等于当天、当天还没收盘时先等着，下一次抓取再记。）
+ */
+export function navCaptureDate(snapshot, now) {
+  const day = navAsOfDate(snapshot);
+  if (!day || knownTradingDate(day) === false) return null;
   const close = etCloseInstant(day);
   if (!close) return null;
   return +now >= Date.parse(close) ? day : null;
@@ -299,7 +314,7 @@ function missingTradingDays(series, day) {
 export function captureNav(store, snapshot, { now = new Date(), date = null } = {}) {
   const current = normalizeDecisionLog(store);
   const nav = numeric(record(record(snapshot).ammo_overview).nav_usd);
-  const day = date || navTradingDate(now);
+  const day = date || navCaptureDate(snapshot, now);
   if (nav === null || !day) return current;
   const existing = current.nav_series.findIndex((point) => point.date === day);
   const point = { date: day, nav, missing: false, captured_at: now.toISOString() };

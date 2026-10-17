@@ -31,6 +31,7 @@ import { createNotificationControl, inQuietHours, scheduleDue, zonedParts } from
 import { classifyMarketSession, etCloseInstant } from './market-session.mjs';
 import { buildYahooChartUrl, parseYahooChartQuote } from './yahoo-quote.mjs';
 import { createLastGoodCache } from './last-good-cache.mjs';
+import { estimatePositionValues } from './position-estimate.mjs';
 import {
   captureNav,
   captureTrades,
@@ -401,13 +402,29 @@ function positionsAuthorizationMatches(req) {
     && req.headers.authorization === `Bearer ${PORTFOLIO_SYNC_TOKEN}`;
 }
 
+// 实时轮询顺手存下来的最新报价，持仓接口拿它重算市值，不另外抓行情。
+const LIVE_QUOTES = new Map();
+
 async function handlePortfolioPositionsRoute(url, req, res) {
   if (url.pathname !== '/api/portfolio/positions') return false;
   const latestPath = join(PORTFOLIO_POSITIONS_ROOT, 'latest.json');
   if (req.method === 'GET') {
     try {
-      const payload = await readFile(latestPath, 'utf8');
-      sendJsonText(res, 200, payload);
+      const raw = await readFile(latestPath, 'utf8');
+      // IBKR 对账晚一个交易日，用最新报价把市值重算一遍，总资产和杠杆预算才是今天的。
+      // 重算失败或报价太旧时原样返回券商数据，绝不返回空白。
+      try {
+        const stored = JSON.parse(raw);
+        const quotes = Object.fromEntries(LIVE_QUOTES);
+        const estimated = estimatePositionValues(stored?.payload, quotes);
+        if (estimated !== stored?.payload) {
+          sendJson(res, 200, { ...stored, payload: estimated });
+          return true;
+        }
+      } catch (error) {
+        console.warn(`position estimate failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      sendJsonText(res, 200, raw);
     } catch {
       sendJson(res, 404, { error: { code: 'no_data', message: '尚无量化系统持仓数据' } });
     }
@@ -1196,7 +1213,11 @@ async function runRealtimeMonitorCycle() {
     for (const symbol of symbols) {
       try {
         const quote = await fetchFreeQuote(symbol === 'VIX' ? '^VIX' : symbol);
-        if (quote) quotes[symbol] = quote;
+        if (quote) {
+          quotes[symbol] = quote;
+          // 持仓接口要用这份报价重算市值，存一份在内存里
+          if (symbol !== 'VIX') LIVE_QUOTES.set(symbol, quote);
+        }
       } catch { /* 单个标的取价失败不影响其他 */ }
     }
 

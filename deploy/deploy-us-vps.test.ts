@@ -215,3 +215,26 @@ describe('休市重复、净值和推送重试的网关接线', () => {
     expect(gateway).toContain('PUSH_RETRY_TICK_MS');
   });
 });
+
+describe('持仓市值实时估算的接线', () => {
+  it('上传并语法检查 position-estimate.mjs', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/position-estimate.mjs "${SERVER}:${REMOTE_RELEASE_APP}/position-estimate.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/position-estimate.mjs'");
+  });
+
+  it('持仓接口用实时报价缓存重算市值，报价来自实时轮询、不另外抓', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+
+    expect(gateway).toContain('estimatePositionValues(');
+    expect(gateway).toContain('LIVE_QUOTES');
+  });
+
+  it('净值序列的日期用券商自己的 as_of，不用抓取时间', async () => {
+    const log = await readFile('deploy/decision-log.mjs', 'utf8');
+
+    expect(log).toContain('navAsOfDate(');
+    expect(log).toContain('freshness.positions_as_of');
+    expect(log).not.toContain('navTradingDate');
+  });
+});

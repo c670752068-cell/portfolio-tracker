@@ -503,42 +503,54 @@ describe('从空白开始', () => {
   });
 });
 
-describe('每日净值按交易日、收盘后才记', () => {
-  const snap = (nav: number) => ({ ammo_overview: { nav_usd: nav } });
-
-  it('盘中同步不记（美东 13:15 那次就是这样记错的）', () => {
-    const store = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T17:15:08Z') });
-    expect(store.nav_series).toEqual([]);
+describe('每日净值按券商数据自己的 as_of 记', () => {
+  // 日期取 freshness.positions_as_of（券商对账到哪一天），不是抓取时间。
+  // 线上真实情况：10-17 抓到的快照，IBKR 的 as_of 还停在 10-15。
+  const snap = (nav: number, asOf: string | null = '2026-10-15') => ({
+    ammo_overview: { nav_usd: nav },
+    ...(asOf === null ? {} : { freshness: { positions_as_of: asOf, data_as_of: asOf } }),
   });
 
-  it('收盘后（美东 16:30 以后）记一条，按交易日期存', () => {
-    const store = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T21:00:00Z') });
+  it('记在券商的 as_of 那一天，不是抓取那一天', () => {
+    const store = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-17T07:42:20Z') });
     expect(store.nav_series).toEqual([
-      expect.objectContaining({ date: '2026-10-16', nav: 186_325.01 }),
+      expect.objectContaining({ date: '2026-10-15', nav: 186_325.01 }),
     ]);
   });
 
-  it('周六周日不另记一条，只落在上一个交易日', () => {
-    const friday = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T21:00:00Z') });
-    const saturday = captureNav(friday, snap(186_325.01), { now: new Date('2026-10-17T04:40:09Z') });
-    const sunday = captureNav(saturday, snap(186_325.01), { now: new Date('2026-10-18T16:00:00Z') });
-
-    expect(sunday.nav_series.map((point) => point.date)).toEqual(['2026-10-16']);
+  it('as_of 那天还没收盘就先不记', () => {
+    // as_of = 当天，而现在是美东 13:15（还没到 16:30）
+    const store = captureNav(emptyDecisionLog(), snap(186_325.01, '2026-10-16'), { now: new Date('2026-10-16T17:15:08Z') });
+    expect(store.nav_series).toEqual([]);
   });
 
-  it('美股节假日不记', () => {
-    // 感恩节 2026-11-26，美东 18:00
-    const store = captureNav(emptyDecisionLog(), snap(190_000), { now: new Date('2026-11-26T23:00:00Z') });
-    expect(store.nav_series.map((point) => point.date)).toEqual(['2026-11-25']);
+  it('快照没给 as_of 就不记，绝不拿抓取时间猜一个日期', () => {
+    const store = captureNav(emptyDecisionLog(), snap(186_325.01, null), { now: new Date('2026-10-16T21:00:00Z') });
+    expect(store.nav_series).toEqual([]);
   });
 
-  it('中间某天没同步就标缺失，不拿旧数值顶上', () => {
-    const friday = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T21:00:00Z') });
-    // 周一、周二都没同步，周三收盘后才同步
-    const wednesday = captureNav(friday, snap(190_000), { now: new Date('2026-10-21T21:00:00Z') });
+  it('as_of 不是交易日（周六）就不记', () => {
+    const store = captureNav(emptyDecisionLog(), snap(186_325.01, '2026-10-17'), { now: new Date('2026-10-19T21:00:00Z') });
+    expect(store.nav_series).toEqual([]);
+  });
+
+  it('同一个 as_of 反复抓也只有一条', () => {
+    const first = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-17T07:42:20Z') });
+    const again = captureNav(first, snap(186_325.01), { now: new Date('2026-10-17T12:00:00Z') });
+    const sunday = captureNav(again, snap(186_325.01), { now: new Date('2026-10-18T16:00:00Z') });
+
+    expect(sunday.nav_series.map((point) => point.date)).toEqual(['2026-10-15']);
+    expect(again.revision).toBe(first.revision);
+  });
+
+  it('as_of 往前走时中间漏掉的交易日标缺失，不拿旧数值顶上', () => {
+    const thursday = captureNav(emptyDecisionLog(), snap(186_325.01, '2026-10-15'), { now: new Date('2026-10-17T07:42:20Z') });
+    // 周一、周二的对账都没拿到，周三的 as_of 才上来
+    const wednesday = captureNav(thursday, snap(190_000, '2026-10-21'), { now: new Date('2026-10-22T12:00:00Z') });
 
     expect(wednesday.nav_series).toEqual([
-      expect.objectContaining({ date: '2026-10-16', nav: 186_325.01 }),
+      expect.objectContaining({ date: '2026-10-15', nav: 186_325.01 }),
+      expect.objectContaining({ date: '2026-10-16', nav: null, missing: true }),
       expect.objectContaining({ date: '2026-10-19', nav: null, missing: true }),
       expect.objectContaining({ date: '2026-10-20', nav: null, missing: true }),
       expect.objectContaining({ date: '2026-10-21', nav: 190_000 }),
@@ -546,11 +558,11 @@ describe('每日净值按交易日、收盘后才记', () => {
   });
 
   it('补上同步后缺失那天会被真实数值替掉', () => {
-    const friday = captureNav(emptyDecisionLog(), snap(186_325.01), { now: new Date('2026-10-16T21:00:00Z') });
-    const wednesday = captureNav(friday, snap(190_000), { now: new Date('2026-10-21T21:00:00Z') });
-    const backfilled = captureNav(wednesday, snap(188_000), { date: '2026-10-19', now: new Date('2026-10-21T22:00:00Z') });
+    const thursday = captureNav(emptyDecisionLog(), snap(186_325.01, '2026-10-15'), { now: new Date('2026-10-17T07:42:20Z') });
+    const wednesday = captureNav(thursday, snap(190_000, '2026-10-21'), { now: new Date('2026-10-22T12:00:00Z') });
+    const backfilled = captureNav(wednesday, snap(188_000, '2026-10-16'), { now: new Date('2026-10-22T13:00:00Z') });
 
-    expect(backfilled.nav_series.find((point) => point.date === '2026-10-19')).toMatchObject({
+    expect(backfilled.nav_series.find((point) => point.date === '2026-10-16')).toMatchObject({
       nav: 188_000, missing: false,
     });
   });

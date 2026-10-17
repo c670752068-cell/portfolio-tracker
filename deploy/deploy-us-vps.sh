@@ -49,6 +49,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
 "${SCP_CMD[@]}" deploy/quant-decision-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/quant-decision-alerts.mjs"
 "${SCP_CMD[@]}" deploy/sell-price-sanity.mjs "${SERVER}:${REMOTE_RELEASE_APP}/sell-price-sanity.mjs"
 "${SCP_CMD[@]}" deploy/last-good-cache.mjs "${SERVER}:${REMOTE_RELEASE_APP}/last-good-cache.mjs"
+"${SCP_CMD[@]}" deploy/position-estimate.mjs "${SERVER}:${REMOTE_RELEASE_APP}/position-estimate.mjs"
 "${SCP_CMD[@]}" deploy/decision-log.mjs "${SERVER}:${REMOTE_RELEASE_APP}/decision-log.mjs"
 "${SCP_CMD[@]}" deploy/decision-log-resolve.mjs "${SERVER}:${REMOTE_RELEASE_APP}/decision-log-resolve.mjs"
 "${SCP_CMD[@]}" deploy/alert-log.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-log.mjs"
@@ -73,6 +74,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
   node --check '${REMOTE_RELEASE_APP}/quant-decision-alerts.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/sell-price-sanity.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/last-good-cache.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/position-estimate.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/decision-log.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/decision-log-resolve.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/alert-log.mjs' && \
