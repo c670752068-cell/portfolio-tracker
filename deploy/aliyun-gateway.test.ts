@@ -423,3 +423,28 @@ describe('portfolio positions gateway', () => {
     expect(script).not.toContain('BARK_DEVICE_KEY=${BARK_DEVICE_KEY:-}');
   });
 });
+
+describe('行情代理顺带给出当前时段', () => {
+  it('/api/quotes 返回 session 和服务器时间，供日志页状态条使用', async () => {
+    const response = await fetch(`${origin}/api/quotes?symbols=`);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(['pre', 'regular', 'post', 'overnight', 'closed']).toContain(body.session);
+    expect(Number.isNaN(Date.parse(body.time))).toBe(false);
+  });
+});
+
+describe('提醒效果接口', () => {
+  it('只读；还没算过时返回空结果而不是报错', async () => {
+    const response = await fetch(`${origin}/api/portfolio/alert-outcomes`);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.outcomes).toMatchObject({ version: 1, outcomes: {}, summary: [] });
+
+    const write = await fetch(`${origin}/api/portfolio/alert-outcomes`, { method: 'POST' });
+    expect(write.status).toBe(405);
+  });
+});
+

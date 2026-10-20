@@ -238,3 +238,49 @@ describe('持仓市值实时估算的接线', () => {
     expect(log).not.toContain('navTradingDate');
   });
 });
+
+describe('提醒降噪上线所需', () => {
+  it('降噪模块和它的配置文件都要上传，模块还要语法检查', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/alert-noise.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-noise.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/alert-noise.mjs'");
+    expect(script).toContain('deploy/alert-noise.config.json "${SERVER}:${REMOTE_RELEASE_APP}/alert-noise.config.json"');
+  });
+
+  it('网关用降噪模块写定时提醒，并把冷却时间传给实时监控', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('planSlotEntries(');
+    expect(gateway).toContain('cooldownMs:');
+    expect(gateway).toContain('loadNoiseConfig(');
+  });
+
+  it('修旧账的脚本要上传，网关启动时跑一次', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/void-dust-records.mjs "${SERVER}:${REMOTE_RELEASE_APP}/void-dust-records.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/void-dust-records.mjs'");
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('voidDustRecords(PORTFOLIO_ALERTS_ROOT)');
+  });
+
+  it('冷却时间写在配置文件里，不做成界面开关', async () => {
+    const config = JSON.parse(await readFile('deploy/alert-noise.config.json', 'utf8'));
+    expect(config.cooldownMinutes).toBe(60);
+    expect(config.importantBypassesCooldown).toBe(true);
+  });
+});
+
+describe('提醒效果上线所需', () => {
+  it('效果统计模块要上传并语法检查', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/alert-outcomes.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-outcomes.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/alert-outcomes.mjs'");
+  });
+
+  it('网关每天收盘审查之后算一次，并提供只读接口', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('runAlertOutcomesCycle');
+    expect(gateway).toContain('await runAlertOutcomesCycle();');
+    expect(gateway).toContain('handleAlertOutcomesRoute');
+  });
+});
+

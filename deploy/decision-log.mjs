@@ -58,6 +58,35 @@ export function normalizeDecisionLog(value) {
   };
 }
 
+// 券商清仓后留下的零碎股（NVDA 0.005 股 / $1.08）不是一笔交易：不写决策日志，
+// 也不写持仓变化提醒。阈值和持仓页的 src/dustPosition.ts 保持一致。
+export const DUST_MARKET_VALUE_USD = 10;
+export const DUST_MINIMUM_SHARES = 1;
+
+export function isDustTrade(trade) {
+  const item = record(trade);
+  // 期权按张数计，1 张不是零碎仓
+  if (String(item.asset_type || '') === 'option') return false;
+  const qty = numeric(item.qty ?? item.quantity);
+  if (qty === null || qty === 0) return false;
+  if (Math.abs(qty) < DUST_MINIMUM_SHARES) return true;
+  const price = numeric(item.price);
+  return price !== null && Math.abs(qty * price) < DUST_MARKET_VALUE_USD;
+}
+
+/** 已经记进去的零碎成交只标「已作废」，一行都不删。 */
+export function voidDustTrades(store, { reason = '零碎持仓', now = new Date() } = {}) {
+  const current = normalizeDecisionLog(store);
+  let changed = false;
+  const trades = current.trades.map((trade) => {
+    if (trade.voided === true || !isDustTrade(trade)) return trade;
+    changed = true;
+    return { ...trade, voided: true, voided_reason: String(reason), voided_at: now.toISOString() };
+  });
+  if (!changed) return store;
+  return { ...current, trades, revision: current.revision + 1, updated_at: now.toISOString() };
+}
+
 export function tradeKey(event) {
   const item = record(event);
   return [
@@ -214,7 +243,7 @@ export function dropStoredSnapshotArtifacts(store, now = new Date()) {
   };
 }
 
-export function captureTrades(store, snapshot, { now = new Date(), channelReview = null, keepArtifacts = false } = {}) {
+export function captureTrades(store, snapshot, { now = new Date(), channelReview = null, keepArtifacts = false, keepDust = false } = {}) {
   const current = normalizeDecisionLog(store);
   const allEvents = rows(record(record(snapshot).position_ledger).recent_events);
   const events = keepArtifacts ? allEvents : withoutSnapshotArtifacts(allEvents);
@@ -227,6 +256,8 @@ export function captureTrades(store, snapshot, { now = new Date(), channelReview
     const quantity = numeric(item.quantity);
     const recordedAt = typeof item.recorded_at === 'string' ? item.recorded_at : null;
     if (!symbol || !['BUY', 'SELL'].includes(side) || quantity === null || quantity === 0 || !recordedAt) continue;
+    // 零碎持仓的残留不是交易：不入账，也就不会再写一条持仓变化提醒。
+    if (!keepDust && isDustTrade({ ...item, qty: quantity })) continue;
     // 用户清过一次日志之后，起算点之前的旧成交不再抓回来。
     if (current.trades_from && new Date(recordedAt).toISOString() <= current.trades_from) continue;
     const key = tradeKey(item);
@@ -346,15 +377,23 @@ export function applyTradeNote(store, id, patch, now = new Date()) {
     : validatePrediction(input.prediction);
   const note = typeof input.note === 'string' ? input.note.slice(0, 2000) : '';
   const price = numeric(input.price);
+  const qty = numeric(input.qty);
   const previous = current.trades[index];
+  // 只有「我据此下单了」生成的草稿能补数量；券商抓来的成交数量不许改。
+  if (qty !== null && (previous.draft !== true || qty <= 0)) {
+    throw Object.assign(new Error('数量只能在草稿上补，且要大于 0'), { status: 400 });
+  }
+  const nextQty = qty === null ? previous.qty : qty;
+  const nextPrice = price === null ? previous.price : price;
   const next = {
     ...previous,
     trigger,
     prediction,
     note,
+    qty: nextQty,
     // 推算成交缺卖出价时允许手工补一个，并标明是人工填的。
-    price: price === null ? previous.price : price,
-    amount: price === null ? previous.amount : price * previous.qty,
+    price: nextPrice,
+    amount: nextPrice === null || nextQty === null ? null : nextPrice * nextQty,
     price_source: price === null ? previous.price_source : 'manual',
     price_estimated: price === null ? previous.price_estimated : false,
     status: prediction === null && trigger.length === 0 && !note ? 'pending_note' : 'in_progress',
@@ -402,14 +441,19 @@ export function addManualTrade(store, input, now = new Date()) {
   const qty = numeric(item.qty);
   const price = numeric(item.price);
   const tradeTime = String(item.trade_time || '');
+  // 「我据此下单了」先占一行草稿：数量和价格可以后补，其余照常校验。
+  const draft = item.draft === true;
+  const alertId = typeof item.alert_id === 'string' ? item.alert_id.slice(0, 64) : null;
   if (!/^[A-Z][A-Z0-9.-]{0,10}$/.test(symbol)) throw Object.assign(new Error('代码格式不正确'), { status: 400 });
   if (!['BUY', 'SELL'].includes(side)) throw Object.assign(new Error('方向只能是买入或卖出'), { status: 400 });
-  if (qty === null || qty <= 0) throw Object.assign(new Error('数量要大于 0'), { status: 400 });
+  if (draft ? qty !== null && qty <= 0 : qty === null || qty <= 0) {
+    throw Object.assign(new Error('数量要大于 0'), { status: 400 });
+  }
   if (Number.isNaN(Date.parse(tradeTime))) throw Object.assign(new Error('成交时间格式不正确'), { status: 400 });
   if (current.trades.length >= TRADE_LIMIT) throw Object.assign(new Error('日志条数已达上限'), { status: 400 });
   const trade = {
     id: `trade-${randomBytes(6).toString('hex')}`,
-    key: `MANUAL|${symbol}|${side}|${qty}|${tradeTime}`,
+    key: draft ? `MANUAL|${symbol}|${side}|draft|${alertId || tradeTime}` : `MANUAL|${symbol}|${side}|${qty}|${tradeTime}`,
     trade_time: new Date(tradeTime).toISOString(),
     recorded_by: 'manual',
     symbol,
@@ -418,7 +462,7 @@ export function addManualTrade(store, input, now = new Date()) {
     broker: null,
     qty,
     price,
-    amount: price === null ? null : price * qty,
+    amount: price === null || qty === null ? null : price * qty,
     price_source: price === null ? null : 'manual',
     price_estimated: false,
     // 补录的交易没有当时的指标快照，留空不补造。
@@ -426,6 +470,10 @@ export function addManualTrade(store, input, now = new Date()) {
     trigger: [],
     prediction: null,
     note: typeof item.note === 'string' ? item.note.slice(0, 2000) : '',
+    // 草稿是哪条提醒带来的：只存 id 和原文，方便在决策日志里回看
+    draft,
+    alert_id: alertId,
+    alert_text: typeof item.alert_text === 'string' ? item.alert_text.slice(0, 500) : null,
     status: 'pending_note',
     resolved_at: null,
     resolved_price: null,

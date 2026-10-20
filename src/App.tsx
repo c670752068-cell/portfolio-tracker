@@ -741,7 +741,7 @@ export default function App() {
       )}
 
       {tab === 'journal' && privateDataState === 'ready' && (
-        <JournalPage displayCurrency={settings.displayCurrency} rates={rates} />
+        <JournalPage displayCurrency={settings.displayCurrency} rates={rates} snapshot={quantAnalysis} />
       )}
       {tab === 'settings' && (
         <section className="space-y-4">

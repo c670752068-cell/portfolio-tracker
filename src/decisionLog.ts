@@ -36,7 +36,8 @@ export interface DecisionTrade {
   side: 'BUY' | 'SELL';
   asset_type: string | null;
   broker: string | null;
-  qty: number;
+  /** 「我据此下单了」生成的草稿先留空，补上之后才有数量。 */
+  qty: number | null;
   price: number | null;
   amount: number | null;
   price_source: string | null;
@@ -51,6 +52,9 @@ export interface DecisionTrade {
   result_pct: number | null;
   qqq_result_pct: number | null;
   vs_hold_pct: number | null;
+  draft?: boolean;
+  alert_id?: string | null;
+  alert_text?: string | null;
 }
 
 export interface DecisionCashFlow { id: string; date: string; amount: number; note: string; created_at: string }
@@ -82,14 +86,20 @@ export interface DecisionTradeNote {
   prediction?: DecisionPrediction | null;
   note?: string;
   price?: number;
+  /** 只有草稿能补数量。 */
+  qty?: number;
 }
 
 export interface ManualTradeDraft {
   trade_time: string;
   symbol: string;
   side: 'BUY' | 'SELL';
-  qty: number;
+  qty?: number;
   price?: number;
+  /** 草稿：数量和价格可以后补，并记下是哪条提醒带来的。 */
+  draft?: boolean;
+  alert_id?: string;
+  alert_text?: string;
 }
 
 const WRITE_HEADERS = { 'Content-Type': 'application/json', 'X-Decision-Log': '1' } as const;

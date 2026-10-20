@@ -367,3 +367,62 @@ describe('CNN 档位按状态穿越记', () => {
     expect(dropped.alerts.filter((alert) => alert.kind === 'tier')).toHaveLength(1);
   });
 });
+
+describe('同标的同类提醒的冷却时间', () => {
+  const quiet = {
+    ...base,
+    session: 'regular' as const,
+    now: new Date('2026-10-20T17:00:00.000Z'),
+    quotes: {},
+    cnnScore: null,
+    previousCnnScore: null,
+    qqqPreviousHigh: null,
+    qqqPeakDate: null,
+  };
+
+  it('60 分钟内同一标的同一类只写一条，重要的不受限制', async () => {
+    const first = await runRealtimeTick({
+      ...quiet, store: emptyAlertLog(), dispatch: vi.fn(), cooldownMs: 3_600_000,
+      intradayZ: { UDOW: { previousZ: 0.38, currentZ: 0.52, price: 67.41 } },
+    });
+    expect(first.store.alerts).toHaveLength(1);
+
+    const second = await runRealtimeTick({
+      ...quiet, now: new Date('2026-10-20T17:30:00.000Z'), store: first.store, dispatch: vi.fn(),
+      cooldownMs: 3_600_000, intradayZ: { UDOW: { previousZ: 0.52, currentZ: 1.04, price: 68.9 } },
+    });
+    expect(second.store.alerts).toHaveLength(1);
+
+    const important = await runRealtimeTick({
+      ...quiet, now: new Date('2026-10-20T17:40:00.000Z'), store: second.store, dispatch: vi.fn(),
+      cooldownMs: 3_600_000, intradayZ: { UDOW: { previousZ: 1.04, currentZ: 1.63, price: 70.2 } },
+    });
+    expect(important.store.alerts).toHaveLength(2);
+    expect(important.store.alerts.at(-1)!.text).toContain('已进入卖出区'.replace('已', ''));
+  });
+
+  it('过了冷却时间照常记', async () => {
+    const first = await runRealtimeTick({
+      ...quiet, store: emptyAlertLog(), dispatch: vi.fn(), cooldownMs: 3_600_000,
+      intradayZ: { UDOW: { previousZ: 0.38, currentZ: 0.52, price: 67.41 } },
+    });
+    const later = await runRealtimeTick({
+      ...quiet, now: new Date('2026-10-20T18:05:00.000Z'), store: first.store, dispatch: vi.fn(),
+      cooldownMs: 3_600_000, intradayZ: { UDOW: { previousZ: 0.52, currentZ: 1.04, price: 68.9 } },
+    });
+    expect(later.store.alerts).toHaveLength(2);
+  });
+
+  it('不设冷却时间时行为和以前一样', async () => {
+    const first = await runRealtimeTick({
+      ...quiet, store: emptyAlertLog(), dispatch: vi.fn(),
+      intradayZ: { UDOW: { previousZ: 0.38, currentZ: 0.52, price: 67.41 } },
+    });
+    const second = await runRealtimeTick({
+      ...quiet, now: new Date('2026-10-20T17:30:00.000Z'), store: first.store, dispatch: vi.fn(),
+      intradayZ: { UDOW: { previousZ: 0.52, currentZ: 1.04, price: 68.9 } },
+    });
+    expect(second.store.alerts).toHaveLength(2);
+  });
+});
+

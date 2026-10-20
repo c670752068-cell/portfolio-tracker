@@ -53,6 +53,12 @@ import {
   symbolFromEventKey,
   writeAlertLog,
 } from './alert-log.mjs';
+import { NOISE_CONFIG_FILE, loadNoiseConfig, planSlotEntries } from './alert-noise.mjs';
+import {
+  ALERT_OUTCOMES_VERSION, alertOutcomeKind, computeAlertOutcomes, createAlertOutcomesRoute,
+  outcomeSymbol, summarizeOutcomes, writeAlertOutcomes,
+} from './alert-outcomes.mjs';
+import { voidDustRecords } from './void-dust-records.mjs';
 import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 import { SESSION_CADENCE_MS, sessionLabel } from './realtime-alerts.mjs';
 import { feedStateReading, intradayZPreview, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
@@ -78,6 +84,17 @@ const IMPORT_ARCHIVE_ROOT = resolve(process.env.IMPORT_ARCHIVE_ROOT || '/opt/por
 const IMPORT_ARCHIVE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const IMPORT_ARCHIVE_MAX_BYTES = 200 * 1024 * 1024;
 const PORTFOLIO_SYNC_TOKEN = process.env.PORTFOLIO_SYNC_TOKEN || '';
+
+// 降噪参数（同标的同类提醒的冷却时间）写在配置文件里，不做成界面开关。
+// 读不到或写坏了就用默认值，绝不让网关起不来。
+let NOISE_CONFIG = loadNoiseConfig(null);
+try {
+  NOISE_CONFIG = loadNoiseConfig(JSON.parse(
+    await readFile(new URL(NOISE_CONFIG_FILE, import.meta.url), 'utf8'),
+  ));
+} catch (error) {
+  console.warn(`alert noise config fallback to defaults: ${error instanceof Error ? error.message : String(error)}`);
+}
 const PORTFOLIO_POSITIONS_ROOT = resolve(process.env.PORTFOLIO_POSITIONS_ROOT || '/opt/portfolio-tracker-data/positions');
 const PORTFOLIO_POSITIONS_MAX_BYTES = 2 * 1024 * 1024;
 const PORTFOLIO_ANALYSIS_ROOT = resolve(process.env.PORTFOLIO_ANALYSIS_ROOT || '/opt/portfolio-tracker-data/analysis');
@@ -770,6 +787,10 @@ const handleAlertLogRoute = createAlertLogRoute({
   root: PORTFOLIO_ALERTS_ROOT,
   sendJson,
 });
+const handleAlertOutcomesRoute = createAlertOutcomesRoute({
+  root: PORTFOLIO_ALERTS_ROOT,
+  sendJson,
+});
 const handleDecisionLogRoute = createDecisionLogRoute({
   root: PORTFOLIO_ALERTS_ROOT,
   sendJson,
@@ -780,8 +801,9 @@ const handleDecisionLogRoute = createDecisionLogRoute({
 // 50 条，不落盘就会滚掉；每日净值也只有从现在开始攒才有时间加权收益率可算。
 // 手机推送的唯一出口：推一条就在提醒日志里记一行，推送开关关掉也照样记，
 // 只是标「未推送」。
-async function dispatchAndLogAlert(event, extra = {}) {
+async function dispatchAndLogAlert(event, extra = {}, { log = true } = {}) {
   const result = await notificationControl.dispatch(event);
+  if (!log) return result;
   try {
     const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
     const occurredAt = typeof event?.createdAt === 'string' ? new Date(event.createdAt) : new Date();
@@ -836,6 +858,31 @@ async function closedDailySeries(symbol) {
   return (result?.dashboard?.series || [])
     .filter((point) => point && point.is_partial !== true && Number.isFinite(point.close))
     .map((point) => ({ date: point.date, close: point.close }));
+}
+
+// 每天收盘审查之后算一次提醒效果：每条提醒之后第 1 / 5 / 20 个交易日的涨跌，
+// 以及同期 QQQ。只读行情，不碰阈值，也不发通知；结果存盘，网页只读。
+const ALERT_OUTCOME_SYMBOL_LIMIT = 60;
+async function runAlertOutcomesCycle() {
+  try {
+    const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    const symbols = [...new Set((store.alerts || [])
+      .filter((entry) => entry.voided !== true && alertOutcomeKind(entry))
+      .map((entry) => outcomeSymbol(entry)))].slice(0, ALERT_OUTCOME_SYMBOL_LIMIT);
+    const series = new Map();
+    for (const symbol of [...new Set(['QQQ', ...symbols])]) {
+      series.set(symbol, await closedDailySeries(symbol));
+    }
+    const outcomes = computeAlertOutcomes(store, { seriesFor: (symbol) => series.get(symbol) || [] });
+    await writeAlertOutcomes(PORTFOLIO_ALERTS_ROOT, {
+      version: ALERT_OUTCOMES_VERSION,
+      updated_at: new Date().toISOString(),
+      outcomes,
+      summary: summarizeOutcomes(outcomes),
+    });
+  } catch (error) {
+    console.warn(`alert outcomes failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 // 每天收盘审查之后判定一次预判结果：只读行情，不碰阈值，也不发通知。
@@ -990,6 +1037,23 @@ const handleRefreshRequestRoute = createRefreshRequestRoute({
   sendJson,
 });
 
+/**
+ * 定时推送写进提醒日志：状态类提醒（可买 / 低估值 / 极低估值）只在刚进入状态
+ * 时单独记一行，之后每天还在同一状态就并进一条「汇总」。推送本身不受影响。
+ */
+async function writeSlotAlertLog({ slot, now, dispatched, events }) {
+  if (!dispatched.length) return;
+  try {
+    const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    const session = classifyMarketSession(now, { hasMinuteSeries: true });
+    const plan = planSlotEntries({ store, events: dispatched, present: events, now, slot, session });
+    const withStates = { ...store, states: plan.states };
+    await writeAlertLog(PORTFOLIO_ALERTS_ROOT, appendAlerts(withStates, plan.entries, now));
+  } catch (error) {
+    console.warn(`slot alert log write failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 let quantDecisionCycleRunning = false;
 async function runStoredQuantDecisionCycle() {
   if (quantDecisionCycleRunning) return;
@@ -1003,13 +1067,27 @@ async function runStoredQuantDecisionCycle() {
     if (classifyMarketSession(now, { hasMinuteSeries: true }) === 'closed') return;
     for (const schedule of settings.schedules.filter(s => s.source === 'server' && scheduleDue(s, now))) {
       const slot = `${zonedParts(now, schedule.timeZone).date}:${schedule.id}`;
-      await deliverQuantDecisionAlerts({ snapshot, alertsRoot: PORTFOLIO_ALERTS_ROOT, now, notificationSlot: slot,
+      const dispatched = [];
+      const delivery = await deliverQuantDecisionAlerts({ snapshot, alertsRoot: PORTFOLIO_ALERTS_ROOT, now, notificationSlot: slot,
         notify: async event => {
+          // 推送照旧；写不写日志那一行交给降噪模块决定
           const result = await dispatchAndLogAlert({ ...event, scheduleId: schedule.id,
-            dedupeKey: `${slot}:${event.key}`, createdAt: now.toISOString() });
+            dedupeKey: `${slot}:${event.key}`, createdAt: now.toISOString() }, {}, { log: false });
+          dispatched.push({
+            key: event.key,
+            title: event.title,
+            body: event.body,
+            category: alertCategoryForEvent(event),
+            symbol: symbolFromEventKey(event),
+            icon: '🔔',
+            pushed: result?.status === 'sent',
+            push_state: result?.status === 'sent' ? 'sent' : result?.reason || result?.status || 'not_pushed',
+            occurred_at: now.toISOString(),
+          });
           return result.status === 'sent';
         },
       });
+      await writeSlotAlertLog({ slot, now, dispatched, events: delivery?.events || [] });
     }
   } catch (error) {
     if (error?.code !== 'ENOENT') {
@@ -1046,6 +1124,7 @@ async function runStoredChannelReviewCycle() {
     });
     if (review && review.skipped !== true && review.review_date) {
       await runDecisionLogResolveCycle(review.review_date);
+      await runAlertOutcomesCycle();
     }
     // 刷新失败只记日志，服务器上保留的仍是上一份完整收盘审查。
     if (review?.failed_symbols?.length) {
@@ -1076,6 +1155,10 @@ async function proxyQuotes(req, res) {
   sendJson(res, 200, {
     quotes: rows.filter((row) => row.quote).map((row) => row.quote),
     failedSymbols: rows.filter((row) => !row.quote).map((row) => ({ symbol: row.symbol, reason: row.reason })),
+    // 日志页顶部状态条要显示「当前时段」和数据时间：时段由服务器判定，
+    // 假期表在服务器这一侧，网页不再自己猜。
+    session: classifyMarketSession(new Date(), { hasMinuteSeries: true }),
+    time: new Date().toISOString(),
   });
 }
 
@@ -1148,6 +1231,7 @@ const server = createServer(async (req, res) => {
   if (await handleChannelReviewRoute(url, req, res)) return;
   if (await handleDecisionLogRoute(url, req, res)) return;
   if (await handleAlertLogRoute(url, req, res)) return;
+  if (await handleAlertOutcomesRoute(url, req, res)) return;
   try {
     if (await handleAlertRulesRoute(url, req, res)) return;
   } catch (error) {
@@ -1300,6 +1384,7 @@ async function runRealtimeMonitorCycle() {
       settings: realtime,
       quiet,
       dispatch: (event) => notificationControl.dispatch(event),
+      cooldownMs: NOISE_CONFIG.cooldownMinutes * 60_000,
     });
     if (cnnScore !== null) REALTIME_STATE.lastCnn = cnnScore;
     if (result.store !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, result.store);
@@ -1350,6 +1435,14 @@ const quantDecisionTimer = setInterval(runStoredQuantDecisionCycle, QUANT_DECISI
 const channelReviewTimer = setInterval(runStoredChannelReviewCycle, CHANNEL_REVIEW_INTERVAL_MS);
 void runStoredQuantDecisionCycle();
 void runStoredChannelReviewCycle();
+// 旧账：零碎持仓被当成交易记过的那几条，启动时标成「已作废」并写明原因，不删除。
+void voidDustRecords(PORTFOLIO_ALERTS_ROOT)
+  .then((summary) => {
+    if (summary.trades || summary.alerts) {
+      console.warn(`voided dust records: ${summary.trades} trades, ${summary.alerts} alerts`);
+    }
+  })
+  .catch((error) => console.warn(`void dust records failed: ${error instanceof Error ? error.message : String(error)}`));
 server.on('close', () => {
   clearInterval(realtimeMonitorTimer);
   clearInterval(pushRetryTimer);

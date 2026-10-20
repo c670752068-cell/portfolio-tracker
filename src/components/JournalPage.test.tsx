@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { JournalPageView } from './JournalPage';
+import { statusCards } from '../marketStatusBar';
 import type { DecisionLog } from '../decisionLog';
 import type { AlertLogEntry } from '../alertLog';
 import type { ExchangeRates } from '../types';
@@ -155,7 +156,8 @@ describe('日志页自动刷新', () => {
 
   it('新进来的那一行会高亮', () => {
     const html = live({ highlightedIds: ['a2'] });
-    const row = html.slice(html.indexOf('刚进来的一条') - 400, html.indexOf('刚进来的一条'));
+    const start = html.indexOf('data-alert-row="a2"');
+    const row = html.slice(start, start + 200);
 
     expect(row).toContain('alert-row-new');
   });
@@ -176,29 +178,43 @@ describe('日志页自动刷新', () => {
 });
 
 describe('推送状态和作废标记', () => {
-  it('被免打扰拦下的标「[免打扰]」', () => {
+  // 手机上一条只占一行，推送状态改成行尾小图标，原因文字放在悬停/长按的提示里
+  it('被免打扰拦下的显示 🌙，提示写「免打扰」', () => {
     const html = render({ alerts: [alert({ pushed: false, push_state: 'quiet_hours' })] });
-    expect(html).toContain('[免打扰]');
-    expect(html).not.toContain('[未推送]');
+    expect(html).toContain('🌙');
+    expect(html).toContain('推送状态：免打扰');
   });
 
-  it('发出去的标「[已推送]」，连发多条带次数', () => {
-    expect(render({ alerts: [alert({ pushed: true, push_state: 'sent' })] })).toContain('[已推送]');
-    expect(render({ alerts: [alert({ pushed: true, push_state: 'sent', push_repeat: 3 })] })).toContain('[已推送 ×3]');
+  it('发出去的显示 📲，连发多条在提示里带次数', () => {
+    expect(render({ alerts: [alert({ pushed: true, push_state: 'sent' })] })).toContain('📲');
+    expect(render({ alerts: [alert({ pushed: true, push_state: 'sent', push_repeat: 3 })] }))
+      .toContain('推送状态：已推送 ×3');
   });
 
-  it('类别开关没开时说清为什么没推送', () => {
+  it('类别开关没开时显示 🔕，提示说清为什么没推送', () => {
     const html = render({ alerts: [alert({ pushed: false, push_state: 'category_disabled' })] });
-    expect(html).toContain('[未推送 · 类别开关未开]');
+    expect(html).toContain('🔕');
+    expect(html).toContain('推送状态：未推送 · 类别开关未开');
   });
 
-  it('已作废的那条带「[已作废]」并划掉，但还在列表里', () => {
+  it('已作废的那条带「[已作废 · 原因]」并划掉，但还在列表里', () => {
     const html = render({
       alerts: [alert({ text: 'TSLA $353.18 ≥ 卖出线 $31.41', voided: true, voided_reason: '卖出线未过合理性校验' })],
     });
-    expect(html).toContain('[已作废]');
+    expect(html).toContain('[已作废 · 卖出线未过合理性校验]');
     expect(html).toContain('line-through');
     expect(html).toContain('TSLA $353.18 ≥ 卖出线 $31.41');
+  });
+
+  it('零碎持仓那几条标「已作废 · 零碎持仓」', () => {
+    const html = render({
+      alerts: [alert({
+        category: 'position', symbol: 'NVDA', icon: '🧾',
+        text: 'FUTU · 买入 NVDA 0.005 @ $216.00 · 已同步到决策日志，待补充理由',
+        voided: true, voided_reason: '零碎持仓',
+      })],
+    });
+    expect(html).toContain('[已作废 · 零碎持仓]');
   });
 });
 
@@ -254,11 +270,244 @@ describe('基准收益算不出时最大回撤也不显示数字', () => {
 });
 
 describe('推送失败和重试中的标记', () => {
-  it('彻底失败标「[推送失败]」', () => {
-    expect(render({ alerts: [alert({ pushed: false, push_state: 'failed' })] })).toContain('[推送失败]');
+  it('彻底失败显示 ❌', () => {
+    const html = render({ alerts: [alert({ pushed: false, push_state: 'failed' })] });
+    expect(html).toContain('❌');
+    expect(html).toContain('推送状态：推送失败');
   });
 
-  it('还在重试的标「[重试中]」', () => {
-    expect(render({ alerts: [alert({ pushed: false, push_state: 'pending_retry' })] })).toContain('[重试中]');
+  it('还在重试的显示 ⏳', () => {
+    const html = render({ alerts: [alert({ pushed: false, push_state: 'pending_retry' })] });
+    expect(html).toContain('⏳');
+    expect(html).toContain('推送状态：重试中');
   });
 });
+
+describe('手机上的提醒列表', () => {
+  it('每条默认一行：时间只到分钟、正文截断、面板不横向滚动', () => {
+    const html = render({
+      alerts: [alert({
+        id: 'z1', category: 'zscore', symbol: 'UDOW', icon: '🔴',
+        occurred_at: '2026-10-20T13:38:55.000Z',
+        text: '[盘中] UDOW $67.41 · Z 0.38 → 0.52 · 涨得更多，偏强',
+        indicators: { level: 2 },
+      })],
+    });
+
+    expect(html).toContain('>21:38<');
+    expect(html).toContain('UDOW $67.41 Z 0.52 偏强');
+    expect(html).toContain('truncate');
+    expect(html).not.toContain('overflow-x-auto');
+    // 完整说明要点开才出现
+    expect(html).not.toContain('涨得更多，偏强');
+  });
+
+  it('重要提醒置顶，左边有颜色竖条', () => {
+    const html = render({
+      alerts: [
+        alert({ id: 'n1', occurred_at: '2026-10-20T13:40:00.000Z', text: '普通的一条', indicators: { level: 2 } }),
+        alert({
+          id: 'i1', occurred_at: '2026-10-20T13:00:00.000Z', category: 'sell_line', symbol: 'NVDA', icon: '💰',
+          text: '[盘中] NVDA $217.12 ≥ 卖出线 $210.00', indicators: { level: 1 },
+        }),
+      ],
+      lastOpenedAt: '2026-10-20T00:00:00.000Z',
+    });
+
+    expect(html).toContain('置顶的重要提醒');
+    expect(html).toContain('border-red-500');
+    // 虽然时间更早，重要那条排在普通那条前面
+    expect(html.indexOf('data-alert-row="i1"')).toBeLessThan(html.indexOf('data-alert-row="n1"'));
+  });
+
+  it('点过的重要提醒回到时间顺序', () => {
+    const html = render({
+      alerts: [
+        alert({ id: 'n1', occurred_at: '2026-10-20T13:40:00.000Z', text: '普通的一条', indicators: { level: 2 } }),
+        alert({ id: 'i1', occurred_at: '2026-10-20T13:00:00.000Z', text: '重要的一条', indicators: { level: 1 } }),
+      ],
+      readAlertIds: ['i1'],
+      lastOpenedAt: '2026-10-20T00:00:00.000Z',
+    });
+
+    expect(html).not.toContain('置顶的重要提醒');
+    expect(html.indexOf('data-alert-row="n1"')).toBeLessThan(html.indexOf('data-alert-row="i1"'));
+  });
+
+  it('未读数量和「以下是新提醒」分隔线', () => {
+    const html = render({
+      alerts: [
+        alert({ id: 'new1', occurred_at: '2026-10-20T13:40:00.000Z', text: '新的一条', indicators: { level: 2 } }),
+        alert({ id: 'old1', occurred_at: '2026-10-19T13:40:00.000Z', text: '旧的一条', indicators: { level: 2 } }),
+      ],
+      lastOpenedAt: '2026-10-20T00:00:00.000Z',
+    });
+
+    expect(html).toContain('未读 1');
+    expect(html).toContain('—— 以下是新提醒 ——');
+    expect(html.indexOf('—— 以下是新提醒 ——')).toBeLessThan(html.indexOf('data-alert-row="new1"'));
+  });
+
+  it('上次打开之后没有新提醒时不画分隔线', () => {
+    const html = render({
+      alerts: [alert({ id: 'old1', occurred_at: '2026-10-19T13:40:00.000Z', text: '旧的一条', indicators: { level: 2 } })],
+      lastOpenedAt: '2026-10-20T00:00:00.000Z',
+    });
+
+    expect(html).not.toContain('以下是新提醒');
+    expect(html).not.toContain('未读');
+  });
+
+  it('「仅记录」级别默认折叠，打开「显示全部」才出现', () => {
+    const alerts = [
+      alert({ id: 'l1', text: '只记录的一条', indicators: { level: 3 } }),
+      alert({ id: 'n1', text: '普通的一条', indicators: { level: 2 } }),
+    ];
+
+    const folded = render({ alerts });
+    expect(folded).not.toContain('只记录的一条');
+    expect(folded).toContain('普通的一条');
+    expect(folded).toContain('显示全部（仅记录 1）');
+
+    const all = render({ alerts, showAllLevels: true });
+    expect(all).toContain('只记录的一条');
+  });
+
+  it('汇总行默认只显示「N 个标的」，明细点开才看', () => {
+    const html = render({
+      alerts: [alert({
+        id: 's1', category: 'valuation', symbol: null, icon: '📋',
+        text: '[盘前] 估值汇总 · 5 个标的', indicators: { level: 3 },
+        summary_items: [{ symbol: 'AVGO', text: '🟢 AVGO · 低估值 · $333.88' }],
+      })],
+      showAllLevels: true,
+    });
+
+    expect(html).toContain('估值汇总 5 个标的');
+    expect(html).not.toContain('$333.88');
+  });
+});
+
+describe('顶部实时状态条', () => {
+  const cards = statusCards({
+    qqq: { price: 712.3, previousClose: 721.53 },
+    qqqSeries: [{ date: '2026-10-15', close: 759.66 }],
+    vix: { price: 21.96, previousClose: 16.46 },
+    cnn: { score: 18, previous: 28, at: '2026-10-20T13:00:00.000Z' },
+    importantToday: 2,
+    session: 'regular',
+  });
+
+  it('在筛选按钮上方，五张卡片齐全', () => {
+    const html = render({ statusCards: cards, statusDataTime: '2026-10-20T13:40:12.000Z' });
+
+    expect(html).toContain('data-market-status-bar="true"');
+    expect(html.indexOf('data-market-status-bar')).toBeLessThan(html.indexOf('data-alert-log-panel'));
+    expect(html).toContain('712.30');
+    expect(html).toContain('离前高 -6.2%');
+    expect(html).toContain('较昨收 +33.4% ↑');
+    expect(html).toContain('今日重要');
+    expect(html).toContain('盘中');
+  });
+
+  it('数据源断开时显示「数据延迟」', () => {
+    const html = render({ statusCards: cards, statusDataTime: '2026-10-20T13:40:12.000Z', statusStale: true });
+    expect(html).toContain('数据延迟');
+  });
+
+  it('没有状态数据时不渲染状态条', () => {
+    expect(render()).not.toContain('data-market-status-bar');
+  });
+});
+
+describe('从提醒直接行动', () => {
+  const zAlert = alert({
+    id: 'z1', category: 'zscore', symbol: 'UDOW', icon: '🔴',
+    text: '[盘中] UDOW $67.41 · Z 0.38 → 0.52 · 涨得更多，偏强', indicators: { level: 2 },
+  });
+
+  it('展开后才有「查看详情」和「我据此下单了」', () => {
+    const folded = render({ alerts: [zAlert], onOpenDetail: () => {}, onOrderDraft: () => {} });
+    expect(folded).not.toContain('查看详情');
+    expect(folded).not.toContain('我据此下单了');
+  });
+
+  it('侧边详情面板是只读的，复用斜率图表', () => {
+    const html = render({ alerts: [zAlert], detailSymbol: 'UDOW' });
+
+    expect(html).toContain('data-alert-detail-panel="UDOW"');
+    expect(html).toContain('只读详情');
+    expect(html).toContain('这里不下单');
+    expect(html).toContain('role="dialog"');
+  });
+
+  it('没有量化快照时说清楚看不了，不画空图', () => {
+    const html = render({ alerts: [zAlert], detailSymbol: 'UDOW' });
+    expect(html).toContain('量化快照还没读到');
+  });
+
+  it('生成草稿后给一句提示', () => {
+    const html = render({ alerts: [zAlert], draftNotice: '已在决策日志里生成 UDOW 的草稿，去补数量、价格和预判。' });
+    expect(html).toContain('已在决策日志里生成 UDOW 的草稿');
+  });
+});
+
+describe('提醒效果分页', () => {
+  const outcomes = {
+    updated_at: '2026-10-20T21:05:00.000Z',
+    outcomes: {
+      'alert-1': {
+        kind: 'z_enter', symbol: 'NVDA', base_date: '2026-10-05', base_close: 104,
+        backfilled: false, pending: false,
+        changes: { d1: 0.96, d5: 4.81, d20: 19.23 },
+        benchmark: { d1: 0.2, d5: 1.24, d20: 4.95 },
+        excess: { d1: 0.76, d5: 3.57, d20: 14.28 },
+      },
+    },
+    summary: [
+      {
+        kind: 'big_move', label: '个股大涨大跌', samples: 12, pending: 1, backfilled: 2,
+        avg: { d5: -1.2, d20: -2.4 }, excess: { d5: -1.5, d20: -3 }, winRate: 0.25,
+        reliable: true, note: '',
+      },
+      {
+        kind: 'z_enter', label: 'Z 进入 ±1.5', samples: 3, pending: 0, backfilled: 0,
+        avg: { d5: 1, d20: 2 }, excess: { d5: 0.5, d20: 1 }, winRate: 0.67,
+        reliable: false, note: '样本太少，结论不可靠',
+      },
+    ],
+  };
+
+  it('第四个分页按钮在', () => {
+    const html = render();
+    expect(html).toContain('data-journal-tab="outcomes"');
+    expect(html).toContain('提醒效果');
+  });
+
+  it('按类型列出次数、5/20 天平均、胜率和超额；样本太少要标出来', () => {
+    const html = render({ tab: 'outcomes', outcomes });
+
+    expect(html).toContain('个股大涨大跌');
+    expect(html).toContain('12 次 · 1 条待定 · 含 2 条回填');
+    expect(html).toContain('-2.40%');
+    expect(html).toContain('25.0%');
+    expect(html).toContain('样本太少，结论不可靠');
+    // 次数多的排前面
+    expect(html.indexOf('data-outcome-kind="big_move"')).toBeLessThan(html.indexOf('data-outcome-kind="z_enter"'));
+  });
+
+  it('还没算过时说清楚，不画空表', () => {
+    const html = render({ tab: 'outcomes', outcomes: null });
+    expect(html).toContain('还没有可统计的提醒');
+    expect(html).toContain('还没算过');
+  });
+
+  it('展开一条提醒能看到之后 1 / 5 / 20 天的表现', () => {
+    const entry = alert({ id: 'alert-1', category: 'zscore', symbol: 'NVDA', indicators: { level: 1 } });
+    const html = render({ alerts: [entry], outcomes });
+
+    // 默认折叠，数字在展开后才出现
+    expect(html).not.toContain('data-alert-outcome');
+  });
+});
+

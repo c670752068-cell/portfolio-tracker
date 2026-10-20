@@ -18,6 +18,10 @@ export const CNN_TIERS = [30, 25, 20, 15];
 export const CNN_OPEN_FLOOR = 30;
 export const CNN_STEP = 5;
 export const Z_TIERS = [0.5, 1, 1.5, 2, 2.5];
+// Z 措辞分档：|Z| ≥ 1.5 才算进了买卖区，≥ 1.2 才说「接近」，其余只说偏强偏弱。
+// 这只影响提醒怎么写，不改 ±1.5 的判定阈值。
+export const Z_IN_ZONE = 1.5;
+export const Z_NEAR_ZONE = 1.2;
 export const STOCK_BIG_MOVE_PCT = 5;
 export const QQQ_BIG_MOVE_PCT = 2;
 export const RESONANCE_HISTORY_NOTE = '历史参考（2015 年以来，按收盘价统计）：VIX 单日涨超 30% 且 QQQ 当天跌超 2% 共 21 次——第二天收盘更低只有 38%，5 天内出现更低收盘 67%（中位数再低约 1.5%），当天收盘买入持有 20 天胜率 81%、60 天胜率 86%；最差的一次是 2020-02-24，20 天后 -22.8%。VIX 涨超 25% 且 QQQ 跌超 1.5% 共 30 次：第二天更低 40%，5 天内更低 67%，20 天胜率 63%，60 天胜率 77%。';
@@ -199,15 +203,22 @@ export function intradayZAlerts({ symbol, price, previousZ, currentZ, session, f
         icon: down ? '🟢' : '🔴',
         level: important ? 'important' : tier === 1 ? 'normal' : 'log_only',
         value: to, threshold: level, session,
-        text: `${tag(session)} ${symbol}${finite(price) === null ? '' : ` $${Number(price).toFixed(2)}`} · Z ${from.toFixed(2)} → ${to.toFixed(2)} · ${
-          down
-            ? tier >= 1.5 ? '跌得更深，已进入买入区' : `跌得更深，接近买入区 -1.5`
-            : tier >= 1.5 ? '涨得更多，进入卖出区' : '涨得更多，接近卖出区 +1.5'
-        }`,
+        text: `${tag(session)} ${symbol}${finite(price) === null ? '' : ` $${Number(price).toFixed(2)}`} · Z ${from.toFixed(2)} → ${to.toFixed(2)} · ${zWording(to, down)}`,
       });
     }
   }
   return alerts;
+}
+
+/** 按当前 Z 的绝对值说话：进入区 / 接近区 / 只是偏强偏弱。 */
+function zWording(current, down) {
+  const magnitude = Math.abs(current);
+  if (down) {
+    if (magnitude >= Z_IN_ZONE) return '跌得更深，已进入买入区';
+    return magnitude >= Z_NEAR_ZONE ? '跌得更深，接近买入区 -1.5' : '跌得更深，偏弱';
+  }
+  if (magnitude >= Z_IN_ZONE) return '涨得更多，进入卖出区';
+  return magnitude >= Z_NEAR_ZONE ? '涨得更多，接近卖出区 +1.5' : '涨得更多，偏强';
 }
 
 /** 个股当天大幅波动。QQQ 用 ±2%，其他用 ±5%。 */

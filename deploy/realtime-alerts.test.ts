@@ -143,6 +143,40 @@ describe('盘中 Z-Score 穿档', () => {
     expect(alerts[0].text).toContain('进入卖出区');
   });
 
+  it('Z 措辞按 1.2 / 1.5 分档，0.52 不说「接近卖出区」', () => {
+    const [weak] = intradayZAlerts({
+      symbol: 'UDOW', price: 67.41, previousZ: 0.38, currentZ: 0.52,
+      session: 'regular', firedKeys: new Set(), day: '2026-10-20',
+    });
+    expect(weak.text).toContain('涨得更多，偏强');
+    expect(weak.text).not.toContain('接近卖出区');
+
+    const [soft] = intradayZAlerts({
+      symbol: 'GDX', price: 85.66, previousZ: -0.45, currentZ: -0.53,
+      session: 'regular', firedKeys: new Set(), day: '2026-10-20',
+    });
+    expect(soft.text).toContain('跌得更深，偏弱');
+    expect(soft.text).not.toContain('接近买入区');
+
+    const [near] = intradayZAlerts({
+      symbol: 'NVDA', price: 217.12, previousZ: 0.95, currentZ: 1.28,
+      session: 'regular', firedKeys: new Set(), day: '2026-10-20',
+    });
+    expect(near.text).toContain('接近卖出区 +1.5');
+
+    const [nearBuy] = intradayZAlerts({
+      symbol: 'TSLA', price: 353.14, previousZ: -0.95, currentZ: -1.22,
+      session: 'regular', firedKeys: new Set(), day: '2026-10-20',
+    });
+    expect(nearBuy.text).toContain('接近买入区 -1.5');
+
+    const [inZone] = intradayZAlerts({
+      symbol: 'MU', price: 911, previousZ: -1.41, currentZ: -1.63,
+      session: 'regular', firedKeys: new Set(), day: '2026-10-20',
+    });
+    expect(inZone.text).toContain('已进入买入区');
+  });
+
   it('同一档同一方向一天只记一次，没穿档不记', () => {
     const fired = new Set(['z-cross:TSLA:-1:down:2026-10-16']);
     expect(intradayZAlerts({ symbol: 'TSLA', price: 1, previousZ: -0.75, currentZ: -1.01, session: 'regular', firedKeys: fired, day: '2026-10-16' })).toEqual([]);

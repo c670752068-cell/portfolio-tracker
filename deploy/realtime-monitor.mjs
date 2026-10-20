@@ -1,4 +1,5 @@
 import { appendAlerts } from './alert-log.mjs';
+import { withinCooldown } from './alert-noise.mjs';
 import {
   bigMoveAlert, cnnAlerts, cnnTierStates, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert,
   sessionLabel, vixAlerts,
@@ -43,6 +44,8 @@ export async function runRealtimeTick({
   quiet = false,
   dryRun = false,
   confirmation = false,
+  // 同一标的、同一类提醒的冷却时间；0 表示不限制。重要提醒和真的推出去的那条不受限。
+  cooldownMs = 0,
 }) {
   // 去重用「美东交易日」，不是日历日期：周六重新开一天，不该把周五记过的再记一遍。
   const day = tradingDate(now);
@@ -114,6 +117,8 @@ export async function runRealtimeTick({
   const quietQueue = [];
   const dryRunPushes = [];
   const entries = [];
+  // 冷却判断要连这一轮刚接受的条目一起看，免得同一轮里自己刷屏
+  const cooldownView = { alerts: [...(store?.alerts || [])] };
   for (const alert of alerts) {
     const plan = pushPlanFor(alert, settings, { quiet });
     let pushed = false;
@@ -143,7 +148,7 @@ export async function runRealtimeTick({
     // 推不推、为什么没推，都照实写进日志；日志页按这个字段显示
     // [已推送 ×3] / [免打扰] / [未推送 · 原因]。
     const pushState = pushed ? 'sent' : dryRun && plan.push ? 'dry_run' : plan.reason || 'not_pushed';
-    entries.push({
+    const entry = {
       dedupe_key: alert.dedupe_key,
       category: alert.category,
       symbol: alert.symbol,
@@ -157,7 +162,14 @@ export async function runRealtimeTick({
       session: alert.session || session,
       indicators: { level: alert.level === 'important' ? 1 : alert.level === 'normal' ? 2 : 3 },
       occurred_at: now.toISOString(),
+    };
+    // 冷却期内的同类提醒不再写一行；重要的、以及真的推送出去的照写。
+    const blocked = alert.level !== 'important' && pushState !== 'sent' && withinCooldown(cooldownView, {
+      symbol: alert.symbol, category: alert.category, now, cooldownMs,
     });
+    if (blocked) continue;
+    cooldownView.alerts.push(entry);
+    entries.push(entry);
   }
 
   // CNN 档位状态要留在日志里，下一轮才知道是不是「穿越」。

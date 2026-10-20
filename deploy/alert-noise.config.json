@@ -1,0 +1,4 @@
+{
+  "cooldownMinutes": 60,
+  "importantBypassesCooldown": true
+}

@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  addManualTrade, applyCashFlow, applyTradeNote, captureNav, captureTrades, clearTrades, createDecisionLogRoute,
-  dropStoredSnapshotArtifacts, emptyDecisionLog, readDecisionLog, removeCashFlow, sameSiteWrite,
-  tradeKey, writeDecisionLog,
+  DUST_MARKET_VALUE_USD, DUST_MINIMUM_SHARES, addManualTrade, applyCashFlow, applyTradeNote, captureNav,
+  captureTrades, clearTrades, createDecisionLogRoute, dropStoredSnapshotArtifacts, emptyDecisionLog,
+  isDustTrade, readDecisionLog, removeCashFlow, sameSiteWrite, tradeKey, voidDustTrades, writeDecisionLog,
 } from './decision-log.mjs';
 
 const roots: string[] = [];
@@ -36,7 +36,7 @@ const snapshot = {
         recorded_at: '2026-10-13T00:37:24.190147-04:00',
       },
       {
-        asset_type: 'stock', broker: 'FUTU', side: 'SELL', symbol: 'NVDA', quantity: 0.005,
+        asset_type: 'stock', broker: 'FUTU', side: 'SELL', symbol: 'NVDA', quantity: 5,
         price: null, price_source: 'unavailable', estimated: true,
         recorded_at: '2026-10-14T06:21:14.455457-04:00',
       },
@@ -119,7 +119,7 @@ describe('决策日志的数据层', () => {
     expect(updated.trigger).toEqual(['take_profit', 'cnn']);
     expect(updated.prediction).toEqual({ type: 'rebuy_after_dip', dip_pct: 10, reference_symbol: 'QQQ' });
     expect(updated).toMatchObject({ status: 'in_progress', price: 228, price_source: 'manual', price_estimated: false });
-    expect(updated.amount).toBeCloseTo(1.14, 2);
+    expect(updated.amount).toBeCloseTo(1140, 2);
   });
 
   it('预判参数不合法就报 400，找不到交易报 404', () => {
@@ -567,3 +567,111 @@ describe('每日净值按券商数据自己的 as_of 记', () => {
     });
   });
 });
+
+describe('零碎持仓不当成交易', () => {
+  const dustSnapshot = {
+    ...snapshot,
+    position_ledger: {
+      recent_events: [
+        {
+          asset_type: 'stock', broker: 'FUTU', side: 'BUY', symbol: 'NVDA', quantity: 0.005,
+          price: 216, price_source: 'broker_cost_delta', estimated: false,
+          recorded_at: '2026-10-20T06:46:12.000000-04:00',
+        },
+        {
+          asset_type: 'stock', broker: 'IBKR', side: 'BUY', symbol: 'TSLA', quantity: 17,
+          price: 380.293984, price_source: 'broker_cost_delta', estimated: false,
+          recorded_at: '2026-10-13T00:37:24.190147-04:00',
+        },
+      ],
+    },
+  };
+
+  it('阈值和持仓页一致：市值低于 $10 或不足 1 股', () => {
+    expect(DUST_MARKET_VALUE_USD).toBe(10);
+    expect(DUST_MINIMUM_SHARES).toBe(1);
+    expect(isDustTrade({ symbol: 'NVDA', qty: 0.005, price: 216, asset_type: 'stock' })).toBe(true);
+    expect(isDustTrade({ symbol: 'NVDA', qty: 0.005, price: null, asset_type: 'stock' })).toBe(true);
+    expect(isDustTrade({ symbol: 'PDD', qty: 0.04, price: 81.05, asset_type: 'stock' })).toBe(true);
+    expect(isDustTrade({ symbol: 'NVDA', qty: 5, price: 216, asset_type: 'stock' })).toBe(false);
+    expect(isDustTrade({ symbol: 'NVDA', qty: 1, price: 216, asset_type: 'stock' })).toBe(false);
+    // 期权 1 张不是零碎仓
+    expect(isDustTrade({ symbol: 'NVDA', qty: 1, price: 2.5, asset_type: 'option' })).toBe(false);
+  });
+
+  it('0.005 股的残留不写进决策日志，正常成交照抓', () => {
+    const store = captureTrades(emptyDecisionLog(), dustSnapshot, { now: new Date('2026-10-20T08:00:00Z') });
+
+    expect(store.trades.map((trade) => trade.symbol)).toEqual(['TSLA']);
+  });
+
+  it('已经记进去的零碎成交只标已作废，不删除', () => {
+    const recorded = captureTrades(emptyDecisionLog(), {
+      ...dustSnapshot,
+      position_ledger: { recent_events: [dustSnapshot.position_ledger.recent_events[0]] },
+    }, { now: new Date('2026-10-20T08:00:00Z'), keepDust: true });
+    expect(recorded.trades).toHaveLength(1);
+
+    const voided = voidDustTrades(recorded, { reason: '零碎持仓', now: new Date('2026-10-20T09:00:00Z') });
+    expect(voided.trades).toHaveLength(1);
+    expect(voided.trades[0]).toMatchObject({
+      voided: true, voided_reason: '零碎持仓', voided_at: '2026-10-20T09:00:00.000Z',
+    });
+    expect(voided.revision).toBe(recorded.revision + 1);
+
+    // 再跑一次没有要改的，原样返回
+    expect(voidDustTrades(voided, { reason: '零碎持仓' })).toBe(voided);
+  });
+});
+
+describe('「我据此下单了」生成的草稿', () => {
+  const alertDraft = {
+    trade_time: '2026-10-20T13:38:55.000Z', symbol: 'UDOW', side: 'SELL' as const, draft: true,
+    alert_id: 'alert-abc', alert_text: '[盘中] UDOW $67.41 · Z 0.38 → 0.52 · 涨得更多，偏强',
+  };
+
+  it('数量和价格可以先空着，并记下是哪条提醒带来的', () => {
+    const store = addManualTrade(emptyDecisionLog(), alertDraft, new Date('2026-10-20T13:40:00Z'));
+
+    expect(store.trades).toHaveLength(1);
+    expect(store.trades[0]).toMatchObject({
+      symbol: 'UDOW', side: 'SELL', qty: null, price: null, amount: null,
+      draft: true, alert_id: 'alert-abc', recorded_by: 'manual', status: 'pending_note',
+    });
+    expect(store.trades[0].alert_text).toContain('UDOW');
+  });
+
+  it('同一条提醒点两次只生成一条草稿', () => {
+    const store = addManualTrade(emptyDecisionLog(), alertDraft, new Date('2026-10-20T13:40:00Z'));
+    expect(() => addManualTrade(store, alertDraft, new Date('2026-10-20T13:41:00Z'))).toThrow('已经记过了');
+  });
+
+  it('不是草稿时数量仍然必须大于 0', () => {
+    expect(() => addManualTrade(emptyDecisionLog(), {
+      trade_time: '2026-10-20T13:38:55.000Z', symbol: 'UDOW', side: 'SELL',
+    })).toThrow('数量要大于 0');
+    expect(() => addManualTrade(emptyDecisionLog(), { ...alertDraft, qty: 0 })).toThrow('数量要大于 0');
+  });
+
+  it('补上数量和价格之后金额才算出来，不拿空数量乘出 0', () => {
+    const store = addManualTrade(emptyDecisionLog(), alertDraft, new Date('2026-10-20T13:40:00Z'));
+    const id = store.trades[0].id;
+
+    const onlyPrice = applyTradeNote(store, id, { price: 67.41 }, new Date('2026-10-20T13:45:00Z'));
+    expect(onlyPrice.trades[0]).toMatchObject({ price: 67.41, qty: null, amount: null });
+
+    const filled = applyTradeNote(onlyPrice, id, {
+      qty: 30, price: 67.41, trigger: ['z_score'], prediction: { type: 'none' }, note: '按提醒减了一点',
+    }, new Date('2026-10-20T13:46:00Z'));
+    expect(filled.trades[0]).toMatchObject({ qty: 30, price: 67.41, status: 'in_progress' });
+    expect(filled.trades[0].amount).toBeCloseTo(2022.3, 4);
+  });
+
+  it('券商抓来的成交不许改数量', () => {
+    const store = captureTrades(emptyDecisionLog(), snapshot, { now: new Date('2026-10-16T08:00:00Z') });
+    const broker = store.trades.find((trade) => trade.broker === 'IBKR')!;
+
+    expect(() => applyTradeNote(store, broker.id, { qty: 999 })).toThrow('数量');
+  });
+});
+
