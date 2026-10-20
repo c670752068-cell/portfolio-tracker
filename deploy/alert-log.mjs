@@ -108,6 +108,8 @@ export function appendAlerts(store, entries, now = new Date()) {
       backfilled: item.backfilled === true,
       session: typeof item.session === 'string' ? item.session : null,
       indicators: item.indicators && typeof item.indicators === 'object' ? item.indicators : null,
+      // 合并进汇总行的明细；普通提醒没有就留空，不编一个空数组
+      summary_items: Array.isArray(item.summary_items) ? item.summary_items : null,
     });
   }
   if (added.length === 0) return store;

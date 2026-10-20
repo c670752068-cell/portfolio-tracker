@@ -295,3 +295,26 @@ describe('推送结果回填到日志那一行', () => {
     expect(setPushState(store, '不存在', 'failed')).toBe(store);
   });
 });
+
+describe('汇总行', () => {
+  it('把合并进来的明细原样存下来，读日志时还能展开', () => {
+    const next = appendAlerts(emptyAlertLog(), [{
+      dedupe_key: 'summary:2026-10-20:premarket:valuation',
+      category: 'valuation',
+      icon: '📋',
+      text: '[盘前] 估值汇总 · 2 个标的',
+      summary_items: [{ symbol: 'AVGO', text: '🟢 AVGO · 低估值' }, { symbol: 'MCD', text: '🟢 MCD · 极低估值' }],
+    }]);
+
+    expect(next.alerts[0].summary_items).toEqual([
+      { symbol: 'AVGO', text: '🟢 AVGO · 低估值' },
+      { symbol: 'MCD', text: '🟢 MCD · 极低估值' },
+    ]);
+  });
+
+  it('普通提醒没有明细，字段留空而不是编一个空数组', () => {
+    const next = appendAlerts(emptyAlertLog(), [{ dedupe_key: 'plain', category: 'zscore', text: 'Z 提醒' }]);
+    expect(next.alerts[0].summary_items).toBeNull();
+  });
+});
+

@@ -58,6 +58,35 @@ export function normalizeDecisionLog(value) {
   };
 }
 
+// 券商清仓后留下的零碎股（NVDA 0.005 股 / $1.08）不是一笔交易：不写决策日志，
+// 也不写持仓变化提醒。阈值和持仓页的 src/dustPosition.ts 保持一致。
+export const DUST_MARKET_VALUE_USD = 10;
+export const DUST_MINIMUM_SHARES = 1;
+
+export function isDustTrade(trade) {
+  const item = record(trade);
+  // 期权按张数计，1 张不是零碎仓
+  if (String(item.asset_type || '') === 'option') return false;
+  const qty = numeric(item.qty ?? item.quantity);
+  if (qty === null || qty === 0) return false;
+  if (Math.abs(qty) < DUST_MINIMUM_SHARES) return true;
+  const price = numeric(item.price);
+  return price !== null && Math.abs(qty * price) < DUST_MARKET_VALUE_USD;
+}
+
+/** 已经记进去的零碎成交只标「已作废」，一行都不删。 */
+export function voidDustTrades(store, { reason = '零碎持仓', now = new Date() } = {}) {
+  const current = normalizeDecisionLog(store);
+  let changed = false;
+  const trades = current.trades.map((trade) => {
+    if (trade.voided === true || !isDustTrade(trade)) return trade;
+    changed = true;
+    return { ...trade, voided: true, voided_reason: String(reason), voided_at: now.toISOString() };
+  });
+  if (!changed) return store;
+  return { ...current, trades, revision: current.revision + 1, updated_at: now.toISOString() };
+}
+
 export function tradeKey(event) {
   const item = record(event);
   return [
@@ -214,7 +243,7 @@ export function dropStoredSnapshotArtifacts(store, now = new Date()) {
   };
 }
 
-export function captureTrades(store, snapshot, { now = new Date(), channelReview = null, keepArtifacts = false } = {}) {
+export function captureTrades(store, snapshot, { now = new Date(), channelReview = null, keepArtifacts = false, keepDust = false } = {}) {
   const current = normalizeDecisionLog(store);
   const allEvents = rows(record(record(snapshot).position_ledger).recent_events);
   const events = keepArtifacts ? allEvents : withoutSnapshotArtifacts(allEvents);
@@ -227,6 +256,8 @@ export function captureTrades(store, snapshot, { now = new Date(), channelReview
     const quantity = numeric(item.quantity);
     const recordedAt = typeof item.recorded_at === 'string' ? item.recorded_at : null;
     if (!symbol || !['BUY', 'SELL'].includes(side) || quantity === null || quantity === 0 || !recordedAt) continue;
+    // 零碎持仓的残留不是交易：不入账，也就不会再写一条持仓变化提醒。
+    if (!keepDust && isDustTrade({ ...item, qty: quantity })) continue;
     // 用户清过一次日志之后，起算点之前的旧成交不再抓回来。
     if (current.trades_from && new Date(recordedAt).toISOString() <= current.trades_from) continue;
     const key = tradeKey(item);

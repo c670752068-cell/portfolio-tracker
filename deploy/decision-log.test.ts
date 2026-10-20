@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  addManualTrade, applyCashFlow, applyTradeNote, captureNav, captureTrades, clearTrades, createDecisionLogRoute,
-  dropStoredSnapshotArtifacts, emptyDecisionLog, readDecisionLog, removeCashFlow, sameSiteWrite,
-  tradeKey, writeDecisionLog,
+  DUST_MARKET_VALUE_USD, DUST_MINIMUM_SHARES, addManualTrade, applyCashFlow, applyTradeNote, captureNav,
+  captureTrades, clearTrades, createDecisionLogRoute, dropStoredSnapshotArtifacts, emptyDecisionLog,
+  isDustTrade, readDecisionLog, removeCashFlow, sameSiteWrite, tradeKey, voidDustTrades, writeDecisionLog,
 } from './decision-log.mjs';
 
 const roots: string[] = [];
@@ -36,7 +36,7 @@ const snapshot = {
         recorded_at: '2026-10-13T00:37:24.190147-04:00',
       },
       {
-        asset_type: 'stock', broker: 'FUTU', side: 'SELL', symbol: 'NVDA', quantity: 0.005,
+        asset_type: 'stock', broker: 'FUTU', side: 'SELL', symbol: 'NVDA', quantity: 5,
         price: null, price_source: 'unavailable', estimated: true,
         recorded_at: '2026-10-14T06:21:14.455457-04:00',
       },
@@ -119,7 +119,7 @@ describe('决策日志的数据层', () => {
     expect(updated.trigger).toEqual(['take_profit', 'cnn']);
     expect(updated.prediction).toEqual({ type: 'rebuy_after_dip', dip_pct: 10, reference_symbol: 'QQQ' });
     expect(updated).toMatchObject({ status: 'in_progress', price: 228, price_source: 'manual', price_estimated: false });
-    expect(updated.amount).toBeCloseTo(1.14, 2);
+    expect(updated.amount).toBeCloseTo(1140, 2);
   });
 
   it('预判参数不合法就报 400，找不到交易报 404', () => {
@@ -567,3 +567,60 @@ describe('每日净值按券商数据自己的 as_of 记', () => {
     });
   });
 });
+
+describe('零碎持仓不当成交易', () => {
+  const dustSnapshot = {
+    ...snapshot,
+    position_ledger: {
+      recent_events: [
+        {
+          asset_type: 'stock', broker: 'FUTU', side: 'BUY', symbol: 'NVDA', quantity: 0.005,
+          price: 216, price_source: 'broker_cost_delta', estimated: false,
+          recorded_at: '2026-10-20T06:46:12.000000-04:00',
+        },
+        {
+          asset_type: 'stock', broker: 'IBKR', side: 'BUY', symbol: 'TSLA', quantity: 17,
+          price: 380.293984, price_source: 'broker_cost_delta', estimated: false,
+          recorded_at: '2026-10-13T00:37:24.190147-04:00',
+        },
+      ],
+    },
+  };
+
+  it('阈值和持仓页一致：市值低于 $10 或不足 1 股', () => {
+    expect(DUST_MARKET_VALUE_USD).toBe(10);
+    expect(DUST_MINIMUM_SHARES).toBe(1);
+    expect(isDustTrade({ symbol: 'NVDA', qty: 0.005, price: 216, asset_type: 'stock' })).toBe(true);
+    expect(isDustTrade({ symbol: 'NVDA', qty: 0.005, price: null, asset_type: 'stock' })).toBe(true);
+    expect(isDustTrade({ symbol: 'PDD', qty: 0.04, price: 81.05, asset_type: 'stock' })).toBe(true);
+    expect(isDustTrade({ symbol: 'NVDA', qty: 5, price: 216, asset_type: 'stock' })).toBe(false);
+    expect(isDustTrade({ symbol: 'NVDA', qty: 1, price: 216, asset_type: 'stock' })).toBe(false);
+    // 期权 1 张不是零碎仓
+    expect(isDustTrade({ symbol: 'NVDA', qty: 1, price: 2.5, asset_type: 'option' })).toBe(false);
+  });
+
+  it('0.005 股的残留不写进决策日志，正常成交照抓', () => {
+    const store = captureTrades(emptyDecisionLog(), dustSnapshot, { now: new Date('2026-10-20T08:00:00Z') });
+
+    expect(store.trades.map((trade) => trade.symbol)).toEqual(['TSLA']);
+  });
+
+  it('已经记进去的零碎成交只标已作废，不删除', () => {
+    const recorded = captureTrades(emptyDecisionLog(), {
+      ...dustSnapshot,
+      position_ledger: { recent_events: [dustSnapshot.position_ledger.recent_events[0]] },
+    }, { now: new Date('2026-10-20T08:00:00Z'), keepDust: true });
+    expect(recorded.trades).toHaveLength(1);
+
+    const voided = voidDustTrades(recorded, { reason: '零碎持仓', now: new Date('2026-10-20T09:00:00Z') });
+    expect(voided.trades).toHaveLength(1);
+    expect(voided.trades[0]).toMatchObject({
+      voided: true, voided_reason: '零碎持仓', voided_at: '2026-10-20T09:00:00.000Z',
+    });
+    expect(voided.revision).toBe(recorded.revision + 1);
+
+    // 再跑一次没有要改的，原样返回
+    expect(voidDustTrades(voided, { reason: '零碎持仓' })).toBe(voided);
+  });
+});
+
