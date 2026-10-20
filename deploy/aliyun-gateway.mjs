@@ -1121,6 +1121,10 @@ async function proxyQuotes(req, res) {
   sendJson(res, 200, {
     quotes: rows.filter((row) => row.quote).map((row) => row.quote),
     failedSymbols: rows.filter((row) => !row.quote).map((row) => ({ symbol: row.symbol, reason: row.reason })),
+    // 日志页顶部状态条要显示「当前时段」和数据时间：时段由服务器判定，
+    // 假期表在服务器这一侧，网页不再自己猜。
+    session: classifyMarketSession(new Date(), { hasMinuteSeries: true }),
+    time: new Date().toISOString(),
   });
 }
 

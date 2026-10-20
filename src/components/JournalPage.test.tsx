@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { JournalPageView } from './JournalPage';
+import { statusCards } from '../marketStatusBar';
 import type { DecisionLog } from '../decisionLog';
 import type { AlertLogEntry } from '../alertLog';
 import type { ExchangeRates } from '../types';
@@ -384,6 +385,38 @@ describe('手机上的提醒列表', () => {
 
     expect(html).toContain('估值汇总 5 个标的');
     expect(html).not.toContain('$333.88');
+  });
+});
+
+describe('顶部实时状态条', () => {
+  const cards = statusCards({
+    qqq: { price: 712.3, previousClose: 721.53 },
+    qqqSeries: [{ date: '2026-10-15', close: 759.66 }],
+    vix: { price: 21.96, previousClose: 16.46 },
+    cnn: { score: 18, previous: 28, at: '2026-10-20T13:00:00.000Z' },
+    importantToday: 2,
+    session: 'regular',
+  });
+
+  it('在筛选按钮上方，五张卡片齐全', () => {
+    const html = render({ statusCards: cards, statusDataTime: '2026-10-20T13:40:12.000Z' });
+
+    expect(html).toContain('data-market-status-bar="true"');
+    expect(html.indexOf('data-market-status-bar')).toBeLessThan(html.indexOf('data-alert-log-panel'));
+    expect(html).toContain('712.30');
+    expect(html).toContain('离前高 -6.2%');
+    expect(html).toContain('较昨收 +33.4% ↑');
+    expect(html).toContain('今日重要');
+    expect(html).toContain('盘中');
+  });
+
+  it('数据源断开时显示「数据延迟」', () => {
+    const html = render({ statusCards: cards, statusDataTime: '2026-10-20T13:40:12.000Z', statusStale: true });
+    expect(html).toContain('数据延迟');
+  });
+
+  it('没有状态数据时不渲染状态条', () => {
+    expect(render()).not.toContain('data-market-status-bar');
   });
 });
 

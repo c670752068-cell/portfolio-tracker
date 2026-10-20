@@ -423,3 +423,15 @@ describe('portfolio positions gateway', () => {
     expect(script).not.toContain('BARK_DEVICE_KEY=${BARK_DEVICE_KEY:-}');
   });
 });
+
+describe('行情代理顺带给出当前时段', () => {
+  it('/api/quotes 返回 session 和服务器时间，供日志页状态条使用', async () => {
+    const response = await fetch(`${origin}/api/quotes?symbols=`);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(['pre', 'regular', 'post', 'overnight', 'closed']).toContain(body.session);
+    expect(Number.isNaN(Date.parse(body.time))).toBe(false);
+  });
+});
+

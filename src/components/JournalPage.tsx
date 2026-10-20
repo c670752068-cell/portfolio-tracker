@@ -11,9 +11,20 @@ import {
 } from '../decisionLog';
 import { DecisionLogSection, ReturnsSection } from './DecisionJournal';
 import { fetchMaSlopeDashboard } from '../maSlopeQuery';
-import { getServerAlertLogUrl, getServerDecisionLogUrl, getServerMaSlopeUrl } from '../runtimeConfig';
+import {
+  getServerAlertLogUrl, getServerDecisionLogUrl, getServerMaSlopeUrl, getServerQuoteProxyUrl,
+} from '../runtimeConfig';
+import { MarketStatusBar } from './MarketStatusBar';
+import {
+  cnnFromAlerts, cnnScoreFrom, importantTodayCount, parseStatusQuotes, statusCards,
+  type StatusCard, type StatusQuotes,
+} from '../marketStatusBar';
 import type { ClosePoint } from '../twr';
-import type { DisplayCurrency, ExchangeRates } from '../types';
+import type { DisplayCurrency, ExchangeRates, QuantAnalysisSnapshot } from '../types';
+
+// 状态条每 60 秒更新一次；超过这么久没拿到新数据就标「数据延迟」。
+const STATUS_REFRESH_MS = 60_000;
+const STATUS_STALE_MS = 3 * 60_000;
 
 export type JournalTab = 'alerts' | 'decisions' | 'returns';
 
@@ -42,6 +53,9 @@ interface ViewProps {
   readAlertIds?: readonly string[];
   onMarkAlertRead?: (id: string) => void;
   lastOpenedAt?: string | null;
+  statusCards?: readonly StatusCard[];
+  statusDataTime?: string | null;
+  statusStale?: boolean;
   log: DecisionLog | null;
   qqqSeries: ClosePoint[];
   sgovSeries: ClosePoint[];
@@ -63,7 +77,8 @@ export function JournalPageView(props: ViewProps) {
     onHideAlert, onSaveNote, onAddTrade, onAddFlow, onRemoveFlow,
     importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
     highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
-    onMarkAlertRead, lastOpenedAt = null,
+    onMarkAlertRead, lastOpenedAt = null, statusCards: cards = [], statusDataTime = null,
+    statusStale = false,
   } = props;
 
   return (
@@ -103,6 +118,9 @@ export function JournalPageView(props: ViewProps) {
 
       {tab === 'alerts' && (
         <AlertLogPanel
+          cards={cards}
+          statusDataTime={statusDataTime}
+          statusStale={statusStale}
           alerts={alerts}
           hiddenAlertIds={hiddenAlertIds}
           showHidden={showHidden}
@@ -148,11 +166,15 @@ export function JournalPageView(props: ViewProps) {
 }
 
 function AlertLogPanel({
+  cards = [], statusDataTime = null, statusStale = false,
   alerts, hiddenAlertIds, showHidden, categoryFilter, onCategoryFilterChange, onHideAlert, loading,
   importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
   highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
   onMarkAlertRead, lastOpenedAt = null,
 }: {
+  cards?: readonly StatusCard[];
+  statusDataTime?: string | null;
+  statusStale?: boolean;
   alerts: AlertLogEntry[];
   hiddenAlertIds: string[];
   showHidden: boolean;
@@ -203,6 +225,9 @@ function AlertLogPanel({
 
   return (
     <div className="space-y-2">
+      {cards.length > 0 && (
+        <MarketStatusBar cards={cards} dataTime={statusDataTime} stale={statusStale} />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <button
@@ -359,7 +384,11 @@ function AlertRow({
   );
 }
 
-export function JournalPage({ displayCurrency, rates }: { displayCurrency: DisplayCurrency; rates: ExchangeRates }) {
+export function JournalPage({ displayCurrency, rates, snapshot = null }: {
+  displayCurrency: DisplayCurrency;
+  rates: ExchangeRates;
+  snapshot?: QuantAnalysisSnapshot | null;
+}) {
   const decisionEndpoint = getServerDecisionLogUrl() || '/api/portfolio/decision-log';
   const alertEndpoint = getServerAlertLogUrl() || '/api/portfolio/alert-log';
   const [tab, setTab] = useState<JournalTab>('alerts');
@@ -371,6 +400,9 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
   const [readAlertIds, setReadAlertIds] = useState<string[]>(() => loadReadAlertIds());
   // 进页面那一刻先把上次打开时间读出来，再写上这一次：比它新的就是「新提醒」。
   const [lastOpenedAt] = useState<string | null>(() => loadLastOpenedAt());
+  const [quotes, setQuotes] = useState<StatusQuotes | null>(null);
+  const [quotesAt, setQuotesAt] = useState<number | null>(null);
+  const [statusNow, setStatusNow] = useState(() => Date.now());
   const [categoryFilter, setCategoryFilter] = useState<AlertCategory | 'all'>('all');
   const [importantOnly, setImportantOnly] = useState(false);
   const [liveStatus, setLiveStatus] = useState<'live' | 'disconnected' | 'paused'>('live');
@@ -459,6 +491,35 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
     };
   }, [alertEndpoint]);
 
+  // 顶部状态条：每 60 秒拉一次 QQQ / VIX 和服务器判定的时段。
+  useEffect(() => {
+    const endpoint = getServerQuoteProxyUrl() || '/api/quotes';
+    const controller = new AbortController();
+    let stopped = false;
+    const pull = async () => {
+      if (stopped || document.visibilityState === 'hidden') return;
+      try {
+        const response = await fetch(`${endpoint}?symbols=QQQ,%5EVIX`, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const next = parseStatusQuotes(await response.json());
+        if (stopped) return;
+        setQuotes(next);
+        setQuotesAt(Date.now());
+      } catch {
+        // 取数失败保留上一份数字，只把时间标旧，界面上显示「数据延迟」
+      } finally {
+        if (!stopped) setStatusNow(Date.now());
+      }
+    };
+    void pull();
+    const timer = window.setInterval(() => void pull(), STATUS_REFRESH_MS);
+    return () => {
+      stopped = true;
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, []);
+
   // 「上次更新 xx 秒前」每 5 秒走一次字
   useEffect(() => {
     if (updatedAt === null) return undefined;
@@ -467,6 +528,17 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
     const timer = window.setInterval(tick, 5_000);
     return () => window.clearInterval(timer);
   }, [updatedAt]);
+
+  const cnnSnapshot = cnnScoreFrom(snapshot);
+  const cards = useMemo(() => statusCards({
+    qqq: quotes?.qqq ?? null,
+    qqqSeries: series.qqq,
+    vix: quotes?.vix ?? null,
+    cnn: cnnFromAlerts(alerts, cnnSnapshot.score, cnnSnapshot.at),
+    importantToday: importantTodayCount(alerts, new Date(statusNow)),
+    session: quotes?.session ?? null,
+  }), [alerts, cnnSnapshot.at, cnnSnapshot.score, quotes, series.qqq, statusNow]);
+  const statusStale = quotesAt === null || statusNow - quotesAt > STATUS_STALE_MS;
 
   function apply(action: Promise<DecisionLog>) {
     action
@@ -514,6 +586,9 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
       highlightedIds={highlightedIds}
       showAllLevels={showAllLevels}
       onShowAllLevelsChange={setShowAllLevels}
+      statusCards={cards}
+      statusDataTime={quotes?.time ?? null}
+      statusStale={statusStale}
       readAlertIds={readAlertIds}
       onMarkAlertRead={markAlertRead}
       lastOpenedAt={lastOpenedAt}
