@@ -54,6 +54,10 @@ import {
   writeAlertLog,
 } from './alert-log.mjs';
 import { NOISE_CONFIG_FILE, loadNoiseConfig, planSlotEntries } from './alert-noise.mjs';
+import {
+  ALERT_OUTCOMES_VERSION, alertOutcomeKind, computeAlertOutcomes, createAlertOutcomesRoute,
+  outcomeSymbol, summarizeOutcomes, writeAlertOutcomes,
+} from './alert-outcomes.mjs';
 import { voidDustRecords } from './void-dust-records.mjs';
 import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 import { SESSION_CADENCE_MS, sessionLabel } from './realtime-alerts.mjs';
@@ -783,6 +787,10 @@ const handleAlertLogRoute = createAlertLogRoute({
   root: PORTFOLIO_ALERTS_ROOT,
   sendJson,
 });
+const handleAlertOutcomesRoute = createAlertOutcomesRoute({
+  root: PORTFOLIO_ALERTS_ROOT,
+  sendJson,
+});
 const handleDecisionLogRoute = createDecisionLogRoute({
   root: PORTFOLIO_ALERTS_ROOT,
   sendJson,
@@ -850,6 +858,31 @@ async function closedDailySeries(symbol) {
   return (result?.dashboard?.series || [])
     .filter((point) => point && point.is_partial !== true && Number.isFinite(point.close))
     .map((point) => ({ date: point.date, close: point.close }));
+}
+
+// 每天收盘审查之后算一次提醒效果：每条提醒之后第 1 / 5 / 20 个交易日的涨跌，
+// 以及同期 QQQ。只读行情，不碰阈值，也不发通知；结果存盘，网页只读。
+const ALERT_OUTCOME_SYMBOL_LIMIT = 60;
+async function runAlertOutcomesCycle() {
+  try {
+    const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    const symbols = [...new Set((store.alerts || [])
+      .filter((entry) => entry.voided !== true && alertOutcomeKind(entry))
+      .map((entry) => outcomeSymbol(entry)))].slice(0, ALERT_OUTCOME_SYMBOL_LIMIT);
+    const series = new Map();
+    for (const symbol of [...new Set(['QQQ', ...symbols])]) {
+      series.set(symbol, await closedDailySeries(symbol));
+    }
+    const outcomes = computeAlertOutcomes(store, { seriesFor: (symbol) => series.get(symbol) || [] });
+    await writeAlertOutcomes(PORTFOLIO_ALERTS_ROOT, {
+      version: ALERT_OUTCOMES_VERSION,
+      updated_at: new Date().toISOString(),
+      outcomes,
+      summary: summarizeOutcomes(outcomes),
+    });
+  } catch (error) {
+    console.warn(`alert outcomes failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 // 每天收盘审查之后判定一次预判结果：只读行情，不碰阈值，也不发通知。
@@ -1091,6 +1124,7 @@ async function runStoredChannelReviewCycle() {
     });
     if (review && review.skipped !== true && review.review_date) {
       await runDecisionLogResolveCycle(review.review_date);
+      await runAlertOutcomesCycle();
     }
     // 刷新失败只记日志，服务器上保留的仍是上一份完整收盘审查。
     if (review?.failed_symbols?.length) {
@@ -1197,6 +1231,7 @@ const server = createServer(async (req, res) => {
   if (await handleChannelReviewRoute(url, req, res)) return;
   if (await handleDecisionLogRoute(url, req, res)) return;
   if (await handleAlertLogRoute(url, req, res)) return;
+  if (await handleAlertOutcomesRoute(url, req, res)) return;
   try {
     if (await handleAlertRulesRoute(url, req, res)) return;
   } catch (error) {

@@ -435,3 +435,16 @@ describe('行情代理顺带给出当前时段', () => {
   });
 });
 
+describe('提醒效果接口', () => {
+  it('只读；还没算过时返回空结果而不是报错', async () => {
+    const response = await fetch(`${origin}/api/portfolio/alert-outcomes`);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.outcomes).toMatchObject({ version: 1, outcomes: {}, summary: [] });
+
+    const write = await fetch(`${origin}/api/portfolio/alert-outcomes`, { method: 'POST' });
+    expect(write.status).toBe(405);
+  });
+});
+

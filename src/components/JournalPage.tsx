@@ -9,6 +9,10 @@ import {
 } from '../alertRowView';
 import { MaSlopeExplorer } from './MaSlopeExplorer';
 import {
+  fetchAlertOutcomes, horizonText, outcomeSummaryRows, winRateText,
+  type AlertOutcome, type AlertOutcomesPayload,
+} from '../alertOutcomes';
+import {
   addCashFlow, addManualTrade, fetchDecisionLog, removeCashFlow, saveTradeNote,
   type DecisionLog, type DecisionPrediction, type DecisionTrade, type DecisionTradeNote,
   type DecisionTrigger,
@@ -16,7 +20,8 @@ import {
 import { DecisionLogSection, ReturnsSection } from './DecisionJournal';
 import { fetchMaSlopeDashboard } from '../maSlopeQuery';
 import {
-  getServerAlertLogUrl, getServerDecisionLogUrl, getServerMaSlopeUrl, getServerQuoteProxyUrl,
+  getServerAlertLogUrl, getServerAlertOutcomesUrl, getServerDecisionLogUrl, getServerMaSlopeUrl,
+  getServerQuoteProxyUrl,
 } from '../runtimeConfig';
 import { MarketStatusBar } from './MarketStatusBar';
 import {
@@ -30,12 +35,13 @@ import type { DisplayCurrency, ExchangeRates, QuantAnalysisSnapshot } from '../t
 const STATUS_REFRESH_MS = 60_000;
 const STATUS_STALE_MS = 3 * 60_000;
 
-export type JournalTab = 'alerts' | 'decisions' | 'returns';
+export type JournalTab = 'alerts' | 'decisions' | 'returns' | 'outcomes';
 
 const TABS: ReadonlyArray<{ key: JournalTab; label: string; icon: string }> = [
   { key: 'alerts', label: '提醒日志', icon: '📋' },
   { key: 'decisions', label: '决策日志', icon: '🔍' },
   { key: 'returns', label: '收益对比', icon: '📈' },
+  { key: 'outcomes', label: '提醒效果', icon: '📊' },
 ];
 
 interface ViewProps {
@@ -61,6 +67,7 @@ interface ViewProps {
   statusDataTime?: string | null;
   statusStale?: boolean;
   snapshot?: QuantAnalysisSnapshot | null;
+  outcomes?: AlertOutcomesPayload | null;
   detailSymbol?: string | null;
   onOpenDetail?: (symbol: string) => void;
   onCloseDetail?: () => void;
@@ -88,8 +95,8 @@ export function JournalPageView(props: ViewProps) {
     importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
     highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
     onMarkAlertRead, lastOpenedAt = null, statusCards: cards = [], statusDataTime = null,
-    statusStale = false, snapshot = null, detailSymbol = null, onOpenDetail, onCloseDetail,
-    onOrderDraft, draftNotice = '',
+    statusStale = false, snapshot = null, outcomes = null, detailSymbol = null, onOpenDetail,
+    onCloseDetail, onOrderDraft, draftNotice = '',
   } = props;
 
   return (
@@ -129,6 +136,7 @@ export function JournalPageView(props: ViewProps) {
 
       {tab === 'alerts' && (
         <AlertLogPanel
+          outcomes={outcomes?.outcomes ?? null}
           onOpenDetail={onOpenDetail}
           onOrderDraft={onOrderDraft}
           draftNotice={draftNotice}
@@ -178,18 +186,20 @@ export function JournalPageView(props: ViewProps) {
           onRemoveFlow={onRemoveFlow}
         />
       )}
+      {tab === 'outcomes' && <AlertOutcomesSection outcomes={outcomes} />}
     </section>
   );
 }
 
 function AlertLogPanel({
-  onOpenDetail, onOrderDraft, draftNotice = '',
+  outcomes = null, onOpenDetail, onOrderDraft, draftNotice = '',
   cards = [], statusDataTime = null, statusStale = false,
   alerts, hiddenAlertIds, showHidden, categoryFilter, onCategoryFilterChange, onHideAlert, loading,
   importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
   highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
   onMarkAlertRead, lastOpenedAt = null,
 }: {
+  outcomes?: Record<string, AlertOutcome> | null;
   onOpenDetail?: (symbol: string) => void;
   onOrderDraft?: (entry: AlertLogEntry) => void;
   draftNotice?: string;
@@ -243,6 +253,7 @@ function AlertLogPanel({
       onHide={onHideAlert && !hidden.has(entry.id) ? () => onHideAlert(entry.id) : undefined}
       onOpenDetail={onOpenDetail}
       onOrderDraft={onOrderDraft}
+      outcome={outcomes?.[entry.id] ?? null}
     />
   );
 
@@ -329,6 +340,51 @@ function AlertLogPanel({
   );
 }
 
+/** 第四个分页：按提醒类型看这类提醒之后发生了什么。 */
+function AlertOutcomesSection({ outcomes }: { outcomes: AlertOutcomesPayload | null }) {
+  const rows = outcomeSummaryRows(outcomes?.summary ?? []);
+  return (
+    <section className="rounded-2xl border border-neutral/40 bg-surface-raised p-4 sm:p-5" aria-label="提醒效果">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-bold sm:text-base">提醒效果 · 按类型统计</h3>
+        <span className="text-[10px] tabular-nums text-ink-muted">
+          {outcomes?.updated_at ? `服务器 ${beijingText(outcomes.updated_at)} 算过一次` : '还没算过'}
+        </span>
+      </div>
+      <p className="mt-1 text-[10px] leading-relaxed text-ink-muted">
+        每条提醒按当天完整收盘价起算，看之后第 1 / 5 / 20 个交易日该标的的涨跌，以及同期 QQQ。
+        CNN、VIX、共振这类看 QQQ。只统计发生过的事实，不预测、也不改任何买卖规则。
+      </p>
+      {rows.length === 0 ? (
+        <p className="mt-3 rounded-xl bg-surface-overlay p-4 text-center text-xs text-ink-muted">
+          还没有可统计的提醒。服务器每天收盘审查之后会算一次。
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {rows.map((row) => (
+            <li key={row.kind} data-outcome-kind={row.kind} className="rounded-xl border border-neutral/30 bg-surface-overlay/40 p-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <strong className="text-xs font-bold sm:text-sm">{row.label || row.kind}</strong>
+                <span className="text-[10px] tabular-nums text-ink-muted">
+                  {row.samples} 次{row.pending > 0 ? ` · ${row.pending} 条待定` : ''}
+                  {row.backfilledNote ? ` · ${row.backfilledNote}` : ''}
+                </span>
+              </div>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] tabular-nums text-ink-secondary sm:grid-cols-4">
+                <div><dt className="text-ink-muted">5 日均涨跌</dt><dd>{horizonText(row.avg.d5)}</dd></div>
+                <div><dt className="text-ink-muted">20 日均涨跌</dt><dd>{horizonText(row.avg.d20)}</dd></div>
+                <div><dt className="text-ink-muted">20 日胜率</dt><dd>{winRateText(row.winRate)}</dd></div>
+                <div><dt className="text-ink-muted">20 日超额（对 QQQ）</dt><dd>{horizonText(row.excess.d20)}</dd></div>
+              </dl>
+              {row.note && <p className="mt-1 text-[10px] font-semibold text-trim">{row.note}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** 只读的侧边详情：复用决策页用的那套图表组件，不改决策页本身。 */
 function AlertDetailPanel({ symbol, snapshot, onClose }: {
   symbol: string;
@@ -386,8 +442,9 @@ const ACCENT_CLASS = {
 } as const;
 
 function AlertRow({
-  entry, expanded, highlighted, onToggle, onHide, onOpenDetail, onOrderDraft,
+  entry, expanded, highlighted, onToggle, onHide, onOpenDetail, onOrderDraft, outcome = null,
 }: {
+  outcome?: AlertOutcome | null;
   entry: AlertLogEntry;
   expanded: boolean;
   highlighted: boolean;
@@ -454,6 +511,13 @@ function AlertRow({
             {entry.symbol ? ` · ${entry.symbol}` : ''} · 推送 {push.label}
           </p>
           {entry.voided && <p className="text-white/45">{voidedMark}</p>}
+          {outcome && (
+            <p data-alert-outcome={entry.id} className="text-white/60">
+              提醒之后（{outcome.symbol} · 基准收盘 {outcome.base_date}）：
+              1 天 {horizonText(outcome.changes.d1)} · 5 天 {horizonText(outcome.changes.d5)} · 20 天 {horizonText(outcome.changes.d20)}
+              {' '}· 相对 QQQ 20 天 {horizonText(outcome.excess.d20)}
+            </p>
+          )}
           {entry.symbol && (onOpenDetail || onOrderDraft) && (
             <div className="flex flex-wrap gap-2 pt-1">
               {onOpenDetail && (
@@ -498,6 +562,7 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
   const [readAlertIds, setReadAlertIds] = useState<string[]>(() => loadReadAlertIds());
   // 进页面那一刻先把上次打开时间读出来，再写上这一次：比它新的就是「新提醒」。
   const [lastOpenedAt] = useState<string | null>(() => loadLastOpenedAt());
+  const [outcomes, setOutcomes] = useState<AlertOutcomesPayload | null>(null);
   const [detailSymbol, setDetailSymbol] = useState<string | null>(null);
   const [draftNotice, setDraftNotice] = useState('');
   const [quotes, setQuotes] = useState<StatusQuotes | null>(null);
@@ -590,6 +655,15 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [alertEndpoint]);
+
+  // 提醒效果是服务器每天收盘后算好的，进页面读一次就够，不在网页上重算。
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchAlertOutcomes(getServerAlertOutcomesUrl() || '/api/portfolio/alert-outcomes', controller.signal)
+      .then((next) => setOutcomes(next))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   // 顶部状态条：每 60 秒拉一次 QQQ / VIX 和服务器判定的时段。
   useEffect(() => {
@@ -715,6 +789,7 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
       statusDataTime={quotes?.time ?? null}
       statusStale={statusStale}
       snapshot={snapshot}
+      outcomes={outcomes}
       detailSymbol={detailSymbol}
       onOpenDetail={setDetailSymbol}
       onCloseDetail={() => setDetailSymbol(null)}

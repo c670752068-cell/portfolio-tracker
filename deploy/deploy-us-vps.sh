@@ -54,6 +54,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
 "${SCP_CMD[@]}" deploy/decision-log-resolve.mjs "${SERVER}:${REMOTE_RELEASE_APP}/decision-log-resolve.mjs"
 "${SCP_CMD[@]}" deploy/alert-log.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-log.mjs"
 "${SCP_CMD[@]}" deploy/alert-noise.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-noise.mjs"
+"${SCP_CMD[@]}" deploy/alert-outcomes.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-outcomes.mjs"
 "${SCP_CMD[@]}" deploy/alert-noise.config.json "${SERVER}:${REMOTE_RELEASE_APP}/alert-noise.config.json"
 "${SCP_CMD[@]}" deploy/void-dust-records.mjs "${SERVER}:${REMOTE_RELEASE_APP}/void-dust-records.mjs"
 "${SCP_CMD[@]}" deploy/realtime-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-alerts.mjs"
@@ -82,6 +83,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
   node --check '${REMOTE_RELEASE_APP}/decision-log-resolve.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/alert-log.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/alert-noise.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/alert-outcomes.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/void-dust-records.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-alerts.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-push.mjs' && \

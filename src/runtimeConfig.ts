@@ -59,6 +59,10 @@ export function getServerAlertLogUrl(): string {
   return apiUrl('/api/portfolio/alert-log');
 }
 
+export function getServerAlertOutcomesUrl(): string {
+  return apiUrl('/api/portfolio/alert-outcomes');
+}
+
 export function getServerDecisionLogUrl(): string {
   return apiUrl('/api/portfolio/decision-log');
 }

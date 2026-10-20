@@ -452,3 +452,62 @@ describe('从提醒直接行动', () => {
   });
 });
 
+describe('提醒效果分页', () => {
+  const outcomes = {
+    updated_at: '2026-10-20T21:05:00.000Z',
+    outcomes: {
+      'alert-1': {
+        kind: 'z_enter', symbol: 'NVDA', base_date: '2026-10-05', base_close: 104,
+        backfilled: false, pending: false,
+        changes: { d1: 0.96, d5: 4.81, d20: 19.23 },
+        benchmark: { d1: 0.2, d5: 1.24, d20: 4.95 },
+        excess: { d1: 0.76, d5: 3.57, d20: 14.28 },
+      },
+    },
+    summary: [
+      {
+        kind: 'big_move', label: '个股大涨大跌', samples: 12, pending: 1, backfilled: 2,
+        avg: { d5: -1.2, d20: -2.4 }, excess: { d5: -1.5, d20: -3 }, winRate: 0.25,
+        reliable: true, note: '',
+      },
+      {
+        kind: 'z_enter', label: 'Z 进入 ±1.5', samples: 3, pending: 0, backfilled: 0,
+        avg: { d5: 1, d20: 2 }, excess: { d5: 0.5, d20: 1 }, winRate: 0.67,
+        reliable: false, note: '样本太少，结论不可靠',
+      },
+    ],
+  };
+
+  it('第四个分页按钮在', () => {
+    const html = render();
+    expect(html).toContain('data-journal-tab="outcomes"');
+    expect(html).toContain('提醒效果');
+  });
+
+  it('按类型列出次数、5/20 天平均、胜率和超额；样本太少要标出来', () => {
+    const html = render({ tab: 'outcomes', outcomes });
+
+    expect(html).toContain('个股大涨大跌');
+    expect(html).toContain('12 次 · 1 条待定 · 含 2 条回填');
+    expect(html).toContain('-2.40%');
+    expect(html).toContain('25.0%');
+    expect(html).toContain('样本太少，结论不可靠');
+    // 次数多的排前面
+    expect(html.indexOf('data-outcome-kind="big_move"')).toBeLessThan(html.indexOf('data-outcome-kind="z_enter"'));
+  });
+
+  it('还没算过时说清楚，不画空表', () => {
+    const html = render({ tab: 'outcomes', outcomes: null });
+    expect(html).toContain('还没有可统计的提醒');
+    expect(html).toContain('还没算过');
+  });
+
+  it('展开一条提醒能看到之后 1 / 5 / 20 天的表现', () => {
+    const entry = alert({ id: 'alert-1', category: 'zscore', symbol: 'NVDA', indicators: { level: 1 } });
+    const html = render({ alerts: [entry], outcomes });
+
+    // 默认折叠，数字在展开后才出现
+    expect(html).not.toContain('data-alert-outcome');
+  });
+});
+

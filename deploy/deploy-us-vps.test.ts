@@ -269,3 +269,18 @@ describe('提醒降噪上线所需', () => {
   });
 });
 
+describe('提醒效果上线所需', () => {
+  it('效果统计模块要上传并语法检查', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/alert-outcomes.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-outcomes.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/alert-outcomes.mjs'");
+  });
+
+  it('网关每天收盘审查之后算一次，并提供只读接口', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('runAlertOutcomesCycle');
+    expect(gateway).toContain('await runAlertOutcomesCycle();');
+    expect(gateway).toContain('handleAlertOutcomesRoute');
+  });
+});
+
