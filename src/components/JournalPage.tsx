@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ALERT_CATEGORY_LABELS, ALERT_FILTER_ORDER, beijingText, easternText, fetchAlertLog,
-  loadHiddenAlertIds, pushStateLabel, saveHiddenAlertIds, type AlertCategory, type AlertLogEntry,
+  loadHiddenAlertIds, loadLastOpenedAt, loadReadAlertIds, saveHiddenAlertIds, saveLastOpenedAt,
+  saveReadAlertIds, type AlertCategory, type AlertLogEntry,
 } from '../alertLog';
+import { alertAccent, alertHeadline, isLogOnly, partitionAlerts, pushStateIcon } from '../alertRowView';
 import {
   addCashFlow, addManualTrade, fetchDecisionLog, removeCashFlow, saveTradeNote,
   type DecisionLog, type DecisionPrediction, type DecisionTrade, type DecisionTrigger,
@@ -35,6 +37,11 @@ interface ViewProps {
   liveStatus?: 'live' | 'disconnected' | 'paused';
   secondsSinceUpdate?: number | null;
   highlightedIds?: string[];
+  showAllLevels?: boolean;
+  onShowAllLevelsChange?: (value: boolean) => void;
+  readAlertIds?: readonly string[];
+  onMarkAlertRead?: (id: string) => void;
+  lastOpenedAt?: string | null;
   log: DecisionLog | null;
   qqqSeries: ClosePoint[];
   sgovSeries: ClosePoint[];
@@ -55,7 +62,8 @@ export function JournalPageView(props: ViewProps) {
     onCategoryFilterChange, log, qqqSeries, sgovSeries, displayCurrency, rates, error, loading,
     onHideAlert, onSaveNote, onAddTrade, onAddFlow, onRemoveFlow,
     importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
-    highlightedIds = [],
+    highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
+    onMarkAlertRead, lastOpenedAt = null,
   } = props;
 
   return (
@@ -107,6 +115,11 @@ export function JournalPageView(props: ViewProps) {
           liveStatus={liveStatus}
           secondsSinceUpdate={secondsSinceUpdate}
           highlightedIds={highlightedIds}
+          showAllLevels={showAllLevels}
+          onShowAllLevelsChange={onShowAllLevelsChange}
+          readAlertIds={readAlertIds}
+          onMarkAlertRead={onMarkAlertRead}
+          lastOpenedAt={lastOpenedAt}
         />
       )}
       {tab === 'decisions' && (
@@ -137,7 +150,8 @@ export function JournalPageView(props: ViewProps) {
 function AlertLogPanel({
   alerts, hiddenAlertIds, showHidden, categoryFilter, onCategoryFilterChange, onHideAlert, loading,
   importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
-  highlightedIds = [],
+  highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
+  onMarkAlertRead, lastOpenedAt = null,
 }: {
   alerts: AlertLogEntry[];
   hiddenAlertIds: string[];
@@ -151,27 +165,68 @@ function AlertLogPanel({
   liveStatus?: 'live' | 'disconnected' | 'paused';
   secondsSinceUpdate?: number | null;
   highlightedIds?: string[];
+  showAllLevels?: boolean;
+  onShowAllLevelsChange?: (value: boolean) => void;
+  readAlertIds?: readonly string[];
+  onMarkAlertRead?: (id: string) => void;
+  lastOpenedAt?: string | null;
 }) {
   const hidden = useMemo(() => new Set(hiddenAlertIds), [hiddenAlertIds]);
   const highlighted = useMemo(() => new Set(highlightedIds), [highlightedIds]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const rows = useMemo(() => [...alerts]
     .filter((item) => categoryFilter === 'all' || item.category === categoryFilter)
     .filter((item) => !importantOnly || item.indicators?.level === 1)
     .filter((item) => showHidden || !hidden.has(item.id))
-    // 最新的在最上面
-    .sort((left, right) => right.occurred_at.localeCompare(left.occurred_at)), [alerts, categoryFilter, hidden, importantOnly, showHidden]);
+    // 「仅记录」级别默认折叠，打开「显示全部」才出现
+    .filter((item) => showAllLevels || !isLogOnly(item)), [alerts, categoryFilter, hidden, importantOnly, showAllLevels, showHidden]);
+  const view = useMemo(
+    () => partitionAlerts(rows, { readIds: readAlertIds, lastOpenedAt }),
+    [rows, readAlertIds, lastOpenedAt],
+  );
+  const logOnlyCount = useMemo(() => alerts.filter(isLogOnly).length, [alerts]);
+
+  const open = (entry: AlertLogEntry) => {
+    setExpandedId((current) => (current === entry.id ? null : entry.id));
+    onMarkAlertRead?.(entry.id);
+  };
+  const row = (entry: AlertLogEntry) => (
+    <AlertRow
+      key={entry.id}
+      entry={entry}
+      expanded={expandedId === entry.id}
+      highlighted={highlighted.has(entry.id)}
+      onToggle={() => open(entry)}
+      onHide={onHideAlert && !hidden.has(entry.id) ? () => onHideAlert(entry.id) : undefined}
+    />
+  );
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          aria-pressed={importantOnly}
-          onClick={() => onImportantOnlyChange?.(!importantOnly)}
-          className={`min-h-8 rounded-full px-2.5 text-[11px] font-medium ${importantOnly ? 'bg-loss text-white' : 'bg-neutral/25 text-ink-secondary'}`}
-        >
-          只看重要
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            aria-pressed={importantOnly}
+            onClick={() => onImportantOnlyChange?.(!importantOnly)}
+            className={`min-h-8 rounded-full px-2.5 text-[11px] font-medium ${importantOnly ? 'bg-loss text-white' : 'bg-neutral/25 text-ink-secondary'}`}
+          >
+            只看重要
+          </button>
+          <button
+            type="button"
+            aria-pressed={showAllLevels}
+            onClick={() => onShowAllLevelsChange?.(!showAllLevels)}
+            className={`min-h-8 rounded-full px-2.5 text-[11px] font-medium ${showAllLevels ? 'bg-buy text-white' : 'bg-neutral/25 text-ink-secondary'}`}
+          >
+            显示全部{logOnlyCount > 0 && !showAllLevels ? `（仅记录 ${logOnlyCount}）` : ''}
+          </button>
+          {view.unread > 0 && (
+            <span data-alert-unread={view.unread} className="min-h-8 rounded-full bg-loss/15 px-2.5 py-1.5 text-[11px] font-semibold text-loss">
+              未读 {view.unread}
+            </span>
+          )}
+        </div>
         <span className="text-[10px] tabular-nums text-ink-muted" role="status">
           {liveStatus === 'disconnected'
             ? '● 已断开 · 正在重连'
@@ -198,55 +253,109 @@ function AlertLogPanel({
       {/* 这个面板不跟随浅色主题，始终深色，和参考截图一致 */}
       <div
         data-alert-log-panel="true"
-        className="overflow-x-auto rounded-2xl border border-white/25 bg-black p-3 font-mono text-[11px] leading-relaxed text-white/90 sm:p-4 sm:text-xs"
+        className="overflow-hidden rounded-2xl border border-white/25 bg-black p-3 font-mono text-[11px] leading-relaxed text-white/90 sm:p-4 sm:text-xs"
       >
         {rows.length === 0 ? (
           <p className="py-6 text-center text-white/50">{loading ? '读取中…' : '还没有记录。提醒触发时会自动写一行。'}</p>
         ) : (
-          <ul className="space-y-1">
-            {rows.map((item) => (
-              <li
-                key={item.id}
-                className={`flex items-start gap-2 whitespace-pre-wrap break-words ${highlighted.has(item.id) ? 'alert-row-new rounded bg-white/10' : ''}`}
-              >
-                <time
-                  dateTime={item.occurred_at}
-                  title={`美东 ${easternText(item.occurred_at)}`}
-                  className="shrink-0 text-white/45"
-                >
-                  {beijingText(item.occurred_at)}
-                </time>
-                <span aria-hidden="true" className="shrink-0">{item.icon}</span>
-                <span className="min-w-0 flex-1">
-                  <span className={item.voided ? 'text-white/40 line-through' : undefined}>{item.text}</span>
-                  {item.voided && (
-                    <span className="ml-1 text-white/45" title={item.voided_reason ?? undefined}>[已作废]</span>
-                  )}
-                  {item.backfilled && <span className="ml-1 text-white/45">[回填]</span>}
-                  {!item.backfilled && !item.voided && (
-                    <span className="ml-1 text-white/45">{pushStateLabel(item)}</span>
-                  )}
-                  {item.session === 'intraday' && <span className="ml-1 text-white/45">[盘中]</span>}
-                </span>
-                {onHideAlert && !hidden.has(item.id) && (
-                  <button
-                    type="button"
-                    onClick={() => onHideAlert(item.id)}
-                    className="shrink-0 rounded bg-white/10 px-1.5 text-[10px] text-white/60"
-                    aria-label={`隐藏这条提醒：${item.text}`}
-                  >
-                    ×
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
+          <>
+            {view.pinned.length > 0 && (
+              <ul className="mb-2 space-y-1 border-b border-white/15 pb-2" aria-label="置顶的重要提醒">
+                {view.pinned.map(row)}
+              </ul>
+            )}
+            <ul className="space-y-1">
+              {view.newCount > 0 && (
+                <li data-alert-divider="true" className="py-1 text-center text-[10px] text-white/45">—— 以下是新提醒 ——</li>
+              )}
+              {view.timeline.map((entry) => <Fragment key={entry.id}>{row(entry)}</Fragment>)}
+            </ul>
+          </>
         )}
       </div>
       <p className="text-[10px] text-ink-muted">
-        时间是北京时间，鼠标放上去（手机上长按）显示美东时间。「隐藏已读」只藏在这台设备上，服务器记录不会删。
+        点一条看完整说明。时间是北京时间，鼠标放上去（手机上长按）显示美东时间。「隐藏已读」只藏在这台设备上，服务器记录不会删。
       </p>
     </div>
+  );
+}
+
+const ACCENT_CLASS = {
+  buy: 'border-l-2 border-emerald-500 pl-1.5',
+  sell: 'border-l-2 border-red-500 pl-1.5',
+  risk: 'border-l-2 border-amber-500 pl-1.5',
+} as const;
+
+function AlertRow({
+  entry, expanded, highlighted, onToggle, onHide,
+}: {
+  entry: AlertLogEntry;
+  expanded: boolean;
+  highlighted: boolean;
+  onToggle: () => void;
+  onHide?: () => void;
+}) {
+  const accent = alertAccent(entry);
+  const push = pushStateIcon(entry);
+  const clock = beijingText(entry.occurred_at);
+  const voidedMark = `[已作废${entry.voided_reason ? ` · ${entry.voided_reason}` : ''}]`;
+  return (
+    <li
+      data-alert-row={entry.id}
+      data-alert-accent={accent ?? 'none'}
+      className={`rounded ${accent ? ACCENT_CLASS[accent] : ''} ${highlighted ? 'alert-row-new bg-white/10' : ''}`}
+    >
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex min-h-8 min-w-0 flex-1 items-center gap-1.5 text-left"
+        >
+          <time
+            dateTime={entry.occurred_at}
+            title={`北京 ${clock} · 美东 ${easternText(entry.occurred_at)}`}
+            className="shrink-0 tabular-nums text-white/45"
+          >
+            {clock.slice(6, 11)}
+          </time>
+          <span aria-hidden="true" className="shrink-0">{entry.icon}</span>
+          <span className={`min-w-0 flex-1 truncate ${entry.voided ? 'text-white/40 line-through' : ''}`}>
+            {alertHeadline(entry)}
+          </span>
+          {entry.voided && <span className="shrink-0 text-white/45">{voidedMark}</span>}
+          {entry.backfilled && <span className="shrink-0 text-white/45">[回填]</span>}
+          <span className="shrink-0" title={push.label} aria-label={`推送状态：${push.label}`}>{push.icon}</span>
+        </button>
+        {onHide && (
+          <button
+            type="button"
+            onClick={onHide}
+            className="shrink-0 rounded bg-white/10 px-1.5 text-[10px] text-white/60"
+            aria-label={`隐藏这条提醒：${alertHeadline(entry)}`}
+          >
+            ×
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <div className="mt-1 space-y-1 rounded bg-white/5 p-2 text-white/70">
+          <p className="whitespace-pre-wrap break-words">{entry.text}</p>
+          {entry.summary_items && entry.summary_items.length > 0 && (
+            <ul className="space-y-0.5">
+              {entry.summary_items.map((item, index) => (
+                <li key={`${item.symbol ?? 'item'}-${index}`} className="break-words">· {item.text}</li>
+              ))}
+            </ul>
+          )}
+          <p className="text-white/45">
+            北京 {clock} · 美东 {easternText(entry.occurred_at)} · {ALERT_CATEGORY_LABELS[entry.category]}
+            {entry.symbol ? ` · ${entry.symbol}` : ''} · 推送 {push.label}
+          </p>
+          {entry.voided && <p className="text-white/45">{voidedMark}</p>}
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -258,6 +367,10 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
   const [alerts, setAlerts] = useState<AlertLogEntry[]>([]);
   const [hiddenAlertIds, setHiddenAlertIds] = useState<string[]>(() => loadHiddenAlertIds());
   const [showHidden, setShowHidden] = useState(true);
+  const [showAllLevels, setShowAllLevels] = useState(false);
+  const [readAlertIds, setReadAlertIds] = useState<string[]>(() => loadReadAlertIds());
+  // 进页面那一刻先把上次打开时间读出来，再写上这一次：比它新的就是「新提醒」。
+  const [lastOpenedAt] = useState<string | null>(() => loadLastOpenedAt());
   const [categoryFilter, setCategoryFilter] = useState<AlertCategory | 'all'>('all');
   const [importantOnly, setImportantOnly] = useState(false);
   const [liveStatus, setLiveStatus] = useState<'live' | 'disconnected' | 'paused'>('live');
@@ -365,6 +478,17 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
       });
   }
 
+  useEffect(() => { saveLastOpenedAt(new Date().toISOString()); }, []);
+
+  function markAlertRead(id: string) {
+    setReadAlertIds((current) => {
+      if (current.includes(id)) return current;
+      const next = [...current, id];
+      saveReadAlertIds(next);
+      return next;
+    });
+  }
+
   function hideAlert(id: string) {
     setHiddenAlertIds((current) => {
       const next = current.includes(id) ? current : [...current, id];
@@ -388,6 +512,11 @@ export function JournalPage({ displayCurrency, rates }: { displayCurrency: Displ
       liveStatus={liveStatus}
       secondsSinceUpdate={secondsSinceUpdate}
       highlightedIds={highlightedIds}
+      showAllLevels={showAllLevels}
+      onShowAllLevelsChange={setShowAllLevels}
+      readAlertIds={readAlertIds}
+      onMarkAlertRead={markAlertRead}
+      lastOpenedAt={lastOpenedAt}
       log={log}
       qqqSeries={series.qqq}
       sgovSeries={series.sgov}

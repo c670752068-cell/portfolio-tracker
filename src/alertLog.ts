@@ -24,6 +24,8 @@ export interface AlertLogEntry {
   backfilled: boolean;
   session: string | null;
   indicators: Record<string, number | null> | null;
+  /** 合并进汇总行的明细；只有汇总行有。 */
+  summary_items?: ReadonlyArray<{ symbol: string | null; text: string }> | null;
 }
 
 export const PUSH_BLOCK_LABELS: Readonly<Record<string, string>> = {
@@ -70,6 +72,8 @@ export const ALERT_FILTER_ORDER: ReadonlyArray<AlertCategory | 'all'> = [
 ];
 
 const HIDDEN_STORAGE_KEY = 'portfolio-tracker:alert-log:hidden';
+const READ_STORAGE_KEY = 'portfolio-tracker:alert-log:read';
+const OPENED_STORAGE_KEY = 'portfolio-tracker:alert-log:opened';
 
 export async function fetchAlertLog(endpoint: string, signal?: AbortSignal): Promise<AlertLogPayload> {
   const response = await fetch(endpoint, { cache: 'no-store', signal });
@@ -96,6 +100,42 @@ export function saveHiddenAlertIds(ids: readonly string[]): void {
     window.localStorage.setItem(HIDDEN_STORAGE_KEY, JSON.stringify([...ids].slice(-5000)));
   } catch {
     // 本机存不下不影响页面，服务器记录本来就还在。
+  }
+}
+
+/** 点过的重要提醒：只记在这台设备上，服务器记录一行都不动。 */
+export function loadReadAlertIds(): string[] {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(READ_STORAGE_KEY) || '[]');
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveReadAlertIds(ids: readonly string[]): void {
+  try {
+    window.localStorage.setItem(READ_STORAGE_KEY, JSON.stringify([...ids].slice(-5000)));
+  } catch {
+    // 本机存不下不影响页面
+  }
+}
+
+/** 这台设备上次打开日志页的时间，用来算未读数和「以下是新提醒」分隔线。 */
+export function loadLastOpenedAt(): string | null {
+  try {
+    const value = window.localStorage.getItem(OPENED_STORAGE_KEY);
+    return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLastOpenedAt(isoTime: string): void {
+  try {
+    window.localStorage.setItem(OPENED_STORAGE_KEY, isoTime);
+  } catch {
+    // 本机存不下不影响页面
   }
 }
 
