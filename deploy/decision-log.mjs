@@ -377,15 +377,23 @@ export function applyTradeNote(store, id, patch, now = new Date()) {
     : validatePrediction(input.prediction);
   const note = typeof input.note === 'string' ? input.note.slice(0, 2000) : '';
   const price = numeric(input.price);
+  const qty = numeric(input.qty);
   const previous = current.trades[index];
+  // 只有「我据此下单了」生成的草稿能补数量；券商抓来的成交数量不许改。
+  if (qty !== null && (previous.draft !== true || qty <= 0)) {
+    throw Object.assign(new Error('数量只能在草稿上补，且要大于 0'), { status: 400 });
+  }
+  const nextQty = qty === null ? previous.qty : qty;
+  const nextPrice = price === null ? previous.price : price;
   const next = {
     ...previous,
     trigger,
     prediction,
     note,
+    qty: nextQty,
     // 推算成交缺卖出价时允许手工补一个，并标明是人工填的。
-    price: price === null ? previous.price : price,
-    amount: price === null ? previous.amount : price * previous.qty,
+    price: nextPrice,
+    amount: nextPrice === null || nextQty === null ? null : nextPrice * nextQty,
     price_source: price === null ? previous.price_source : 'manual',
     price_estimated: price === null ? previous.price_estimated : false,
     status: prediction === null && trigger.length === 0 && !note ? 'pending_note' : 'in_progress',
@@ -433,14 +441,19 @@ export function addManualTrade(store, input, now = new Date()) {
   const qty = numeric(item.qty);
   const price = numeric(item.price);
   const tradeTime = String(item.trade_time || '');
+  // 「我据此下单了」先占一行草稿：数量和价格可以后补，其余照常校验。
+  const draft = item.draft === true;
+  const alertId = typeof item.alert_id === 'string' ? item.alert_id.slice(0, 64) : null;
   if (!/^[A-Z][A-Z0-9.-]{0,10}$/.test(symbol)) throw Object.assign(new Error('代码格式不正确'), { status: 400 });
   if (!['BUY', 'SELL'].includes(side)) throw Object.assign(new Error('方向只能是买入或卖出'), { status: 400 });
-  if (qty === null || qty <= 0) throw Object.assign(new Error('数量要大于 0'), { status: 400 });
+  if (draft ? qty !== null && qty <= 0 : qty === null || qty <= 0) {
+    throw Object.assign(new Error('数量要大于 0'), { status: 400 });
+  }
   if (Number.isNaN(Date.parse(tradeTime))) throw Object.assign(new Error('成交时间格式不正确'), { status: 400 });
   if (current.trades.length >= TRADE_LIMIT) throw Object.assign(new Error('日志条数已达上限'), { status: 400 });
   const trade = {
     id: `trade-${randomBytes(6).toString('hex')}`,
-    key: `MANUAL|${symbol}|${side}|${qty}|${tradeTime}`,
+    key: draft ? `MANUAL|${symbol}|${side}|draft|${alertId || tradeTime}` : `MANUAL|${symbol}|${side}|${qty}|${tradeTime}`,
     trade_time: new Date(tradeTime).toISOString(),
     recorded_by: 'manual',
     symbol,
@@ -449,7 +462,7 @@ export function addManualTrade(store, input, now = new Date()) {
     broker: null,
     qty,
     price,
-    amount: price === null ? null : price * qty,
+    amount: price === null || qty === null ? null : price * qty,
     price_source: price === null ? null : 'manual',
     price_estimated: false,
     // 补录的交易没有当时的指标快照，留空不补造。
@@ -457,6 +470,10 @@ export function addManualTrade(store, input, now = new Date()) {
     trigger: [],
     prediction: null,
     note: typeof item.note === 'string' ? item.note.slice(0, 2000) : '',
+    // 草稿是哪条提醒带来的：只存 id 和原文，方便在决策日志里回看
+    draft,
+    alert_id: alertId,
+    alert_text: typeof item.alert_text === 'string' ? item.alert_text.slice(0, 500) : null,
     status: 'pending_note',
     resolved_at: null,
     resolved_price: null,

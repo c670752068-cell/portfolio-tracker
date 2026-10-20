@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AlertLogEntry } from './alertLog';
 import {
-  HEADLINE_MAX, alertAccent, alertHeadline, isLogOnly, partitionAlerts, pushStateIcon,
+  HEADLINE_MAX, alertAccent, alertHeadline, isLogOnly, partitionAlerts, pushStateIcon, suggestedSide,
 } from './alertRowView';
 
 function entry(partial: Partial<AlertLogEntry>): AlertLogEntry {
@@ -141,3 +141,13 @@ describe('置顶、未读与「以下是新提醒」分隔线', () => {
     expect(partitionAlerts(rows, { readIds: [], lastOpenedAt: '2026-10-21T00:00:00.000Z' }).newCount).toBe(0);
   });
 });
+
+describe('「我据此下单了」的方向', () => {
+  it('卖出线、红橙提醒按卖出，其余按买入', () => {
+    expect(suggestedSide(entry({ category: 'sell_line', icon: '💰', text: 'NVDA ≥ 卖出线' }))).toBe('SELL');
+    expect(suggestedSide(entry({ icon: '🔴', text: '[盘中] NVDA · Z 1.52 · 涨得更多' }))).toBe('SELL');
+    expect(suggestedSide(entry({ icon: '🟢', text: '[盘中] MU · Z -1.63 · 跌得更深' }))).toBe('BUY');
+    expect(suggestedSide(entry({ category: 'drawdown', icon: '📉', text: 'QQQ 回撤 -5%' }))).toBe('BUY');
+  });
+});
+

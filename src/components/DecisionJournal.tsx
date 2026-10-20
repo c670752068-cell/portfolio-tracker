@@ -233,7 +233,7 @@ function TradeRow({ trade, displayCurrency, rates, onSave }: {
   trade: DecisionTrade;
   displayCurrency: DisplayCurrency;
   rates: ExchangeRates;
-  onSave?: (trade: DecisionTrade, note: { trigger: DecisionTrigger[]; prediction: DecisionPrediction | null; note: string; price?: number }) => void;
+  onSave?: (trade: DecisionTrade, note: { trigger: DecisionTrigger[]; prediction: DecisionPrediction | null; note: string; price?: number; qty?: number }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const pending = trade.status === 'pending_note';
@@ -245,7 +245,7 @@ function TradeRow({ trade, displayCurrency, rates, onSave }: {
       <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-start justify-between gap-3 text-left">
         <span className="min-w-0">
           <span className="block text-sm font-bold">
-            {trade.symbol} · {trade.side === 'BUY' ? '买入' : '卖出'} {trade.qty}
+            {trade.symbol} · {trade.side === 'BUY' ? '买入' : '卖出'} {trade.qty === null ? '数量待补' : trade.qty}
             {trade.price === null ? ' · 价格待补' : ` @ ${formatDisplayMoney(trade.price, displayCurrency, rates)}`}
           </span>
           <span className="mt-0.5 block text-[10px] tabular-nums text-ink-muted">
@@ -253,7 +253,11 @@ function TradeRow({ trade, displayCurrency, rates, onSave }: {
             {trade.broker && ` · ${trade.broker}`}
             {trade.price_estimated && ' · 价格为估算'}
             {trade.recorded_by === 'manual' && ' · 手动补录'}
+            {trade.draft && ' · 提醒草稿'}
           </span>
+          {trade.alert_text && (
+            <span className="mt-0.5 block text-[10px] text-ink-muted">来自提醒：{trade.alert_text}</span>
+          )}
         </span>
         <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${pending ? 'bg-trim/20 text-trim' : trade.status === 'hit' ? 'bg-gain/15 text-gain' : trade.status === 'miss' ? 'bg-loss/15 text-loss' : 'bg-neutral/25 text-ink-secondary'}`}>
           {STATUS_LABELS[trade.status]}
@@ -296,7 +300,7 @@ function Indicator({ label, value }: { label: string; value: string }) {
 
 function NoteForm({ trade, onSave }: {
   trade: DecisionTrade;
-  onSave?: (trade: DecisionTrade, note: { trigger: DecisionTrigger[]; prediction: DecisionPrediction | null; note: string; price?: number }) => void;
+  onSave?: (trade: DecisionTrade, note: { trigger: DecisionTrigger[]; prediction: DecisionPrediction | null; note: string; price?: number; qty?: number }) => void;
 }) {
   const [trigger, setTrigger] = useState<DecisionTrigger[]>(trade.trigger);
   const [type, setType] = useState<DecisionPrediction['type'] | ''>(trade.prediction?.type ?? '');
@@ -307,6 +311,7 @@ function NoteForm({ trade, onSave }: {
   const [fixed, setFixed] = useState(String(trade.prediction?.fixed_gain_pct ?? ''));
   const [note, setNote] = useState(trade.note);
   const [price, setPrice] = useState('');
+  const [qty, setQty] = useState('');
 
   function prediction(): DecisionPrediction | null {
     if (!type) return null;
@@ -331,6 +336,7 @@ function NoteForm({ trade, onSave }: {
         onSave?.(trade, {
           trigger, prediction: prediction(), note,
           ...(price ? { price: Number(price) } : {}),
+          ...(qty ? { qty: Number(qty) } : {}),
         });
       }}
     >
@@ -398,6 +404,12 @@ function NoteForm({ trade, onSave }: {
             <input value={fixed} onChange={(event) => setFixed(event.target.value)} inputMode="decimal" className="mt-1 block w-full rounded-lg border border-neutral/40 bg-surface-raised px-2 py-1.5 text-xs font-normal tabular-nums" />
           </label>
         </div>
+      )}
+      {trade.draft === true && trade.qty === null && (
+        <label className="block text-[10px] font-semibold text-ink-secondary">
+          补填数量（这条是按提醒生成的草稿）
+          <input value={qty} onChange={(event) => setQty(event.target.value)} inputMode="decimal" className="mt-1 block w-full rounded-lg border border-neutral/40 bg-surface-raised px-2 py-1.5 text-xs font-normal tabular-nums" />
+        </label>
       )}
       {trade.price === null && (
         <label className="block text-[10px] font-semibold text-ink-secondary">

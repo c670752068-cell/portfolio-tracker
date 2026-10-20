@@ -54,6 +54,12 @@ export function alertAccent(entry: AlertLogEntry): 'buy' | 'sell' | 'risk' | nul
   return 'risk';
 }
 
+/** 「我据此下单了」按哪个方向生成草稿：红/橙提醒按卖出，其余按买入。 */
+export function suggestedSide(entry: AlertLogEntry): 'BUY' | 'SELL' {
+  const text = `${entry.icon}${entry.text}`;
+  return entry.category === 'sell_line' || /🔴|🟠|卖出|卖点/u.test(text) ? 'SELL' : 'BUY';
+}
+
 /** 「仅记录」级别：默认折叠，打开「显示全部」才出现。 */
 export function isLogOnly(entry: AlertLogEntry): boolean {
   return entry.indicators?.level === 3;

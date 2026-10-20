@@ -624,3 +624,54 @@ describe('零碎持仓不当成交易', () => {
   });
 });
 
+describe('「我据此下单了」生成的草稿', () => {
+  const alertDraft = {
+    trade_time: '2026-10-20T13:38:55.000Z', symbol: 'UDOW', side: 'SELL' as const, draft: true,
+    alert_id: 'alert-abc', alert_text: '[盘中] UDOW $67.41 · Z 0.38 → 0.52 · 涨得更多，偏强',
+  };
+
+  it('数量和价格可以先空着，并记下是哪条提醒带来的', () => {
+    const store = addManualTrade(emptyDecisionLog(), alertDraft, new Date('2026-10-20T13:40:00Z'));
+
+    expect(store.trades).toHaveLength(1);
+    expect(store.trades[0]).toMatchObject({
+      symbol: 'UDOW', side: 'SELL', qty: null, price: null, amount: null,
+      draft: true, alert_id: 'alert-abc', recorded_by: 'manual', status: 'pending_note',
+    });
+    expect(store.trades[0].alert_text).toContain('UDOW');
+  });
+
+  it('同一条提醒点两次只生成一条草稿', () => {
+    const store = addManualTrade(emptyDecisionLog(), alertDraft, new Date('2026-10-20T13:40:00Z'));
+    expect(() => addManualTrade(store, alertDraft, new Date('2026-10-20T13:41:00Z'))).toThrow('已经记过了');
+  });
+
+  it('不是草稿时数量仍然必须大于 0', () => {
+    expect(() => addManualTrade(emptyDecisionLog(), {
+      trade_time: '2026-10-20T13:38:55.000Z', symbol: 'UDOW', side: 'SELL',
+    })).toThrow('数量要大于 0');
+    expect(() => addManualTrade(emptyDecisionLog(), { ...alertDraft, qty: 0 })).toThrow('数量要大于 0');
+  });
+
+  it('补上数量和价格之后金额才算出来，不拿空数量乘出 0', () => {
+    const store = addManualTrade(emptyDecisionLog(), alertDraft, new Date('2026-10-20T13:40:00Z'));
+    const id = store.trades[0].id;
+
+    const onlyPrice = applyTradeNote(store, id, { price: 67.41 }, new Date('2026-10-20T13:45:00Z'));
+    expect(onlyPrice.trades[0]).toMatchObject({ price: 67.41, qty: null, amount: null });
+
+    const filled = applyTradeNote(onlyPrice, id, {
+      qty: 30, price: 67.41, trigger: ['z_score'], prediction: { type: 'none' }, note: '按提醒减了一点',
+    }, new Date('2026-10-20T13:46:00Z'));
+    expect(filled.trades[0]).toMatchObject({ qty: 30, price: 67.41, status: 'in_progress' });
+    expect(filled.trades[0].amount).toBeCloseTo(2022.3, 4);
+  });
+
+  it('券商抓来的成交不许改数量', () => {
+    const store = captureTrades(emptyDecisionLog(), snapshot, { now: new Date('2026-10-16T08:00:00Z') });
+    const broker = store.trades.find((trade) => trade.broker === 'IBKR')!;
+
+    expect(() => applyTradeNote(store, broker.id, { qty: 999 })).toThrow('数量');
+  });
+});
+

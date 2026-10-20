@@ -420,3 +420,35 @@ describe('顶部实时状态条', () => {
   });
 });
 
+describe('从提醒直接行动', () => {
+  const zAlert = alert({
+    id: 'z1', category: 'zscore', symbol: 'UDOW', icon: '🔴',
+    text: '[盘中] UDOW $67.41 · Z 0.38 → 0.52 · 涨得更多，偏强', indicators: { level: 2 },
+  });
+
+  it('展开后才有「查看详情」和「我据此下单了」', () => {
+    const folded = render({ alerts: [zAlert], onOpenDetail: () => {}, onOrderDraft: () => {} });
+    expect(folded).not.toContain('查看详情');
+    expect(folded).not.toContain('我据此下单了');
+  });
+
+  it('侧边详情面板是只读的，复用斜率图表', () => {
+    const html = render({ alerts: [zAlert], detailSymbol: 'UDOW' });
+
+    expect(html).toContain('data-alert-detail-panel="UDOW"');
+    expect(html).toContain('只读详情');
+    expect(html).toContain('这里不下单');
+    expect(html).toContain('role="dialog"');
+  });
+
+  it('没有量化快照时说清楚看不了，不画空图', () => {
+    const html = render({ alerts: [zAlert], detailSymbol: 'UDOW' });
+    expect(html).toContain('量化快照还没读到');
+  });
+
+  it('生成草稿后给一句提示', () => {
+    const html = render({ alerts: [zAlert], draftNotice: '已在决策日志里生成 UDOW 的草稿，去补数量、价格和预判。' });
+    expect(html).toContain('已在决策日志里生成 UDOW 的草稿');
+  });
+});
+

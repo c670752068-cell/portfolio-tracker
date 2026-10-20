@@ -4,10 +4,14 @@ import {
   loadHiddenAlertIds, loadLastOpenedAt, loadReadAlertIds, saveHiddenAlertIds, saveLastOpenedAt,
   saveReadAlertIds, type AlertCategory, type AlertLogEntry,
 } from '../alertLog';
-import { alertAccent, alertHeadline, isLogOnly, partitionAlerts, pushStateIcon } from '../alertRowView';
+import {
+  alertAccent, alertHeadline, isLogOnly, partitionAlerts, pushStateIcon, suggestedSide,
+} from '../alertRowView';
+import { MaSlopeExplorer } from './MaSlopeExplorer';
 import {
   addCashFlow, addManualTrade, fetchDecisionLog, removeCashFlow, saveTradeNote,
-  type DecisionLog, type DecisionPrediction, type DecisionTrade, type DecisionTrigger,
+  type DecisionLog, type DecisionPrediction, type DecisionTrade, type DecisionTradeNote,
+  type DecisionTrigger,
 } from '../decisionLog';
 import { DecisionLogSection, ReturnsSection } from './DecisionJournal';
 import { fetchMaSlopeDashboard } from '../maSlopeQuery';
@@ -56,6 +60,12 @@ interface ViewProps {
   statusCards?: readonly StatusCard[];
   statusDataTime?: string | null;
   statusStale?: boolean;
+  snapshot?: QuantAnalysisSnapshot | null;
+  detailSymbol?: string | null;
+  onOpenDetail?: (symbol: string) => void;
+  onCloseDetail?: () => void;
+  onOrderDraft?: (entry: AlertLogEntry) => void;
+  draftNotice?: string;
   log: DecisionLog | null;
   qqqSeries: ClosePoint[];
   sgovSeries: ClosePoint[];
@@ -78,7 +88,8 @@ export function JournalPageView(props: ViewProps) {
     importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
     highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
     onMarkAlertRead, lastOpenedAt = null, statusCards: cards = [], statusDataTime = null,
-    statusStale = false,
+    statusStale = false, snapshot = null, detailSymbol = null, onOpenDetail, onCloseDetail,
+    onOrderDraft, draftNotice = '',
   } = props;
 
   return (
@@ -118,6 +129,9 @@ export function JournalPageView(props: ViewProps) {
 
       {tab === 'alerts' && (
         <AlertLogPanel
+          onOpenDetail={onOpenDetail}
+          onOrderDraft={onOrderDraft}
+          draftNotice={draftNotice}
           cards={cards}
           statusDataTime={statusDataTime}
           statusStale={statusStale}
@@ -150,6 +164,9 @@ export function JournalPageView(props: ViewProps) {
           onAddTrade={onAddTrade}
         />
       )}
+      {detailSymbol && (
+        <AlertDetailPanel symbol={detailSymbol} snapshot={snapshot} onClose={() => onCloseDetail?.()} />
+      )}
       {tab === 'returns' && (
         <ReturnsSection
           log={log}
@@ -166,12 +183,16 @@ export function JournalPageView(props: ViewProps) {
 }
 
 function AlertLogPanel({
+  onOpenDetail, onOrderDraft, draftNotice = '',
   cards = [], statusDataTime = null, statusStale = false,
   alerts, hiddenAlertIds, showHidden, categoryFilter, onCategoryFilterChange, onHideAlert, loading,
   importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
   highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
   onMarkAlertRead, lastOpenedAt = null,
 }: {
+  onOpenDetail?: (symbol: string) => void;
+  onOrderDraft?: (entry: AlertLogEntry) => void;
+  draftNotice?: string;
   cards?: readonly StatusCard[];
   statusDataTime?: string | null;
   statusStale?: boolean;
@@ -220,6 +241,8 @@ function AlertLogPanel({
       highlighted={highlighted.has(entry.id)}
       onToggle={() => open(entry)}
       onHide={onHideAlert && !hidden.has(entry.id) ? () => onHideAlert(entry.id) : undefined}
+      onOpenDetail={onOpenDetail}
+      onOrderDraft={onOrderDraft}
     />
   );
 
@@ -298,9 +321,60 @@ function AlertLogPanel({
           </>
         )}
       </div>
+      {draftNotice && <p role="status" className="text-[10px] font-semibold text-gain">{draftNotice}</p>}
       <p className="text-[10px] text-ink-muted">
         点一条看完整说明。时间是北京时间，鼠标放上去（手机上长按）显示美东时间。「隐藏已读」只藏在这台设备上，服务器记录不会删。
       </p>
+    </div>
+  );
+}
+
+/** 只读的侧边详情：复用决策页用的那套图表组件，不改决策页本身。 */
+function AlertDetailPanel({ symbol, snapshot, onClose }: {
+  symbol: string;
+  snapshot: QuantAnalysisSnapshot | null;
+  onClose: () => void;
+}) {
+  const [displayMode, setDisplayMode] = useState<'closed' | 'preview'>('closed');
+  const valuation = snapshot?.stock_forward_valuation?.symbols?.[symbol];
+  return (
+    <div
+      data-alert-detail-panel={symbol}
+      className="fixed inset-0 z-40 flex justify-end bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${symbol} 只读详情`}
+    >
+      <button type="button" aria-label="关闭详情" onClick={onClose} className="flex-1 cursor-default" />
+      <div className="h-full w-full max-w-md overflow-y-auto bg-surface-base p-3 shadow-xl sm:p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-bold">{symbol} · 只读详情</h3>
+          <button type="button" onClick={onClose} className="min-h-9 rounded-lg bg-neutral/30 px-3 text-xs font-semibold">
+            关闭
+          </button>
+        </div>
+        <p className="mt-1 text-[10px] text-ink-muted">只看不改：这里不下单，也不会改决策页的任何设置。</p>
+        {valuation && (
+          <p className="mt-2 text-[11px] tabular-nums text-ink-secondary">
+            远期 PE {valuation.current === null ? '暂无' : valuation.current.toFixed(2)}
+            {valuation.label ? ` · ${valuation.label}` : ''}
+            {valuation.as_of ? ` · ${valuation.as_of}` : ''}
+          </p>
+        )}
+        <div className="mt-2">
+          {snapshot ? (
+            <MaSlopeExplorer
+              snapshot={snapshot}
+              compact
+              selectedSymbol={symbol}
+              displayMode={displayMode}
+              onDisplayModeChange={setDisplayMode}
+            />
+          ) : (
+            <p className="text-xs text-ink-muted">量化快照还没读到，暂时看不了这个标的的图表。</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -312,13 +386,15 @@ const ACCENT_CLASS = {
 } as const;
 
 function AlertRow({
-  entry, expanded, highlighted, onToggle, onHide,
+  entry, expanded, highlighted, onToggle, onHide, onOpenDetail, onOrderDraft,
 }: {
   entry: AlertLogEntry;
   expanded: boolean;
   highlighted: boolean;
   onToggle: () => void;
   onHide?: () => void;
+  onOpenDetail?: (symbol: string) => void;
+  onOrderDraft?: (entry: AlertLogEntry) => void;
 }) {
   const accent = alertAccent(entry);
   const push = pushStateIcon(entry);
@@ -378,6 +454,28 @@ function AlertRow({
             {entry.symbol ? ` · ${entry.symbol}` : ''} · 推送 {push.label}
           </p>
           {entry.voided && <p className="text-white/45">{voidedMark}</p>}
+          {entry.symbol && (onOpenDetail || onOrderDraft) && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {onOpenDetail && (
+                <button
+                  type="button"
+                  onClick={() => onOpenDetail(entry.symbol as string)}
+                  className="min-h-8 rounded-lg bg-white/15 px-2.5 text-[11px] font-semibold text-white"
+                >
+                  查看详情
+                </button>
+              )}
+              {onOrderDraft && !entry.voided && (
+                <button
+                  type="button"
+                  onClick={() => onOrderDraft(entry)}
+                  className="min-h-8 rounded-lg bg-emerald-600 px-2.5 text-[11px] font-semibold text-white"
+                >
+                  我据此下单了
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </li>
@@ -400,6 +498,8 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
   const [readAlertIds, setReadAlertIds] = useState<string[]>(() => loadReadAlertIds());
   // 进页面那一刻先把上次打开时间读出来，再写上这一次：比它新的就是「新提醒」。
   const [lastOpenedAt] = useState<string | null>(() => loadLastOpenedAt());
+  const [detailSymbol, setDetailSymbol] = useState<string | null>(null);
+  const [draftNotice, setDraftNotice] = useState('');
   const [quotes, setQuotes] = useState<StatusQuotes | null>(null);
   const [quotesAt, setQuotesAt] = useState<number | null>(null);
   const [statusNow, setStatusNow] = useState(() => Date.now());
@@ -540,6 +640,31 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
   }), [alerts, cnnSnapshot.at, cnnSnapshot.score, quotes, series.qqq, statusNow]);
   const statusStale = quotesAt === null || statusNow - quotesAt > STATUS_STALE_MS;
 
+  // 「我据此下单了」：在决策日志里占一行草稿，关联这条提醒，数量价格留给用户补。
+  function orderDraft(entry: AlertLogEntry) {
+    if (!entry.symbol) return;
+    addManualTrade(decisionEndpoint, {
+      trade_time: new Date().toISOString(),
+      symbol: entry.symbol,
+      side: suggestedSide(entry),
+      draft: true,
+      alert_id: entry.id,
+      alert_text: entry.text.split('\n')[0].slice(0, 500),
+    }, revision.current)
+      .then((next) => {
+        revision.current = next.revision;
+        setLog(next);
+        setError('');
+        setDraftNotice(`已在决策日志里生成 ${entry.symbol} 的草稿，去补数量、价格和预判。`);
+        setTab('decisions');
+      })
+      .catch((reason: unknown) => {
+        const conflict = reason as { log?: DecisionLog; message?: string };
+        if (conflict?.log) { revision.current = conflict.log.revision; setLog(conflict.log); }
+        setError(conflict?.message || '草稿生成失败，请重试');
+      });
+  }
+
   function apply(action: Promise<DecisionLog>) {
     action
       .then((next) => { revision.current = next.revision; setLog(next); setError(''); })
@@ -589,6 +714,12 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
       statusCards={cards}
       statusDataTime={quotes?.time ?? null}
       statusStale={statusStale}
+      snapshot={snapshot}
+      detailSymbol={detailSymbol}
+      onOpenDetail={setDetailSymbol}
+      onCloseDetail={() => setDetailSymbol(null)}
+      onOrderDraft={orderDraft}
+      draftNotice={draftNotice}
       readAlertIds={readAlertIds}
       onMarkAlertRead={markAlertRead}
       lastOpenedAt={lastOpenedAt}
@@ -600,7 +731,7 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
       error={error}
       loading={loading}
       onHideAlert={hideAlert}
-      onSaveNote={(trade, note) => apply(saveTradeNote(decisionEndpoint, trade.id, note, revision.current))}
+      onSaveNote={(trade, note) => apply(saveTradeNote(decisionEndpoint, trade.id, note as DecisionTradeNote, revision.current))}
       onAddTrade={(draft) => apply(addManualTrade(decisionEndpoint, draft, revision.current))}
       onAddFlow={(draft) => apply(addCashFlow(decisionEndpoint, draft, revision.current))}
       onRemoveFlow={(id) => apply(removeCashFlow(decisionEndpoint, id, revision.current))}
