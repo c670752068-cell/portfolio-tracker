@@ -1470,21 +1470,25 @@ async function runTradeDateRepairCycle() {
 async function runReferencePriceFixCycle() {
   try {
     const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    // 只有「按真实收盘价重算」这一类要行情；Z 措辞和按新阈值作废不需要，
+    // 所以取不到标的也要继续往下跑。
     const symbols = [...new Set((store.alerts || [])
       .filter((item) => item.voided !== true && item.corrected !== true
         && item.session && item.session !== 'regular'
         && String(item.dedupe_key || '').startsWith('big-move:'))
       .map((item) => String(item.symbol || '').toUpperCase())
       .filter(Boolean))];
-    if (symbols.length === 0) return;
     const series = new Map();
     for (const symbol of symbols) series.set(symbol, await closedDailySeries(symbol));
     const next = applyReferencePriceFixes(store, { seriesFor: (symbol) => series.get(symbol) || [] });
     if (next !== store) {
       await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
-      const voided = next.alerts.filter((item) => item.voided_reason === '参考价错误').length;
-      const corrected = next.alerts.filter((item) => item.corrected === true).length;
-      console.warn(`reference price fixes: ${voided} voided, ${corrected} corrected`);
+      const counts = (reason) => next.alerts.filter((item) => item.voided_reason === reason).length;
+      console.warn(
+        `alert log fixes: ${counts('参考价错误')} voided by reference price, `
+        + `${counts('按新阈值不再提醒')} voided by new thresholds, `
+        + `${next.alerts.filter((item) => item.corrected === true).length} corrected`,
+      );
     }
   } catch (error) {
     console.warn(`reference price fix failed: ${error instanceof Error ? error.message : String(error)}`);

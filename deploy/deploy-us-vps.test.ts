@@ -291,6 +291,17 @@ describe('提醒效果上线所需', () => {
       .toBeLessThan(gateway.lastIndexOf('await runAlertOutcomesCycle();'));
   });
 
+  it('修旧账那一轮不能因为没有要重算的行情就早退', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    const cycle = gateway.slice(
+      gateway.indexOf('async function runReferencePriceFixCycle'),
+      gateway.indexOf('// 提醒效果平时跟着每天的收盘审查算'),
+    );
+    // Z 措辞和「按新阈值不再提醒」不需要行情，取不到标的也要继续跑
+    expect(cycle).not.toContain('if (symbols.length === 0) return;');
+    expect(cycle).toContain('applyReferencePriceFixes(');
+  });
+
   it('修参考价的模块要上传并语法检查', async () => {
     const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
     expect(script).toContain('deploy/fix-reference-price-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/fix-reference-price-alerts.mjs"');

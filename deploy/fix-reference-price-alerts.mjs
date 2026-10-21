@@ -1,5 +1,6 @@
 import { etParts } from './market-session.mjs';
 import { normalizeAlertLog } from './alert-log.mjs';
+import { Z_NEAR_ZONE, bigMoveLimitFor } from './realtime-alerts.mjs';
 
 // 修旧账：非常规时段（盘前 / 盘后 / 夜盘）的「较昨收」用错了参考价——
 // Yahoo 的 chartPreviousClose 在这些时段指向「上一个交易日的再前一天」。
@@ -7,6 +8,8 @@ import { normalizeAlertLog } from './alert-log.mjs';
 // 只加标记、只改数字，原文一律保留在 corrected_from 里，一行都不删。
 export const REFERENCE_FIX_REASON = '参考价错误';
 export const Z_CACHE_FIX_REASON = '盘前/盘后 Z 用了隔夜缓存，重放了上一个交易日的穿越';
+export const Z_WORDING_FIX_REASON = 'Z 措辞按 1.2 / 1.5 分档';
+export const NEW_THRESHOLD_VOID_REASON = '按新阈值不再提醒';
 // 当时在用的阈值：个股 ±5%，QQQ ±2%。按当时的规则判断这条提醒该不该发。
 const BIG_MOVE_LIMIT = 5;
 const QQQ_BIG_MOVE_LIMIT = 2;
@@ -44,13 +47,40 @@ function limitFor(symbol) {
 }
 
 /** 按真实收盘价重算，给出每条该怎么处理。 */
-export function planReferencePriceFixes(store, { seriesFor }) {
+export function planReferencePriceFixes(store, { seriesFor, newLimitFor = bigMoveLimitFor }) {
   const plans = [];
   for (const raw of record(store).alerts || []) {
     const entry = record(raw);
-    if (entry.voided === true || entry.corrected === true) continue;
-    if (entry.session === 'regular' || !entry.session) continue;
+    if (entry.voided === true) continue;
     const key = String(entry.dedupe_key || '');
+
+    // 已经改正过的大涨大跌：按现在的阈值再看一次（杠杆 ETF 已放大到 ±8% / ±12%），
+    // 够不上就标作废，但原文和更正记录都留着。
+    if (entry.corrected === true && key.startsWith('big-move:')) {
+      const magnitude = Math.abs(finite(entry.value) ?? 0);
+      if (magnitude > 0 && magnitude < newLimitFor(entry.symbol)) {
+        plans.push({ id: String(entry.id), action: 'void', reason: NEW_THRESHOLD_VOID_REASON });
+      }
+      continue;
+    }
+    if (entry.corrected === true) continue;
+
+    // 旧的 Z 措辞：|Z| 不到 1.2 却写着「接近买入区 / 接近卖出区」，按新规则改成偏强偏弱。
+    if (key.startsWith('z-cross:') && /接近(买入|卖出)区/u.test(String(entry.text || ''))) {
+      const magnitude = Math.abs(finite(entry.value) ?? 0);
+      if (magnitude > 0 && magnitude < Z_NEAR_ZONE) {
+        const down = /跌得更深/u.test(String(entry.text || ''));
+        plans.push({
+          id: String(entry.id),
+          action: 'correct',
+          reason: Z_WORDING_FIX_REASON,
+          text: String(entry.text).replace(/接近(买入|卖出)区\s*[+-]?[\d.]+/u, down ? '偏弱' : '偏强'),
+        });
+        continue;
+      }
+    }
+
+    if (entry.session === 'regular' || !entry.session) continue;
 
     if (key.startsWith('z-cross:')) {
       plans.push({ id: String(entry.id), action: 'void', reason: Z_CACHE_FIX_REASON });
@@ -90,7 +120,8 @@ export function applyReferencePriceFixes(store, { seriesFor, now = new Date() } 
     return {
       ...item,
       text: plan.text,
-      value: plan.actualPct,
+      // 只改措辞的那种不动数值
+      value: plan.actualPct === undefined ? item.value : plan.actualPct,
       corrected: true,
       corrected_reason: plan.reason,
       corrected_at: now.toISOString(),

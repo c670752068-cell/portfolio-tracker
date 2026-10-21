@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AlertLogEntry } from './alertLog';
 import {
-  HEADLINE_MAX, alertAccent, alertHeadline, dayLabel, groupTimeline, isLogOnly, partitionAlerts,
+  alertAccent, alertHeadline, dayLabel, groupTimeline, isLogOnly, partitionAlerts,
   pushStateIcon, suggestedSide,
 } from './alertRowView';
 
@@ -30,15 +30,17 @@ describe('手机上每条提醒只占一行', () => {
     expect(alertHeadline(entry({
       category: 'valuation', symbol: 'AVGO', icon: '🔔',
       text: '[盘前] 🟢 AVGO · 低估值 · $333.88 · 远期 PE 22.60；按计划分批买入或继续持有。',
-    }))).toBe('🟢 AVGO · 低估值 · $333.88…');
+    }))).toBe('🟢 AVGO · 低估值 · $333.88 · 远期 PE 22.60');
   });
 
-  it('再长也不会超过一行的字数上限', () => {
+  it('不按字数截断：整行交给 CSS 按实际宽度省略，宽屏上能看全', () => {
     const headline = alertHeadline(entry({
+      symbol: null,
       text: '[盘中] 多指标共振：QQQ -6.2% · VIX +33% · CNN 18 · 以上按收盘价统计，今天还没收盘',
     }));
-    expect(headline.length).toBeLessThanOrEqual(HEADLINE_MAX + 1);
-    expect(headline.endsWith('…')).toBe(true);
+
+    expect(headline).toBe('多指标共振：QQQ -6.2% · VIX +33% · CNN 18 · 以上按收盘价统计，今天还没收盘');
+    expect(headline.endsWith('…')).toBe(false);
   });
 
   it('带括号的回撤原文不被箭头规则切坏', () => {
@@ -163,7 +165,7 @@ describe('单行摘要要保住标的和关键数字', () => {
     expect(alertHeadline(entry({
       symbol: 'NKE', icon: '🔔',
       text: '[盘前] 🟢 NKE · 可买 · $37.45 · 自身深度位达标；斜率 +5.20%（强势上涨，仅风险提示）',
-    }))).toBe('🟢 NKE · 可买 · $37.45 · 自身深…');
+    }))).toBe('🟢 NKE · 可买 · $37.45 · 自身深度位达标');
   });
 
   it('标的写在后半句时，把那一段提到最前面', () => {
@@ -177,12 +179,12 @@ describe('单行摘要要保住标的和关键数字', () => {
     expect(alertHeadline(entry({
       symbol: 'AVL', icon: '🟢',
       text: '[盘中] Z-Score -1.42 阈值提醒 · 1 个标的 · 首次进入负值提醒区',
-    }))).toBe('AVL · Z-Score -1.42 阈值提醒…');
+    }))).toBe('AVL · Z-Score -1.42 阈值提醒 · 1 个标的 · 首次进入负值提醒区');
   });
 
-  it('截断之后不会留下孤零零的右括号', () => {
+  it('括号里的内容被提取出来之后不会留下孤零零的括号', () => {
     const headline = alertHeadline(entry({
-      text: '某条很长很长的提醒 · 说明（这里是括号里的内容，还有更多）',
+      text: '某条很长很长的提醒 · 说明（这里是括号里的内容 1 个，还有更多）',
     }));
     expect(headline.includes('）') && !headline.includes('（')).toBe(false);
   });

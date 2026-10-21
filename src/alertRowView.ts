@@ -2,9 +2,6 @@
 // 这里全是纯函数，和 React 无关，方便单测。
 import { pushStateLabel, type AlertLogEntry } from './alertLog';
 
-/** 一行能放下的字数（手机 390px、11px 等宽字体实测）。 */
-export const HEADLINE_MAX = 26;
-
 const SESSION_TAG = /^\s*\[[^\]]*\]\s*/u;
 const PUSH_ICONS: Readonly<Record<string, string>> = {
   sent: '📲', quiet_hours: '🌙', failed: '❌', pending_retry: '⏳', dry_run: '🧪',
@@ -48,9 +45,7 @@ export function alertHeadline(entry: Pick<AlertLogEntry, 'text' | 'symbol'>): st
     if (at > 0) parts.unshift(...parts.splice(at, 1));
     else if (at < 0) parts.unshift(symbol);
   }
-  const compact = parts.join(' · ');
-  if (compact.length <= HEADLINE_MAX) return compact;
-  return `${compact.slice(0, HEADLINE_MAX).replace(/[\s·→（(、，,]+$/u, '')}…`;
+  return parts.join(' · ');
 }
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
