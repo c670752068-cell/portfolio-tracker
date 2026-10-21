@@ -206,6 +206,19 @@ describe('推送状态和作废标记', () => {
     expect(html).toContain('TSLA $353.18 ≥ 卖出线 $31.41');
   });
 
+  it('作废原因很长时也不撑破一行：标记本身可以压缩并省略，全文在提示里', () => {
+    const reason = '卖出线未过合理性校验（$31.41 远低于现价 $353.18，疑似估值口径错误）';
+    const html = render({
+      alerts: [alert({ text: 'TSLA $353.18 ≥ 卖出线 $31.41', voided: true, voided_reason: reason })],
+    });
+    const markEnd = html.indexOf('[已作废');
+    const mark = html.slice(html.lastIndexOf('<span', markEnd), markEnd);
+
+    expect(mark).toContain('truncate');
+    expect(mark).not.toContain('shrink-0');
+    expect(html).toContain(`title="已作废 · ${reason}"`);
+  });
+
   it('零碎持仓那几条标「已作废 · 零碎持仓」', () => {
     const html = render({
       alerts: [alert({

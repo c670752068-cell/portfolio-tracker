@@ -481,7 +481,14 @@ function AlertRow({
           <span className={`min-w-0 flex-1 truncate ${entry.voided ? 'text-white/40 line-through' : ''}`}>
             {alertHeadline(entry)}
           </span>
-          {entry.voided && <span className="shrink-0 text-white/45">{voidedMark}</span>}
+          {entry.voided && (
+            <span
+              title={`已作废${entry.voided_reason ? ` · ${entry.voided_reason}` : ''}`}
+              className="min-w-0 max-w-[45%] truncate text-white/45"
+            >
+              {voidedMark}
+            </span>
+          )}
           {entry.backfilled && <span className="shrink-0 text-white/45">[回填]</span>}
           <span className="shrink-0" title={push.label} aria-label={`推送状态：${push.label}`}>{push.icon}</span>
         </button>
