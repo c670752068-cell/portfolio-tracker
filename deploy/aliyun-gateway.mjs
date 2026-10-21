@@ -1443,6 +1443,9 @@ void voidDustRecords(PORTFOLIO_ALERTS_ROOT)
     }
   })
   .catch((error) => console.warn(`void dust records failed: ${error instanceof Error ? error.message : String(error)}`));
+// 提醒效果平时跟着每天的收盘审查算；刚上线这一次先补算一份，免得分页空着等一天。
+// 延后一分钟再跑，不和启动时的其他任务抢行情接口。
+setTimeout(() => void runAlertOutcomesCycle(), 60_000).unref?.();
 server.on('close', () => {
   clearInterval(realtimeMonitorTimer);
   clearInterval(pushRetryTimer);

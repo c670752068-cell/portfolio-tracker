@@ -282,5 +282,10 @@ describe('提醒效果上线所需', () => {
     expect(gateway).toContain('await runAlertOutcomesCycle();');
     expect(gateway).toContain('handleAlertOutcomesRoute');
   });
+
+  it('刚上线时也先算一份，不用等到当天收盘审查', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toMatch(/setTimeout\(\(\) => void runAlertOutcomesCycle\(\)/);
+  });
 });
 
