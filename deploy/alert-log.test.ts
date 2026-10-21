@@ -296,6 +296,22 @@ describe('推送结果回填到日志那一行', () => {
   });
 });
 
+describe('从事件键里认标的', () => {
+  it('第二段不是代码时往后找一段（z-extreme / z-breakout 这类）', () => {
+    expect(symbolFromEventKey({ key: 'z-extreme:AVL:2026-10-16:negative' })).toBe('AVL');
+    expect(symbolFromEventKey({ key: 'z-breakout:MAGS:2026-10-19:up' })).toBe('MAGS');
+    expect(symbolFromEventKey({ key: 'valuation:AVGO:low' })).toBe('AVGO');
+    expect(symbolFromEventKey({ key: 'cnn-floor:20' })).toBeNull();
+  });
+
+  it('只有 dedupeKey 的事件（Z 阈值提醒）也能认出标的；一次多个标的就不认', () => {
+    expect(symbolFromEventKey({ dedupeKey: 'z-extreme:AVL:2026-10-16:negative' })).toBe('AVL');
+    expect(symbolFromEventKey({
+      dedupeKey: 'z-extreme:AVL:2026-10-16:negative|z-extreme:NAIL:2026-10-16:negative',
+    })).toBeNull();
+  });
+});
+
 describe('汇总行', () => {
   it('把合并进来的明细原样存下来，读日志时还能展开', () => {
     const next = appendAlerts(emptyAlertLog(), [{

@@ -42,8 +42,12 @@ export function alertHeadline(entry: Pick<AlertLogEntry, 'text' | 'symbol'>): st
     .map((part) => part.trim())
     .filter(Boolean);
   const symbol = String(entry.symbol || '');
-  // 原文里没写标的代码时补在最前面，不然一行看不出是谁
-  if (symbol && !parts.some((part) => part.includes(symbol))) parts.unshift(symbol);
+  if (symbol) {
+    const at = parts.findIndex((part) => part.includes(symbol));
+    // 标的写在后半句时提到最前面，免得被截断截掉；原文没写就补一个
+    if (at > 0) parts.unshift(...parts.splice(at, 1));
+    else if (at < 0) parts.unshift(symbol);
+  }
   const compact = parts.join(' · ');
   if (compact.length <= HEADLINE_MAX) return compact;
   return `${compact.slice(0, HEADLINE_MAX).replace(/[\s·→（(、，,]+$/u, '')}…`;

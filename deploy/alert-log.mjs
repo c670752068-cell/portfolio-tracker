@@ -138,7 +138,10 @@ export function alertCategoryForEvent(event) {
 /** 推送事件自己不带标的，标的写在 key 的第二段里（buy:NKE:…、valuation:AVGO:low）。 */
 export function symbolFromEventKey(event) {
   if (typeof event?.symbol === 'string' && event.symbol) return event.symbol.toUpperCase();
-  const candidate = String(String(event?.key || '').split(':')[1] || '').toUpperCase();
+  // Z 阈值提醒这类事件没有 key，只有 dedupeKey；一次提醒多个标的时不猜。
+  const key = String(event?.key || event?.dedupeKey || '');
+  if (key.includes('|')) return null;
+  const candidate = String(key.split(':')[1] || '').toUpperCase();
   return /^[A-Z][A-Z0-9.]{0,5}$/.test(candidate) ? candidate : null;
 }
 

@@ -166,6 +166,13 @@ describe('单行摘要要保住标的和关键数字', () => {
     }))).toBe('🟢 NKE · 可买 · $37.45 · 自身深…');
   });
 
+  it('标的写在后半句时，把那一段提到最前面', () => {
+    expect(alertHeadline(entry({
+      symbol: 'AVL', icon: '🔔',
+      text: '[盘后] Z-Score −1.4 阈值提醒 · 1 个标的 · AVL：Z -1.189 → -1.521，首次进入负值提醒区；2026-10-16 完整收盘确认。',
+    }))).toContain('AVL：Z -1.521');
+  });
+
   it('原文里没有标的代码时，前面补上标的', () => {
     expect(alertHeadline(entry({
       symbol: 'AVL', icon: '🟢',
