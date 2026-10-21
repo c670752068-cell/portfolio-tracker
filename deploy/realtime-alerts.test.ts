@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT, bigMoveAlert, cnnAlerts, cnnTierStates, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
+  QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT, bigMoveAlert, bigMoveLimitFor, cnnAlerts, cnnTierStates, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
 
 describe('实时监控的节奏与时段', () => {
@@ -185,6 +185,30 @@ describe('盘中 Z-Score 穿档', () => {
 });
 
 describe('个股大幅波动与多指标共振', () => {
+  it('杠杆 ETF 按倍数放大阈值：2 倍 ±8%、3 倍 ±12%', () => {
+    expect(bigMoveLimitFor('TSLL')).toBe(8);
+    expect(bigMoveLimitFor('AVL')).toBe(8);
+    expect(bigMoveLimitFor('SOXL')).toBe(12);
+    expect(bigMoveLimitFor('TQQQ')).toBe(12);
+    expect(bigMoveLimitFor('NVDA')).toBe(5);
+    expect(bigMoveLimitFor('QQQ')).toBe(2);
+
+    // SOXL 涨 5% 不再报，涨 12.5% 才报
+    expect(bigMoveAlert({ symbol: 'SOXL', price: 103.59, changePercent: 0.05, held: true, session: 'regular', firedKeys: new Set(), day: '2026-10-20' })).toBeNull();
+    const big = bigMoveAlert({ symbol: 'SOXL', price: 110, changePercent: 0.125, held: true, session: 'regular', firedKeys: new Set(), day: '2026-10-20' });
+    expect(big).toMatchObject({ threshold: 12 });
+
+    // 2 倍的 TSLL：5% 不报，8.5% 报
+    expect(bigMoveAlert({ symbol: 'TSLL', price: 9.5, changePercent: 0.05, held: true, session: 'regular', firedKeys: new Set(), day: '2026-10-20' })).toBeNull();
+    expect(bigMoveAlert({ symbol: 'TSLL', price: 9.5, changePercent: 0.085, held: true, session: 'regular', firedKeys: new Set(), day: '2026-10-20' })).toMatchObject({ threshold: 8 });
+  });
+
+  it('阈值可以从配置文件覆盖', () => {
+    expect(bigMoveLimitFor('SOXL', { leveraged3xPct: 20 })).toBe(20);
+    expect(bigMoveLimitFor('NVDA', { defaultPct: 7 })).toBe(7);
+    expect(bigMoveLimitFor('ZZZZ', { leveraged2x: ['ZZZZ'] })).toBe(8);
+  });
+
   it('持仓跌超 5% 算普通，非持仓只记录；QQQ 用 2%', () => {
     expect(STOCK_BIG_MOVE_PCT).toBe(5);
     expect(QQQ_BIG_MOVE_PCT).toBe(2);

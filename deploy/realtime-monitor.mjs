@@ -46,6 +46,8 @@ export async function runRealtimeTick({
   confirmation = false,
   // 同一标的、同一类提醒的冷却时间；0 表示不限制。重要提醒和真的推出去的那条不受限。
   cooldownMs = 0,
+  // 「大涨大跌」的阈值配置（杠杆 ETF 按倍数放大），来自配置文件。
+  bigMove = {},
 }) {
   // 去重用「美东交易日」，不是日历日期：周六重新开一天，不该把周五记过的再记一遍。
   const day = tradingDate(now);
@@ -87,7 +89,7 @@ export async function runRealtimeTick({
     if (symbol === 'VIX') continue;
     const move = bigMoveAlert({
       symbol, price: quote?.price, changePercent: quote?.changePercent,
-      held: held.has(symbol), session, firedKeys, day,
+      held: held.has(symbol), session, firedKeys, day, bigMove,
     });
     if (move) alerts.push(move);
   }

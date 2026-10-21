@@ -8,6 +8,7 @@ export const NOISE_CONFIG_FILE = 'alert-noise.config.json';
 export const DEFAULT_NOISE_CONFIG = Object.freeze({
   cooldownMinutes: 60,
   importantBypassesCooldown: true,
+  bigMove: {},
 });
 
 // 状态类事件的 key 取前几段算「同一个状态」：
@@ -30,6 +31,8 @@ export function loadNoiseConfig(raw) {
     importantBypassesCooldown: typeof value.importantBypassesCooldown === 'boolean'
       ? value.importantBypassesCooldown
       : DEFAULT_NOISE_CONFIG.importantBypassesCooldown,
+    // 「大涨大跌」的阈值原样传给判定那一侧，缺什么那边用默认值
+    bigMove: record(value.bigMove),
   };
 }
 

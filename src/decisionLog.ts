@@ -55,6 +55,11 @@ export interface DecisionTrade {
   draft?: boolean;
   alert_id?: string | null;
   alert_text?: string | null;
+  /** 成交日期按券商对账日推定时为 true，原时间留在 trade_time_original。 */
+  trade_date_estimated?: boolean;
+  trade_date_basis?: string | null;
+  trade_time_original?: string | null;
+  synced_at?: string | null;
 }
 
 export interface DecisionCashFlow { id: string; date: string; amount: number; note: string; created_at: string }

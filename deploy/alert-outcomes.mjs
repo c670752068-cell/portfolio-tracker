@@ -10,6 +10,8 @@ export const ALERT_OUTCOMES_FILE = 'alert-outcomes.json';
 export const ALERT_OUTCOMES_VERSION = 1;
 export const OUTCOME_HORIZONS = [1, 5, 20];
 export const MIN_RELIABLE_SAMPLES = 10;
+// 「可买 / 低估值」连续多天还在同一状态只算第一次：间隔超过这么多天才算新的一次。
+export const VALUATION_RUN_GAP_DAYS = 7;
 export const UNRELIABLE_NOTE = '样本太少，结论不可靠';
 
 // 统计里的九类。没列进来的（0.5 档穿越、回升、持仓变化、系统提醒）不统计。
@@ -115,6 +117,8 @@ export function computeAlertOutcomes(store, { seriesFor }) {
     outcomes[String(entry.id)] = {
       kind,
       symbol,
+      // 状态类提醒的「同一件事」标识：统计时同一个 run_key 连续多天只算第一次
+      run_key: runKeyOf(entry, kind),
       base_date: own.baseDate,
       base_close: own.base,
       backfilled: entry.backfilled === true,
@@ -125,6 +129,40 @@ export function computeAlertOutcomes(store, { seriesFor }) {
     };
   }
   return outcomes;
+}
+
+/** 状态类提醒（可买 / 低估值）的「同一件事」标识，取事件键里的 kind:标的:档位。 */
+function runKeyOf(entry, kind) {
+  if (kind !== 'valuation_buy') return null;
+  const parts = String(record(entry).dedupe_key || '').split(':');
+  const start = parts.findIndex((part) => part === 'valuation' || part === 'buy');
+  if (start < 0) return null;
+  const take = parts[start] === 'valuation' ? 3 : 2;
+  return parts.slice(start, start + take).join(':');
+}
+
+/** 同一个 run_key 连续多天只保留第一条；隔得够久再出现算新的一次。 */
+function withoutConsecutiveRuns(items) {
+  const byRun = new Map();
+  for (const item of items) {
+    const key = item.run_key;
+    if (!key) continue;
+    if (!byRun.has(key)) byRun.set(key, []);
+    byRun.get(key).push(item);
+  }
+  const dropped = new Set();
+  for (const group of byRun.values()) {
+    const sorted = [...group].sort((left, right) => String(left.base_date).localeCompare(String(right.base_date)));
+    let previous = null;
+    for (const item of sorted) {
+      const days = previous === null
+        ? Infinity
+        : (Date.parse(`${item.base_date}T00:00:00Z`) - Date.parse(`${previous}T00:00:00Z`)) / 86_400_000;
+      if (Number.isFinite(days) && days <= VALUATION_RUN_GAP_DAYS) dropped.add(item);
+      else previous = item.base_date;
+    }
+  }
+  return items.filter((item) => !dropped.has(item));
 }
 
 function average(values) {
@@ -143,9 +181,11 @@ export function summarizeOutcomes(outcomes) {
     groups.get(kind).push(outcome);
   }
   return OUTCOME_KINDS.filter((kind) => groups.has(kind)).map((kind) => {
-    const items = groups.get(kind);
+    const items = withoutConsecutiveRuns(groups.get(kind));
     const settled = items.filter((item) => finite(item.changes?.d20) !== null);
     const samples = items.length;
+    // 这几类看的就是 QQQ 自己，「对 QQQ 超额」恒等于 0，没有意义，留空让页面显示「—」
+    const selfBenchmark = items.every((item) => String(item.symbol || '').toUpperCase() === 'QQQ');
     return {
       kind,
       label: OUTCOME_KIND_LABELS[kind],
@@ -157,9 +197,10 @@ export function summarizeOutcomes(outcomes) {
         d20: average(items.map((item) => item.changes?.d20)),
       },
       excess: {
-        d5: average(items.map((item) => item.excess?.d5)),
-        d20: average(items.map((item) => item.excess?.d20)),
+        d5: selfBenchmark ? null : average(items.map((item) => item.excess?.d5)),
+        d20: selfBenchmark ? null : average(items.map((item) => item.excess?.d20)),
       },
+      selfBenchmark,
       winRate: settled.length === 0 ? null : settled.filter((item) => item.changes.d20 > 0).length / settled.length,
       reliable: samples >= MIN_RELIABLE_SAMPLES,
       note: samples >= MIN_RELIABLE_SAMPLES ? '' : UNRELIABLE_NOTE,

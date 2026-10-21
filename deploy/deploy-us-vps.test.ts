@@ -298,3 +298,14 @@ describe('提醒效果上线所需', () => {
   });
 });
 
+describe('券商同步提醒上线所需', () => {
+  it('模块要上传、语法检查，并接进快照处理', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/broker-health.mjs "${SERVER}:${REMOTE_RELEASE_APP}/broker-health.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/broker-health.mjs'");
+
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('brokerHealthReadings(snapshot)');
+  });
+});
+

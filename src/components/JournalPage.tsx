@@ -391,7 +391,10 @@ function AlertOutcomesSection({ outcomes }: { outcomes: AlertOutcomesPayload | n
                 <div><dt className="text-ink-muted">5 日均涨跌</dt><dd>{horizonText(row.avg.d5)}</dd></div>
                 <div><dt className="text-ink-muted">20 日均涨跌</dt><dd>{horizonText(row.avg.d20)}</dd></div>
                 <div><dt className="text-ink-muted">20 日胜率</dt><dd>{winRateText(row.winRate)}</dd></div>
-                <div><dt className="text-ink-muted">20 日超额（对 QQQ）</dt><dd>{horizonText(row.excess.d20)}</dd></div>
+                <div>
+                  <dt className="text-ink-muted">20 日超额（对 QQQ）</dt>
+                  <dd>{row.selfBenchmark ? '—' : horizonText(row.excess.d20)}</dd>
+                </div>
               </dl>
               {row.note && <p className="mt-1 text-[10px] font-semibold text-trim">{row.note}</p>}
             </li>
@@ -576,7 +579,7 @@ function AlertRow({
             <p data-alert-outcome={entry.id} className="text-white/60">
               提醒之后（{outcome.symbol} · 基准收盘 {outcome.base_date}）：
               1 天 {horizonText(outcome.changes.d1)} · 5 天 {horizonText(outcome.changes.d5)} · 20 天 {horizonText(outcome.changes.d20)}
-              {' '}· 相对 QQQ 20 天 {horizonText(outcome.excess.d20)}
+              {' '}· 相对 QQQ 20 天 {outcome.symbol === 'QQQ' ? '—' : horizonText(outcome.excess.d20)}
             </p>
           )}
           {entry.symbol && (onOpenDetail || onOrderDraft) && (

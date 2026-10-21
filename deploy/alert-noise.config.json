@@ -1,4 +1,12 @@
 {
   "cooldownMinutes": 60,
-  "importantBypassesCooldown": true
+  "importantBypassesCooldown": true,
+  "bigMove": {
+    "defaultPct": 5,
+    "qqqPct": 2,
+    "leveraged2xPct": 8,
+    "leveraged3xPct": 12,
+    "leveraged2x": ["TSLL", "AVL", "MSFU", "METU", "NVDL", "NVDU", "AAPU", "QLD", "SSO"],
+    "leveraged3x": ["TQQQ", "SPXL", "UPRO", "UDOW", "FNGU", "FAS", "SOXL", "TECL", "TNA", "NAIL"]
+  }
 }

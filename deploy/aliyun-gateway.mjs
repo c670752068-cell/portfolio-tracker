@@ -38,6 +38,7 @@ import {
   createDecisionLogRoute,
   dropStoredSnapshotArtifacts,
   readDecisionLog,
+  repairTradeDates,
   writeDecisionLog,
 } from './decision-log.mjs';
 import { resolveDecisionLog, resolveSymbols } from './decision-log-resolve.mjs';
@@ -60,6 +61,7 @@ import {
 } from './alert-outcomes.mjs';
 import { voidDustRecords } from './void-dust-records.mjs';
 import { applyReferencePriceFixes } from './fix-reference-price-alerts.mjs';
+import { brokerHealthReadings } from './broker-health.mjs';
 import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 import { SESSION_CADENCE_MS, sessionLabel } from './realtime-alerts.mjs';
 import { feedStateReading, intradayZPreview, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
@@ -982,6 +984,8 @@ async function captureAlertsFromSnapshot(snapshot) {
           : `${symbol} 卖出军令退回等待`,
       });
     }
+    // 券商同步失败也写一条系统提醒；状态翻转才记，不会天天刷屏。
+    readings.push(...brokerHealthReadings(snapshot));
     const next = applyStateAlerts(withDrawdowns, readings);
     if (next !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
   } catch (error) {
@@ -1386,6 +1390,7 @@ async function runRealtimeMonitorCycle() {
       quiet,
       dispatch: (event) => notificationControl.dispatch(event),
       cooldownMs: NOISE_CONFIG.cooldownMinutes * 60_000,
+      bigMove: NOISE_CONFIG.bigMove,
     });
     if (cnnScore !== null) REALTIME_STATE.lastCnn = cnnScore;
     if (result.store !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, result.store);
@@ -1444,6 +1449,22 @@ void voidDustRecords(PORTFOLIO_ALERTS_ROOT)
     }
   })
   .catch((error) => console.warn(`void dust records failed: ${error instanceof Error ? error.message : String(error)}`));
+// 旧账三：成交时间落在非交易日的（同步时间当成了成交时间），挪到上一个交易日
+// 的收盘并标明「按对账日推定」，原时间留在 trade_time_original 里。
+async function runTradeDateRepairCycle() {
+  try {
+    const store = await readDecisionLog(PORTFOLIO_ALERTS_ROOT);
+    const next = repairTradeDates(store);
+    if (next !== store) {
+      await writeDecisionLog(PORTFOLIO_ALERTS_ROOT, next);
+      const fixed = next.trades.filter((trade) => trade.trade_time_original).length;
+      console.warn(`trade date repair: ${fixed} trades moved to the reconciled trading day`);
+    }
+  } catch (error) {
+    console.warn(`trade date repair failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 // 旧账二：非常规时段「较昨收」参考价用错，按真实日线收盘价重算一次。
 // 实际没到阈值的标作废，仍超过阈值的改正数字并保留原文。跑第二遍什么都不改。
 async function runReferencePriceFixCycle() {
@@ -1475,6 +1496,7 @@ async function runReferencePriceFixCycle() {
 setTimeout(async () => {
   // 先把参考价算错的旧条目处理掉，再算效果统计，免得统计里混进作废的
   await runReferencePriceFixCycle();
+  await runTradeDateRepairCycle();
   await runAlertOutcomesCycle();
 }, 60_000).unref?.();
 server.on('close', () => {

@@ -24,6 +24,28 @@ export const Z_IN_ZONE = 1.5;
 export const Z_NEAR_ZONE = 1.2;
 export const STOCK_BIG_MOVE_PCT = 5;
 export const QQQ_BIG_MOVE_PCT = 2;
+// 杠杆 ETF 天生波动更大，阈值按倍数放大，否则天天都在报。
+// 这几个数和名单都可以在 deploy/alert-noise.config.json 的 bigMove 段里改。
+export const LEVERAGED_2X_BIG_MOVE_PCT = 8;
+export const LEVERAGED_3X_BIG_MOVE_PCT = 12;
+export const LEVERAGED_2X_SYMBOLS = ['TSLL', 'AVL', 'MSFU', 'METU', 'NVDL', 'NVDU', 'AAPU', 'QLD', 'SSO'];
+export const LEVERAGED_3X_SYMBOLS = ['TQQQ', 'SPXL', 'UPRO', 'UDOW', 'FNGU', 'FAS', 'SOXL', 'TECL', 'TNA', 'NAIL'];
+
+/** 这个标的的「大涨大跌」阈值（百分点）。 */
+export function bigMoveLimitFor(symbol, config = {}) {
+  const ticker = String(symbol || '').trim().toUpperCase();
+  const list = (value, fallback) => (Array.isArray(value) ? value : fallback)
+    .map((item) => String(item).toUpperCase());
+  const number = (value, fallback) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback);
+  if (ticker === 'QQQ') return number(config.qqqPct, QQQ_BIG_MOVE_PCT);
+  if (list(config.leveraged3x, LEVERAGED_3X_SYMBOLS).includes(ticker)) {
+    return number(config.leveraged3xPct, LEVERAGED_3X_BIG_MOVE_PCT);
+  }
+  if (list(config.leveraged2x, LEVERAGED_2X_SYMBOLS).includes(ticker)) {
+    return number(config.leveraged2xPct, LEVERAGED_2X_BIG_MOVE_PCT);
+  }
+  return number(config.defaultPct, STOCK_BIG_MOVE_PCT);
+}
 export const RESONANCE_HISTORY_NOTE = '历史参考（2015 年以来，按收盘价统计）：VIX 单日涨超 30% 且 QQQ 当天跌超 2% 共 21 次——第二天收盘更低只有 38%，5 天内出现更低收盘 67%（中位数再低约 1.5%），当天收盘买入持有 20 天胜率 81%、60 天胜率 86%；最差的一次是 2020-02-24，20 天后 -22.8%。VIX 涨超 25% 且 QQQ 跌超 1.5% 共 30 次：第二天更低 40%，5 天内更低 67%，20 天胜率 63%，60 天胜率 77%。';
 
 const SESSION_LABELS = { pre: '盘前', regular: '盘中', post: '盘后', overnight: '夜盘', closed: '休市' };
@@ -222,11 +244,11 @@ function zWording(current, down) {
 }
 
 /** 个股当天大幅波动。QQQ 用 ±2%，其他用 ±5%。 */
-export function bigMoveAlert({ symbol, price, changePercent, held, session, firedKeys, day }) {
+export function bigMoveAlert({ symbol, price, changePercent, held, session, firedKeys, day, bigMove = {} }) {
   const change = finite(changePercent);
   if (change === null || !symbol) return null;
   const movePct = change * 100;
-  const limit = symbol === 'QQQ' ? QQQ_BIG_MOVE_PCT : STOCK_BIG_MOVE_PCT;
+  const limit = bigMoveLimitFor(symbol, bigMove);
   if (Math.abs(movePct) < limit) return null;
   const key = `big-move:${symbol}:${movePct > 0 ? 'up' : 'down'}:${day}`;
   if (firedKeys.has(key)) return null;

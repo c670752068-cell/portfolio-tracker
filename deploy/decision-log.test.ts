@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   DUST_MARKET_VALUE_USD, DUST_MINIMUM_SHARES, addManualTrade, applyCashFlow, applyTradeNote, captureNav,
   captureTrades, clearTrades, createDecisionLogRoute, dropStoredSnapshotArtifacts, emptyDecisionLog,
-  isDustTrade, readDecisionLog, removeCashFlow, sameSiteWrite, tradeKey, voidDustTrades, writeDecisionLog,
+  isDustTrade, readDecisionLog, removeCashFlow, repairTradeDates, sameSiteWrite, tradeKey, voidDustTrades,
+  writeDecisionLog,
 } from './decision-log.mjs';
 
 const roots: string[] = [];
@@ -672,6 +673,64 @@ describe('「我据此下单了」生成的草稿', () => {
     const broker = store.trades.find((trade) => trade.broker === 'IBKR')!;
 
     expect(() => applyTradeNote(store, broker.id, { qty: 999 })).toThrow('数量');
+  });
+});
+
+describe('成交日期用券商的对账日，不用同步时间', () => {
+  // 线上实据：6 笔 IBKR 成交的 recorded_at 是 2026-10-18 20:06 美东（周日），
+  // 那是同步时间；IBKR 那一轮的对账日 as_of 是 2026-10-16。
+  const ibkrSnapshot = {
+    ...snapshot,
+    freshness: {
+      broker_health: [
+        { broker: 'IBKR', available: true, as_of: '2026-10-16', error_code: null },
+        { broker: 'FUTU', available: true, as_of: '2026-10-20', error_code: null },
+      ],
+    },
+    position_ledger: {
+      recent_events: [{
+        asset_type: 'stock', broker: 'IBKR', side: 'BUY', symbol: 'NVDA', quantity: 10,
+        price: 180, price_source: 'broker_cost_delta', estimated: false,
+        recorded_at: '2026-10-18T20:06:00.000000-04:00',
+      }],
+    },
+  };
+
+  it('成交时间落在对账日的收盘，并标明是推定的', () => {
+    const store = captureTrades(emptyDecisionLog(), ibkrSnapshot, { now: new Date('2026-10-19T08:00:00Z') });
+    const trade = store.trades[0];
+
+    expect(trade.trade_time.slice(0, 10)).toBe('2026-10-16');
+    expect(trade).toMatchObject({ trade_date_estimated: true, trade_date_basis: '按对账日推定' });
+    // 同步时间照实留着，便于追溯
+    expect(trade.synced_at).toBe('2026-10-18T20:06:00.000000-04:00');
+  });
+
+  it('没有对账日时还是用原来的记录时间，不编日期', () => {
+    const store = captureTrades(emptyDecisionLog(), {
+      ...ibkrSnapshot,
+      freshness: { broker_health: [{ broker: 'IBKR', available: false, as_of: null }] },
+    }, { now: new Date('2026-10-19T08:00:00Z') });
+
+    // 记录时间本身就是 10-18 20:06 美东
+    expect(store.trades[0].trade_time.slice(0, 10)).toBe('2026-10-18');
+    expect(store.trades[0].trade_date_estimated).toBe(false);
+  });
+
+  it('旧记录：成交时间落在非交易日的，挪到上一个交易日的收盘并标明', () => {
+    const recorded = captureTrades(emptyDecisionLog(), {
+      ...ibkrSnapshot,
+      freshness: {},
+    }, { now: new Date('2026-10-19T08:00:00Z') });
+    expect(recorded.trades[0].trade_time.slice(0, 10)).toBe('2026-10-18');
+
+    const fixed = repairTradeDates(recorded, { now: new Date('2026-10-21T03:00:00Z') });
+    expect(fixed.trades[0].trade_time.slice(0, 10)).toBe('2026-10-16');
+    expect(fixed.trades[0]).toMatchObject({ trade_date_estimated: true, trade_date_basis: '按对账日推定' });
+    expect(fixed.trades[0].trade_time_original).toContain('2026-10-18');
+
+    // 已经在交易日上的不动，跑第二遍也不动
+    expect(repairTradeDates(fixed, { now: new Date('2026-10-21T03:00:00Z') })).toBe(fixed);
   });
 });
 

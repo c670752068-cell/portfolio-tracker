@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { etCloseInstant, knownTradingDate } from './market-session.mjs';
+import { etCloseInstant, etParts, knownTradingDate } from './market-session.mjs';
 
 // 决策日志：每笔买卖记下「当时的指标」和「用户的预判」，收盘后自动判定结果。
 // 成交来自量化快照的 position_ledger.recent_events（前后两次券商快照差分推算），
@@ -243,8 +243,55 @@ export function dropStoredSnapshotArtifacts(store, now = new Date()) {
   };
 }
 
+// 成交日期：推算成交的 recorded_at 是「同步时间」，不是成交时间——线上出现过
+// 6 笔 IBKR 成交被记在周日 20:06。券商数据自己的对账日（broker_health.as_of）
+// 才是那批数据对到的交易日，用它的收盘时刻，并标明是推定的。
+export const TRADE_DATE_BASIS = '按对账日推定';
+
+function brokerAsOf(snapshot) {
+  const source = record(snapshot).freshness?.broker_health ?? record(snapshot).broker_health;
+  const map = new Map();
+  for (const raw of rows(source)) {
+    const item = record(raw);
+    const broker = String(item.broker || '').toUpperCase();
+    const asOf = typeof item.as_of === 'string' ? item.as_of : null;
+    if (broker && asOf) map.set(broker, asOf);
+  }
+  return map;
+}
+
+/** 成交时间落在非交易日的旧记录：挪到上一个交易日的收盘，原时间留在 trade_time_original。 */
+export function repairTradeDates(store, { now = new Date() } = {}) {
+  const current = normalizeDecisionLog(store);
+  let changed = false;
+  const trades = current.trades.map((trade) => {
+    if (trade.trade_time_original) return trade;
+    const day = etParts(new Date(String(trade.trade_time || ''))).date;
+    if (!day || knownTradingDate(day) !== false) return trade;
+    let cursor = day;
+    for (let step = 0; step < 10; step += 1) {
+      const previous = new Date(`${cursor}T12:00:00Z`);
+      previous.setUTCDate(previous.getUTCDate() - 1);
+      cursor = previous.toISOString().slice(0, 10);
+      if (knownTradingDate(cursor) === true) break;
+    }
+    if (knownTradingDate(cursor) !== true) return trade;
+    changed = true;
+    return {
+      ...trade,
+      trade_time: etCloseInstant(cursor),
+      trade_time_original: trade.trade_time,
+      trade_date_estimated: true,
+      trade_date_basis: TRADE_DATE_BASIS,
+    };
+  });
+  if (!changed) return store;
+  return { ...current, trades, revision: current.revision + 1, updated_at: now.toISOString() };
+}
+
 export function captureTrades(store, snapshot, { now = new Date(), channelReview = null, keepArtifacts = false, keepDust = false } = {}) {
   const current = normalizeDecisionLog(store);
+  const asOfByBroker = brokerAsOf(snapshot);
   const allEvents = rows(record(record(snapshot).position_ledger).recent_events);
   const events = keepArtifacts ? allEvents : withoutSnapshotArtifacts(allEvents);
   const known = new Set(current.trades.map((trade) => trade.key));
@@ -264,10 +311,16 @@ export function captureTrades(store, snapshot, { now = new Date(), channelReview
     if (known.has(key)) continue;
     known.add(key);
     const price = numeric(item.price);
+    const broker = String(item.broker || '').toUpperCase();
+    const asOf = asOfByBroker.get(broker) || null;
     added.push({
       id: `trade-${randomBytes(6).toString('hex')}`,
       key,
-      trade_time: recordedAt,
+      trade_time: asOf ? etCloseInstant(asOf) : recordedAt,
+      // 同步时间照实留着，便于追溯
+      synced_at: recordedAt,
+      trade_date_estimated: Boolean(asOf),
+      trade_date_basis: asOf ? TRADE_DATE_BASIS : null,
       recorded_by: 'position_ledger',
       symbol,
       side,

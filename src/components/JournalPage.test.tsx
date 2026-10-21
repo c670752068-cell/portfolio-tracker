@@ -490,6 +490,11 @@ describe('提醒效果分页', () => {
         reliable: true, note: '',
       },
       {
+        kind: 'cnn_fear', label: 'CNN 恐慌', samples: 4, pending: 0, backfilled: 0,
+        avg: { d5: 1.1, d20: 2.2 }, excess: { d5: null, d20: null }, winRate: 0.75,
+        reliable: false, note: '样本太少，结论不可靠', selfBenchmark: true,
+      },
+      {
         kind: 'z_enter', label: 'Z 进入 ±1.5', samples: 3, pending: 0, backfilled: 0,
         avg: { d5: 1, d20: 2 }, excess: { d5: 0.5, d20: 1 }, winRate: 0.67,
         reliable: false, note: '样本太少，结论不可靠',
@@ -513,6 +518,14 @@ describe('提醒效果分页', () => {
     expect(html).toContain('样本太少，结论不可靠');
     // 次数多的排前面
     expect(html.indexOf('data-outcome-kind="big_move"')).toBeLessThan(html.indexOf('data-outcome-kind="z_enter"'));
+  });
+
+  it('看的就是 QQQ 自己的那几类，超额显示「—」而不是 0.00%', () => {
+    const html = render({ tab: 'outcomes', outcomes });
+    const card = html.slice(html.indexOf('data-outcome-kind="cnn_fear"'));
+
+    expect(card.slice(0, 700)).toContain('—');
+    expect(card.slice(0, 700)).not.toContain('0.00%');
   });
 
   it('还没算过时说清楚，不画空表', () => {
@@ -595,5 +608,5 @@ describe('日期、合并与作废折叠', () => {
     expect(html).toContain('[已更正]');
     expect(html).toContain('+6.2%');
   });
-});
 
+});

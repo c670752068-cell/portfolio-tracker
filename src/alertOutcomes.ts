@@ -23,6 +23,8 @@ export interface OutcomeSummaryGroup {
   winRate: number | null;
   reliable: boolean;
   note: string;
+  /** 这一类看的就是 QQQ 自己，「对 QQQ 超额」没有意义，显示「—」。 */
+  selfBenchmark?: boolean;
 }
 export interface AlertOutcomesPayload {
   updated_at: string | null;

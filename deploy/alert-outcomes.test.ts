@@ -153,3 +153,87 @@ describe('按类型汇总', () => {
     expect(summarizeOutcomes({}).length).toBe(0);
   });
 });
+
+describe('统计口径', () => {
+  function valuationOutcome(symbol: string, date: string, zone = 'low') {
+    return {
+      kind: 'valuation_buy', symbol, base_date: date, base_close: 100, backfilled: false, pending: false,
+      run_key: `valuation:${symbol}:${zone}`,
+      changes: { d1: 0, d5: 1, d20: 2 },
+      benchmark: { d1: 0, d5: 0.5, d20: 1 },
+      excess: { d1: 0, d5: 0.5, d20: 1 },
+    };
+  }
+
+  it('同一标的同一状态连续多天只算第一次', () => {
+    const summary = summarizeOutcomes({
+      a: valuationOutcome('AVGO', '2026-10-16'),
+      b: valuationOutcome('AVGO', '2026-10-19'),
+      c: valuationOutcome('AVGO', '2026-10-20'),
+      d: valuationOutcome('MCD', '2026-10-20'),
+    });
+    const group = summary.find((item) => item.kind === 'valuation_buy')!;
+
+    expect(group.samples).toBe(2);
+  });
+
+  it('隔了很久又进入同一状态，算新的一次', () => {
+    const summary = summarizeOutcomes({
+      a: valuationOutcome('AVGO', '2026-09-01'),
+      b: valuationOutcome('AVGO', '2026-10-20'),
+    });
+
+    expect(summary.find((item) => item.kind === 'valuation_buy')!.samples).toBe(2);
+  });
+
+  it('换了档位算新的一次', () => {
+    const summary = summarizeOutcomes({
+      a: valuationOutcome('AVGO', '2026-10-19', 'low'),
+      b: valuationOutcome('AVGO', '2026-10-20', 'extreme_low'),
+    });
+
+    expect(summary.find((item) => item.kind === 'valuation_buy')!.samples).toBe(2);
+  });
+
+  it('看的就是 QQQ 自己的那几类，超额留空并标出来', () => {
+    const qqqOutcome = (kind: string) => ({
+      kind, symbol: 'QQQ', base_date: '2026-10-16', base_close: 700, backfilled: false, pending: false,
+      changes: { d1: 1, d5: 2, d20: 3 },
+      benchmark: { d1: 1, d5: 2, d20: 3 },
+      excess: { d1: 0, d5: 0, d20: 0 },
+    });
+    const summary = summarizeOutcomes({ a: qqqOutcome('cnn_fear'), b: qqqOutcome('qqq_drawdown') });
+
+    for (const group of summary) {
+      expect(group.selfBenchmark).toBe(true);
+      expect(group.excess.d5).toBeNull();
+      expect(group.excess.d20).toBeNull();
+    }
+  });
+
+  it('个股那几类照常算超额', () => {
+    const summary = summarizeOutcomes({
+      a: {
+        kind: 'big_move', symbol: 'NVDA', base_date: '2026-10-16', base_close: 100, backfilled: false,
+        pending: false, changes: { d1: 1, d5: 2, d20: 6 }, benchmark: { d1: 0, d5: 1, d20: 3 },
+        excess: { d1: 1, d5: 1, d20: 3 },
+      },
+    });
+
+    expect(summary[0].selfBenchmark).toBe(false);
+    expect(summary[0].excess.d20).toBeCloseTo(3, 6);
+  });
+
+  it('算出来的 outcome 带上 run_key，给统计去重用', () => {
+    const series = closes('2026-10-01', Array.from({ length: 30 }, (_, index) => 100 + index));
+    const outcomes = computeAlertOutcomes({
+      alerts: [{
+        id: 'v1', dedupe_key: 'push:2026-10-05:premarket:valuation:AVGO:low:2026-10-05',
+        symbol: 'AVGO', occurred_at: '2026-10-05T12:30:00.000Z', backfilled: false,
+      }],
+    }, { seriesFor: () => series });
+
+    expect(outcomes.v1.run_key).toBe('valuation:AVGO:low');
+  });
+});
+

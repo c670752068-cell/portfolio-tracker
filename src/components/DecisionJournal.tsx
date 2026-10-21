@@ -254,6 +254,7 @@ function TradeRow({ trade, displayCurrency, rates, onSave }: {
             {trade.price_estimated && ' · 价格为估算'}
             {trade.recorded_by === 'manual' && ' · 手动补录'}
             {trade.draft && ' · 提醒草稿'}
+            {trade.trade_date_estimated && ` · ${trade.trade_date_basis || '按对账日推定'}`}
           </span>
           {trade.alert_text && (
             <span className="mt-0.5 block text-[10px] text-ink-muted">来自提醒：{trade.alert_text}</span>
