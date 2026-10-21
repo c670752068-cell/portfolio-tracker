@@ -16,7 +16,7 @@ function closes(start: string, values: number[]) {
 describe('提醒归到哪一类统计', () => {
   it('九类统计的中文名齐全', () => {
     expect(Object.values(OUTCOME_KIND_LABELS)).toEqual([
-      'QQQ 回撤档位', 'VIX 飙升', 'CNN 恐慌', 'Z 进入 ±1.5', 'Z 穿过 ±1.0',
+      'QQQ 回撤档位', 'VIX 飙升', 'CNN 恐慌', 'Z 进入 ±1.5', 'Z 穿过 ±1.0', '接近露头',
       '个股大涨大跌', '卖出线', '多指标共振', '可买 / 低估值',
     ]);
   });
@@ -31,6 +31,8 @@ describe('提醒归到哪一类统计', () => {
     ['z-cross:NVDA:1.5:up:2026-10-20', 'z_enter'],
     ['z-cross:MU:-2:down:2026-10-20', 'z_enter'],
     ['z-cross:TSLA:-1:down:2026-10-20', 'z_cross_1'],
+    ['near-breakout:GOOG:2026-10-21', 'near_breakout'],
+    ['near-breakout-confirm:GOOG:2026-10-21', 'near_breakout'],
     ['big-move:SOXL:down:2026-10-20', 'big_move'],
     ['sell-line-live:NVDA:210:2026-10-20', 'sell_line'],
     ['resonance:2026-10-20', 'resonance'],

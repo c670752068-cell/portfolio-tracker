@@ -16,7 +16,7 @@ export const UNRELIABLE_NOTE = '样本太少，结论不可靠';
 
 // 统计里的九类。没列进来的（0.5 档穿越、回升、持仓变化、系统提醒）不统计。
 export const OUTCOME_KINDS = [
-  'qqq_drawdown', 'vix_spike', 'cnn_fear', 'z_enter', 'z_cross_1',
+  'qqq_drawdown', 'vix_spike', 'cnn_fear', 'z_enter', 'z_cross_1', 'near_breakout',
   'big_move', 'sell_line', 'resonance', 'valuation_buy',
 ];
 export const OUTCOME_KIND_LABELS = {
@@ -25,6 +25,7 @@ export const OUTCOME_KIND_LABELS = {
   cnn_fear: 'CNN 恐慌',
   z_enter: 'Z 进入 ±1.5',
   z_cross_1: 'Z 穿过 ±1.0',
+  near_breakout: '接近露头',
   big_move: '个股大涨大跌',
   sell_line: '卖出线',
   resonance: '多指标共振',
@@ -53,6 +54,7 @@ export function alertOutcomeKind(entry) {
     if (tier >= 1.5) return 'z_enter';
     return tier === 1 ? 'z_cross_1' : null;
   }
+  if (/^near-breakout(-confirm)?:/.test(key)) return 'near_breakout';
   if (key.startsWith('big-move:')) return 'big_move';
   if (key.startsWith('sell-line-live:') || /^state:sell:/.test(key)) return 'sell_line';
   if (key.startsWith('resonance:')) return 'resonance';

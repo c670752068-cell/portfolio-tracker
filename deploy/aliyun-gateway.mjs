@@ -63,8 +63,8 @@ import { voidDustRecords } from './void-dust-records.mjs';
 import { applyReferencePriceFixes } from './fix-reference-price-alerts.mjs';
 import { brokerHealthReadings } from './broker-health.mjs';
 import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
-import { SESSION_CADENCE_MS, sessionLabel } from './realtime-alerts.mjs';
-import { feedStateReading, intradayZPreview, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
+import { SESSION_CADENCE_MS, cnnFloorText, sessionLabel } from './realtime-alerts.mjs';
+import { feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick } from './realtime-monitor.mjs';
 import { quietSummaryEvent, realtimeDefaults } from './realtime-push.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
@@ -950,11 +950,13 @@ async function captureAlertsFromSnapshot(snapshot) {
     const vix = alertNumber(context?.vix?.value);
     const ndxPe = alertNumber(snapshot?.valuation_tab?.ndx?.current_pe);
     const readings = [];
+    const readingSession = classifyMarketSession(new Date(), { hasMinuteSeries: true });
     if (cnn !== null) {
       readings.push({
         key: 'cnn', state: cnn < 30 ? 'triggered' : 'normal', category: 'sentiment', symbol: 'CNN',
         icon: cnn < 30 ? '😨' : '🙂', value: cnn, threshold: 30,
-        text: cnn < 30 ? `CNN 恐惧贪婪 ${cnn.toFixed(0)} < 30 · 到达开仓线` : `CNN 恐惧贪婪 ${cnn.toFixed(0)} 回到 30 以上 · 离开开仓线`,
+        // 和其他实时提醒一样带时段标签
+        text: cnnFloorText(cnn, readingSession),
       });
     }
     if (vix !== null) {
@@ -1341,16 +1343,23 @@ async function runRealtimeMonitorCycle() {
     // 盘中 Z 用决策页「盘中预览」那一根未收盘日线，只有常规时段才有；
     // 每轮按游标刷几个标的的日线缓存，整个监控范围都能轮到，不再只看前 8 个。
     const zSymbols = symbols.filter((symbol) => symbol !== 'VIX');
-    if (session === 'regular' && zSymbols.length > 0) {
+    if ((session === 'regular' || session === 'post') && zSymbols.length > 0) {
       for (let step = 0; step < REALTIME_DASHBOARD_PER_TICK; step += 1) {
         await loadDashboard(zSymbols[(REALTIME_STATE.dashboardCursor + step) % zSymbols.length]);
       }
       REALTIME_STATE.dashboardCursor = (REALTIME_STATE.dashboardCursor + REALTIME_DASHBOARD_PER_TICK) % zSymbols.length;
     }
     const intradayZ = {};
+    const nearBreakout = {};
     for (const symbol of zSymbols) {
-      const reading = intradayZPreview(maSlopeCache.lastGood(`dashboard:${symbol}:5y:8`));
+      const dashboard = maSlopeCache.lastGood(`dashboard:${symbol}:5y:8`);
+      const reading = intradayZPreview(dashboard);
       if (reading) intradayZ[symbol] = reading;
+      // 接近露头：常规时段看未收盘那根，盘后用刚收盘那根确认一次
+      if (session === 'regular' || session === 'post') {
+        const near = nearBreakoutReading(dashboard, { confirmation: session === 'post' });
+        if (near) nearBreakout[symbol] = near;
+      }
     }
 
     const sellLines = {};
@@ -1391,6 +1400,7 @@ async function runRealtimeMonitorCycle() {
       dispatch: (event) => notificationControl.dispatch(event),
       cooldownMs: NOISE_CONFIG.cooldownMinutes * 60_000,
       bigMove: NOISE_CONFIG.bigMove,
+      nearBreakout,
     });
     if (cnnScore !== null) REALTIME_STATE.lastCnn = cnnScore;
     if (result.store !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, result.store);

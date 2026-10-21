@@ -232,6 +232,75 @@ export function intradayZAlerts({ symbol, price, previousZ, currentZ, session, f
   return alerts;
 }
 
+// 接近露头（买入方向）：Z 在 0 以下趴够久之后开始往上抬，先给一声提醒，
+// 真的穿过 0 仍然由现有的「向上露头」负责。连续天数和露头规则保持一致。
+export const NEAR_BREAKOUT_MIN_SESSIONS = 15;
+export const NEAR_BREAKOUT_LEVEL = -0.1;
+export const NEAR_BREAKOUT_RESET = -0.5;
+
+/** 最后一段连续在 0 以下的完整收盘交易日有几天；缺数据就断。 */
+export function negativeStreak(series) {
+  const closed = (Array.isArray(series) ? series : []).filter((point) => point && point.is_partial !== true);
+  let streak = 0;
+  for (let index = closed.length - 1; index >= 0; index -= 1) {
+    const z = finite(closed[index]?.zscore200);
+    if (z === null || z >= 0) break;
+    streak += 1;
+  }
+  return streak;
+}
+
+export function nearBreakoutStateKey(symbol) {
+  return `near-breakout:${String(symbol || '').toUpperCase()}`;
+}
+
+/** 提醒过就记上；Z 跌回 -0.5 以下才清掉，算新的一轮。 */
+export function nearBreakoutStates(states, { symbol, currentZ, fired = false }) {
+  const key = nearBreakoutStateKey(symbol);
+  const current = { ...(states || {}) };
+  const z = finite(currentZ);
+  if (z !== null && z <= NEAR_BREAKOUT_RESET) {
+    delete current[key];
+    return current;
+  }
+  if (fired) current[key] = 'fired';
+  return current;
+}
+
+export function nearBreakoutAlerts({
+  symbol, price, previousZ, currentZ, streak, session, states = {}, day, confirmation = false,
+}) {
+  const to = finite(currentZ);
+  const from = finite(previousZ);
+  if (!symbol || to === null || streak < NEAR_BREAKOUT_MIN_SESSIONS) return [];
+  // 还没回到 -0.1，或者已经真的穿过 0（交给现有的「向上露头」）
+  if (to < NEAR_BREAKOUT_LEVEL || to >= 0) return [];
+  if (states[nearBreakoutStateKey(symbol)] === 'fired') return [];
+  const money = finite(price) === null ? '' : ` $${Number(price).toFixed(2)}`;
+  const moved = from === null ? `Z ${to.toFixed(2)}` : `Z ${from.toFixed(2)} → ${to.toFixed(2)}`;
+  return [{
+    kind: 'near_breakout',
+    dedupe_key: `near-breakout${confirmation ? '-confirm' : ''}:${symbol}:${day}`,
+    category: 'zscore',
+    symbol,
+    icon: '📈',
+    level: 'normal',
+    value: to,
+    threshold: NEAR_BREAKOUT_LEVEL,
+    session: confirmation ? 'closed' : session,
+    text: `${tag(session, confirmation)} ${symbol}${money} · ${moved} · 接近向上露头（之前 ${streak} 天在 0 以下）· 可以去看看是否买入`,
+  }];
+}
+
+/** CNN 开仓线那条状态提醒的文字；和其他实时提醒一样带时段标签。 */
+export function cnnFloorText(score, session) {
+  const value = finite(score);
+  if (value === null) return '';
+  return `${tag(session)} CNN 恐惧贪婪 ${value.toFixed(0)} ${
+    value < 30 ? '< 30 · 到达开仓线' : '回到 30 以上 · 离开开仓线'
+  }`;
+}
+
 /** 按当前 Z 的绝对值说话：进入区 / 接近区 / 只是偏强偏弱。 */
 function zWording(current, down) {
   const magnitude = Math.abs(current);

@@ -1,8 +1,8 @@
 import { appendAlerts } from './alert-log.mjs';
 import { withinCooldown } from './alert-noise.mjs';
 import {
-  bigMoveAlert, cnnAlerts, cnnTierStates, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert,
-  sessionLabel, vixAlerts,
+  bigMoveAlert, cnnAlerts, cnnTierStates, intradayZAlerts, nearBreakoutAlerts, nearBreakoutStates,
+  negativeStreak, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
 import { tradingDate } from './market-session.mjs';
 import { pushPlanFor, realtimeDefaults } from './realtime-push.mjs';
@@ -48,6 +48,8 @@ export async function runRealtimeTick({
   cooldownMs = 0,
   // 「大涨大跌」的阈值配置（杠杆 ETF 按倍数放大），来自配置文件。
   bigMove = {},
+  // 接近露头的读数：{ 标的: { streak, currentZ, previousZ, price } }
+  nearBreakout = {},
 }) {
   // 去重用「美东交易日」，不是日历日期：周六重新开一天，不该把周五记过的再记一遍。
   const day = tradingDate(now);
@@ -85,6 +87,21 @@ export async function runRealtimeTick({
       session, firedKeys, day,
     }));
   }
+  // 接近露头：和盘中 Z 一样，只在日线缓存靠得住的时段判定（常规时段看未收盘那根，
+  // 盘后看刚收盘那根）。同一轮只提醒一次，Z 跌回 -0.5 以下才重置。
+  let breakoutStates = store?.states || {};
+  for (const [symbol, reading] of Object.entries(nearBreakout)) {
+    const found = nearBreakoutAlerts({
+      symbol, price: reading?.price, previousZ: reading?.previousZ, currentZ: reading?.currentZ,
+      streak: Number(reading?.streak) || 0, session, states: breakoutStates, day,
+      confirmation: session === 'post',
+    });
+    alerts.push(...found);
+    breakoutStates = nearBreakoutStates(breakoutStates, {
+      symbol, currentZ: reading?.currentZ, fired: found.length > 0,
+    });
+  }
+
   for (const [symbol, quote] of (hasTradingSession ? Object.entries(quotes) : [])) {
     if (symbol === 'VIX') continue;
     const move = bigMoveAlert({
@@ -176,9 +193,10 @@ export async function runRealtimeTick({
     entries.push(entry);
   }
 
-  // CNN 档位状态要留在日志里，下一轮才知道是不是「穿越」。
-  const nextStates = cnnTierStates(cnnScore, tierStates);
-  const withStates = nextStates === tierStates ? store : { ...store, states: nextStates };
+  // CNN 档位状态要留在日志里，下一轮才知道是不是「穿越」；接近露头的状态同理。
+  const nextStates = cnnTierStates(cnnScore, breakoutStates);
+  const changed = nextStates !== tierStates || breakoutStates !== (store?.states || {});
+  const withStates = changed ? { ...store, states: nextStates } : store;
   return {
     alerts,
     entries,
@@ -204,6 +222,37 @@ export function intradayZPreview(dashboard) {
   if (currentZ === null || previousZ === null) return null;
   return {
     previousZ, currentZ, price: finite(partial?.close), date: partial?.date ?? null,
+  };
+}
+
+/**
+ * 接近露头要用的读数。常规时段看未收盘那根（和盘中 Z 一个口径），
+ * 盘后用刚收盘那根做确认，连续天数都只数它之前的完整收盘。
+ */
+export function nearBreakoutReading(dashboard, { confirmation = false } = {}) {
+  const series = dashboard?.dashboard?.series;
+  if (!Array.isArray(series) || series.length === 0) return null;
+  const closed = series.filter((point) => point && point.is_partial !== true);
+  if (confirmation) {
+    const latest = closed.at(-1);
+    const currentZ = finite(latest?.zscore200);
+    if (currentZ === null) return null;
+    const earlier = closed.slice(0, -1);
+    return {
+      streak: negativeStreak(earlier),
+      currentZ,
+      previousZ: finite(earlier.at(-1)?.zscore200),
+      price: finite(latest?.close),
+    };
+  }
+  const partial = [...series].reverse().find((point) => point && point.is_partial === true);
+  const currentZ = finite(partial?.zscore200);
+  if (currentZ === null) return null;
+  return {
+    streak: negativeStreak(closed),
+    currentZ,
+    previousZ: finite(closed.at(-1)?.zscore200),
+    price: finite(partial?.close),
   };
 }
 

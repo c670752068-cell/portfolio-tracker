@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT, bigMoveAlert, bigMoveLimitFor, cnnAlerts, cnnTierStates, intradayZAlerts, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
+  NEAR_BREAKOUT_LEVEL, NEAR_BREAKOUT_MIN_SESSIONS, NEAR_BREAKOUT_RESET, QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT, bigMoveAlert, bigMoveLimitFor, cnnAlerts, cnnFloorText, cnnTierStates, intradayZAlerts, nearBreakoutAlerts, nearBreakoutStateKey, nearBreakoutStates, negativeStreak, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
 
 describe('实时监控的节奏与时段', () => {
@@ -312,3 +312,87 @@ describe('CNN 多档合并与开仓线同源', () => {
     expect(alerts.every((alert) => !alert.text.includes('较上次 0'))).toBe(true);
   });
 });
+
+describe('CNN 开仓线那条状态提醒', () => {
+  it('带上时段标签，和其他实时提醒一致', () => {
+    expect(cnnFloorText(18.4, 'pre')).toBe('[盘前] CNN 恐惧贪婪 18 < 30 · 到达开仓线');
+    expect(cnnFloorText(30.2, 'regular')).toBe('[盘中] CNN 恐惧贪婪 30 回到 30 以上 · 离开开仓线');
+    expect(cnnFloorText(31, 'closed')).toBe('[休市] CNN 恐惧贪婪 31 回到 30 以上 · 离开开仓线');
+  });
+});
+
+describe('接近露头（买入方向）', () => {
+  const series = (zs: Array<number | null>) => zs.map((z, index) => ({
+    date: `2026-09-${String(index + 1).padStart(2, '0')}`,
+    zscore200: z,
+    is_partial: false,
+  }));
+
+  it('只数最后一段连续在 0 以下的完整收盘交易日', () => {
+    expect(negativeStreak(series([-0.5, -0.4, -0.3]))).toBe(3);
+    expect(negativeStreak(series([-0.5, 0.2, -0.3, -0.2]))).toBe(2);
+    expect(negativeStreak(series([0.1, 0.2]))).toBe(0);
+    expect(negativeStreak(series([-0.5, null, -0.3]))).toBe(1);
+    // 未收盘那根不算
+    expect(negativeStreak([...series([-0.5, -0.4]), { date: '2026-09-03', zscore200: -0.05, is_partial: true }])).toBe(2);
+  });
+
+  it('连续 15 天以上在 0 以下、回升到 -0.1 以上时提醒一次', () => {
+    const alerts = nearBreakoutAlerts({
+      symbol: 'GOOG', price: 335.2, previousZ: -0.12, currentZ: -0.09, streak: 35,
+      session: 'regular', states: {}, day: '2026-10-21',
+    });
+
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({
+      kind: 'near_breakout', category: 'zscore', symbol: 'GOOG', icon: '📈', level: 'normal',
+      dedupe_key: 'near-breakout:GOOG:2026-10-21',
+    });
+    expect(alerts[0].text).toBe('[盘中] GOOG $335.20 · Z -0.12 → -0.09 · 接近向上露头（之前 35 天在 0 以下）· 可以去看看是否买入');
+  });
+
+  it('收盘再确认一次，标 [收盘确认]', () => {
+    const [alert] = nearBreakoutAlerts({
+      symbol: 'GOOG', price: 335.2, previousZ: -0.12, currentZ: -0.09, streak: 35,
+      session: 'post', states: {}, day: '2026-10-21', confirmation: true,
+    });
+
+    expect(alert.text).toContain('[收盘确认]');
+    expect(alert.dedupe_key).toBe('near-breakout-confirm:GOOG:2026-10-21');
+  });
+
+  it('同一轮只提醒一次：状态已经标过就不再提醒', () => {
+    const states = { [nearBreakoutStateKey('GOOG')]: 'fired' };
+    expect(nearBreakoutAlerts({
+      symbol: 'GOOG', price: 335.2, previousZ: -0.12, currentZ: -0.09, streak: 35,
+      session: 'regular', states, day: '2026-10-21',
+    })).toEqual([]);
+  });
+
+  it('不够 15 天、还没回到 -0.1、或已经穿过 0 的都不提醒', () => {
+    const base = { symbol: 'GOOG', price: 335.2, previousZ: -0.3, session: 'regular' as const, states: {}, day: '2026-10-21' };
+    expect(nearBreakoutAlerts({ ...base, currentZ: -0.09, streak: 14 })).toEqual([]);
+    expect(nearBreakoutAlerts({ ...base, currentZ: -0.2, streak: 35 })).toEqual([]);
+    // 真的穿过 0 交给现有的「向上露头」
+    expect(nearBreakoutAlerts({ ...base, currentZ: 0.05, streak: 35 })).toEqual([]);
+  });
+
+  it('Z 跌回 -0.5 以下才重置，之间来回不会重复刷屏', () => {
+    const fired = { [nearBreakoutStateKey('WMT')]: 'fired' };
+    // -0.058 这种来回：状态还在 fired，不重置也不再提醒
+    expect(nearBreakoutStates(fired, { symbol: 'WMT', currentZ: -0.058 }))
+      .toEqual(fired);
+    expect(nearBreakoutStates(fired, { symbol: 'WMT', currentZ: -0.52 }))
+      .toEqual({});
+    // 提醒之后标记为已提醒
+    expect(nearBreakoutStates({}, { symbol: 'WMT', currentZ: -0.09, fired: true }))
+      .toEqual({ [nearBreakoutStateKey('WMT')]: 'fired' });
+  });
+
+  it('阈值写明白：15 个交易日、-0.1 触发、-0.5 重置', () => {
+    expect(NEAR_BREAKOUT_MIN_SESSIONS).toBe(15);
+    expect(NEAR_BREAKOUT_LEVEL).toBe(-0.1);
+    expect(NEAR_BREAKOUT_RESET).toBe(-0.5);
+  });
+});
+

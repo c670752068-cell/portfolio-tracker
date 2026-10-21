@@ -286,11 +286,6 @@ function AlertLogPanel({
               ? `（仅记录 ${logOnlyCount} · 已作废 ${voidedCount}）`
               : ''}
           </button>
-          {view.unread > 0 && (
-            <span data-alert-unread={view.unread} className="min-h-8 shrink-0 whitespace-nowrap rounded-full bg-loss/15 px-2.5 py-1.5 text-[11px] font-semibold text-loss">
-              未读 {view.unread}
-            </span>
-          )}
         </div>
         <span className="shrink-0 text-[10px] tabular-nums text-ink-muted" role="status">
           {liveStatus === 'disconnected'

@@ -322,15 +322,16 @@ describe('手机上的提醒列表', () => {
   });
 
   it('重要提醒置顶，左边有颜色竖条', () => {
+    const minutesAgo = (value: number) => new Date(Date.now() - value * 60_000).toISOString();
     const html = render({
       alerts: [
-        alert({ id: 'n1', occurred_at: '2026-10-20T13:40:00.000Z', text: '普通的一条', indicators: { level: 2 } }),
+        alert({ id: 'n1', occurred_at: minutesAgo(30), text: '普通的一条', indicators: { level: 2 } }),
         alert({
-          id: 'i1', occurred_at: '2026-10-20T13:00:00.000Z', category: 'sell_line', symbol: 'NVDA', icon: '💰',
+          id: 'i1', occurred_at: minutesAgo(90), category: 'sell_line', symbol: 'NVDA', icon: '💰',
           text: '[盘中] NVDA $217.12 ≥ 卖出线 $210.00', indicators: { level: 1 },
         }),
       ],
-      lastOpenedAt: '2026-10-20T00:00:00.000Z',
+      lastOpenedAt: minutesAgo(600),
     });
 
     expect(html).toContain('置顶的重要提醒');
@@ -353,7 +354,7 @@ describe('手机上的提醒列表', () => {
     expect(html.indexOf('data-alert-row="n1"')).toBeLessThan(html.indexOf('data-alert-row="i1"'));
   });
 
-  it('未读数量和「以下是新提醒」分隔线', () => {
+  it('只保留「以下是新提醒」分隔线，不再显示未读数字', () => {
     const html = render({
       alerts: [
         alert({ id: 'new1', occurred_at: '2026-10-20T13:40:00.000Z', text: '新的一条', indicators: { level: 2 } }),
@@ -362,7 +363,7 @@ describe('手机上的提醒列表', () => {
       lastOpenedAt: '2026-10-20T00:00:00.000Z',
     });
 
-    expect(html).toContain('未读 1');
+    expect(html).not.toContain('未读');
     expect(html).toContain('—— 以下是新提醒 ——');
     expect(html.indexOf('—— 以下是新提醒 ——')).toBeLessThan(html.indexOf('data-alert-row="new1"'));
   });
@@ -374,7 +375,6 @@ describe('手机上的提醒列表', () => {
     });
 
     expect(html).not.toContain('以下是新提醒');
-    expect(html).not.toContain('未读');
   });
 
   it('「仅记录」级别默认折叠，打开「显示全部」才出现', () => {

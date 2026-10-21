@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { emptyAlertLog } from './alert-log.mjs';
 import { realtimeDefaults } from './realtime-push.mjs';
-import { feedStateReading, intradayZPreview, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
+import { feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick } from './realtime-monitor.mjs';
 
 const base = {
   now: new Date('2026-10-17T01:30:00.000Z'), // 美东 21:30 → 夜盘
@@ -450,6 +450,75 @@ describe('盘中 Z 只在常规时段判定', () => {
     });
 
     expect(result.alerts.filter((item) => item.category === 'zscore')).toEqual([]);
+  });
+});
+
+describe('接近露头接进实时监控', () => {
+  const dashboard = (zs: Array<number | null>, partial: number | null, price = 335.2) => ({
+    dashboard: {
+      series: [
+        ...zs.map((z, index) => ({ date: `2026-09-${String(index + 1).padStart(2, '0')}`, close: price, zscore200: z, is_partial: false })),
+        ...(partial === null ? [] : [{ date: '2026-10-21', close: price, zscore200: partial, is_partial: true }]),
+      ],
+    },
+  });
+  const negatives = Array.from({ length: 35 }, () => -0.3);
+
+  it('盘中：从日线仪表盘算出连续天数和现在的 Z', () => {
+    const reading = nearBreakoutReading(dashboard(negatives, -0.09));
+
+    expect(reading).toMatchObject({ streak: 35, currentZ: -0.09, previousZ: -0.3, price: 335.2 });
+  });
+
+  it('收盘确认：用最后一根完整收盘，连续天数不含它自己', () => {
+    const reading = nearBreakoutReading(dashboard([...negatives, -0.09], null), { confirmation: true });
+
+    expect(reading).toMatchObject({ streak: 35, currentZ: -0.09, previousZ: -0.3 });
+  });
+
+  it('没有未收盘那根时，盘中读数为空', () => {
+    expect(nearBreakoutReading(dashboard(negatives, null))).toBeNull();
+  });
+
+  it('常规时段按读数写一条提醒，并记下状态', async () => {
+    const quiet = {
+      ...base, session: 'regular' as const, now: new Date('2026-10-21T17:00:00.000Z'),
+      quotes: {}, cnnScore: null, previousCnnScore: null, qqqPreviousHigh: null, qqqPeakDate: null,
+      intradayZ: {},
+    };
+    const result = await runRealtimeTick({
+      ...quiet, store: emptyAlertLog(), dispatch: vi.fn(),
+      nearBreakout: { GOOG: { streak: 35, currentZ: -0.09, previousZ: -0.12, price: 335.2 } },
+    });
+
+    expect(result.alerts.filter((item) => item.kind === 'near_breakout')).toHaveLength(1);
+    expect(result.alerts[0].text).toContain('接近向上露头（之前 35 天在 0 以下）');
+    expect(result.store.states['near-breakout:GOOG']).toBe('fired');
+  });
+
+  it('同一轮不会再报第二次；Z 跌回 -0.5 以下之后重置', async () => {
+    const quiet = {
+      ...base, session: 'regular' as const, now: new Date('2026-10-21T17:00:00.000Z'),
+      quotes: {}, cnnScore: null, previousCnnScore: null, qqqPreviousHigh: null, qqqPeakDate: null,
+      intradayZ: {},
+    };
+    const first = await runRealtimeTick({
+      ...quiet, store: emptyAlertLog(), dispatch: vi.fn(),
+      nearBreakout: { WMT: { streak: 20, currentZ: -0.058, previousZ: -0.2, price: 100 } },
+    });
+    expect(first.alerts).toHaveLength(1);
+
+    const again = await runRealtimeTick({
+      ...quiet, now: new Date('2026-10-21T17:05:00.000Z'), store: first.store, dispatch: vi.fn(),
+      nearBreakout: { WMT: { streak: 20, currentZ: -0.05, previousZ: -0.058, price: 100 } },
+    });
+    expect(again.alerts.filter((item) => item.kind === 'near_breakout')).toEqual([]);
+
+    const reset = await runRealtimeTick({
+      ...quiet, now: new Date('2026-10-21T18:00:00.000Z'), store: again.store, dispatch: vi.fn(),
+      nearBreakout: { WMT: { streak: 20, currentZ: -0.62, previousZ: -0.05, price: 100 } },
+    });
+    expect(reset.store.states['near-breakout:WMT']).toBeUndefined();
   });
 });
 
