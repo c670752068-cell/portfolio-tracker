@@ -283,9 +283,18 @@ describe('提醒效果上线所需', () => {
     expect(gateway).toContain('handleAlertOutcomesRoute');
   });
 
-  it('刚上线时也先算一份，不用等到当天收盘审查', async () => {
+  it('刚上线时先修参考价旧账，再补算一份效果统计', async () => {
     const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
-    expect(gateway).toMatch(/setTimeout\(\(\) => void runAlertOutcomesCycle\(\)/);
+    expect(gateway).toContain('await runReferencePriceFixCycle();');
+    expect(gateway).toContain('await runAlertOutcomesCycle();');
+    expect(gateway.indexOf('await runReferencePriceFixCycle();'))
+      .toBeLessThan(gateway.lastIndexOf('await runAlertOutcomesCycle();'));
+  });
+
+  it('修参考价的模块要上传并语法检查', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/fix-reference-price-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/fix-reference-price-alerts.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/fix-reference-price-alerts.mjs'");
   });
 });
 

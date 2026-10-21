@@ -426,3 +426,30 @@ describe('同标的同类提醒的冷却时间', () => {
   });
 });
 
+describe('盘中 Z 只在常规时段判定', () => {
+  // 线上实证：盘中 Z 读的是缓存里的日线仪表盘，缓存只在常规时段刷新。
+  // 到了第二天盘前，缓存里「未收盘的那根」还是昨天的，于是把昨天的穿越又报了一遍
+  // ——2026-10-20 盘前 AMZN 报「Z 0.35 → 0.94」，其实是 10-16 → 10-19 两根完整收盘。
+  const reading = { UDOW: { previousZ: 0.38, currentZ: 1.04, price: 67.41 } };
+
+  it('常规时段照常判定', async () => {
+    const result = await runRealtimeTick({
+      ...base, session: 'regular', now: new Date('2026-10-20T17:00:00.000Z'),
+      store: emptyAlertLog(), dispatch: vi.fn(), quotes: {}, cnnScore: null, previousCnnScore: null,
+      qqqPreviousHigh: null, qqqPeakDate: null, intradayZ: reading,
+    });
+
+    expect(result.alerts.filter((item) => item.category === 'zscore')).toHaveLength(2);
+  });
+
+  it.each(['pre', 'post', 'overnight'] as const)('%s 不判定盘中 Z', async (session) => {
+    const result = await runRealtimeTick({
+      ...base, session, now: new Date('2026-10-20T11:00:00.000Z'),
+      store: emptyAlertLog(), dispatch: vi.fn(), quotes: {}, cnnScore: null, previousCnnScore: null,
+      qqqPreviousHigh: null, qqqPeakDate: null, intradayZ: reading,
+    });
+
+    expect(result.alerts.filter((item) => item.category === 'zscore')).toEqual([]);
+  });
+});
+

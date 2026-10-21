@@ -57,6 +57,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
 "${SCP_CMD[@]}" deploy/alert-outcomes.mjs "${SERVER}:${REMOTE_RELEASE_APP}/alert-outcomes.mjs"
 "${SCP_CMD[@]}" deploy/alert-noise.config.json "${SERVER}:${REMOTE_RELEASE_APP}/alert-noise.config.json"
 "${SCP_CMD[@]}" deploy/void-dust-records.mjs "${SERVER}:${REMOTE_RELEASE_APP}/void-dust-records.mjs"
+"${SCP_CMD[@]}" deploy/fix-reference-price-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/fix-reference-price-alerts.mjs"
 "${SCP_CMD[@]}" deploy/realtime-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-alerts.mjs"
 "${SCP_CMD[@]}" deploy/realtime-push.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-push.mjs"
 "${SCP_CMD[@]}" deploy/realtime-monitor.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-monitor.mjs"
@@ -85,6 +86,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
   node --check '${REMOTE_RELEASE_APP}/alert-noise.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/alert-outcomes.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/void-dust-records.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/fix-reference-price-alerts.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-alerts.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-push.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-monitor.mjs' && \

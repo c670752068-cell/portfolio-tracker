@@ -21,6 +21,10 @@ export interface AlertLogEntry {
   voided?: boolean;
   voided_reason?: string | null;
   voided_at?: string | null;
+  /** 数字算错、但事情确实发生过的，改正数字并保留原文。 */
+  corrected?: boolean;
+  corrected_reason?: string | null;
+  corrected_from?: string | null;
   backfilled: boolean;
   session: string | null;
   indicators: Record<string, number | null> | null;

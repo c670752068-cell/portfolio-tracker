@@ -75,7 +75,9 @@ export async function runRealtimeTick({
       floorReported: cnnFloorReported, tierStates,
     }));
   }
-  for (const [symbol, reading] of (hasTradingSession ? Object.entries(intradayZ) : [])) {
+  // 盘中 Z 读的是日线仪表盘缓存，而缓存只在常规时段刷新：盘前/盘后/夜盘拿到的
+  // 「未收盘那根」其实是上一个交易日的，会把昨天的穿越重放一遍。只在常规时段判定。
+  for (const [symbol, reading] of (session === 'regular' ? Object.entries(intradayZ) : [])) {
     alerts.push(...intradayZAlerts({
       symbol, price: reading?.price, previousZ: reading?.previousZ, currentZ: reading?.currentZ,
       session, firedKeys, day,

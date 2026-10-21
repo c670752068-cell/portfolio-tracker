@@ -199,7 +199,8 @@ describe('推送状态和作废标记', () => {
 
   it('已作废的那条带「[已作废 · 原因]」并划掉，但还在列表里', () => {
     const html = render({
-      alerts: [alert({ text: 'TSLA $353.18 ≥ 卖出线 $31.41', voided: true, voided_reason: '卖出线未过合理性校验' })],
+      alerts: [alert({ symbol: 'TSLA', text: 'TSLA $353.18 ≥ 卖出线 $31.41', voided: true, voided_reason: '卖出线未过合理性校验' })],
+      showAllLevels: true,
     });
     expect(html).toContain('[已作废 · 卖出线未过合理性校验]');
     expect(html).toContain('line-through');
@@ -209,7 +210,8 @@ describe('推送状态和作废标记', () => {
   it('作废原因很长时也不撑破一行：标记本身可以压缩并省略，全文在提示里', () => {
     const reason = '卖出线未过合理性校验（$31.41 远低于现价 $353.18，疑似估值口径错误）';
     const html = render({
-      alerts: [alert({ text: 'TSLA $353.18 ≥ 卖出线 $31.41', voided: true, voided_reason: reason })],
+      alerts: [alert({ symbol: 'TSLA', text: 'TSLA $353.18 ≥ 卖出线 $31.41', voided: true, voided_reason: reason })],
+      showAllLevels: true,
     });
     const markEnd = html.indexOf('[已作废');
     const mark = html.slice(html.lastIndexOf('<span', markEnd), markEnd);
@@ -226,6 +228,7 @@ describe('推送状态和作废标记', () => {
         text: 'FUTU · 买入 NVDA 0.005 @ $216.00 · 已同步到决策日志，待补充理由',
         voided: true, voided_reason: '零碎持仓',
       })],
+      showAllLevels: true,
     });
     expect(html).toContain('[已作废 · 零碎持仓]');
   });
@@ -308,9 +311,12 @@ describe('手机上的提醒列表', () => {
     });
 
     expect(html).toContain('>21:38<');
-    expect(html).toContain('UDOW $67.41 Z 0.52 偏强');
+    expect(html).toContain('UDOW $67.41 · Z 0.52 · 偏强');
     expect(html).toContain('truncate');
-    expect(html).not.toContain('overflow-x-auto');
+    const panelStart = html.indexOf('data-alert-log-panel');
+    const panelClass = html.slice(panelStart, panelStart + 200);
+    expect(panelClass).toContain('overflow-hidden');
+    expect(panelClass).not.toContain('overflow-x-auto');
     // 完整说明要点开才出现
     expect(html).not.toContain('涨得更多，偏强');
   });
@@ -373,14 +379,14 @@ describe('手机上的提醒列表', () => {
 
   it('「仅记录」级别默认折叠，打开「显示全部」才出现', () => {
     const alerts = [
-      alert({ id: 'l1', text: '只记录的一条', indicators: { level: 3 } }),
-      alert({ id: 'n1', text: '普通的一条', indicators: { level: 2 } }),
+      alert({ id: 'l1', occurred_at: '2026-10-16T08:05:12.000Z', text: '只记录的一条', indicators: { level: 3 } }),
+      alert({ id: 'n1', occurred_at: '2026-10-16T09:07:12.000Z', text: '普通的一条', indicators: { level: 2 } }),
     ];
 
     const folded = render({ alerts });
     expect(folded).not.toContain('只记录的一条');
     expect(folded).toContain('普通的一条');
-    expect(folded).toContain('显示全部（仅记录 1）');
+    expect(folded).toContain('显示全部（仅记录 1 · 已作废 0）');
 
     const all = render({ alerts, showAllLevels: true });
     expect(all).toContain('只记录的一条');
@@ -396,7 +402,7 @@ describe('手机上的提醒列表', () => {
       showAllLevels: true,
     });
 
-    expect(html).toContain('估值汇总 5 个标的');
+    expect(html).toContain('估值汇总 · 5 个标的');
     expect(html).not.toContain('$333.88');
   });
 });
@@ -521,6 +527,73 @@ describe('提醒效果分页', () => {
 
     // 默认折叠，数字在展开后才出现
     expect(html).not.toContain('data-alert-outcome');
+  });
+});
+
+describe('日期、合并与作废折叠', () => {
+  it('每天第一条上方有日期分隔行', () => {
+    const html = render({
+      alerts: [
+        alert({ id: 'd1', occurred_at: '2026-10-20T13:38:00.000Z', text: '周二的一条', indicators: { level: 2 } }),
+        alert({ id: 'd2', occurred_at: '2026-10-19T13:38:00.000Z', text: '周一的一条', indicators: { level: 2 } }),
+      ],
+    });
+
+    expect(html).toContain('—— 10-20 周二 ——');
+    expect(html).toContain('—— 10-19 周一 ——');
+    expect(html.indexOf('10-20 周二')).toBeLessThan(html.indexOf('10-19 周一'));
+  });
+
+  it('置顶区的条目时间前面带日期', () => {
+    const html = render({
+      alerts: [alert({
+        id: 'p1', occurred_at: new Date(Date.now() - 3600_000).toISOString(),
+        text: '重要的一条', indicators: { level: 1 },
+      })],
+    });
+
+    expect(html).toContain('置顶的重要提醒');
+    expect(html).toMatch(/>\d{2}-\d{2} \d{2}:\d{2}</);
+  });
+
+  it('同一分钟同一类合并成一行，点开才看明细', () => {
+    const html = render({
+      alerts: ['AVGO', 'MCD', 'META', 'NVDA', 'PDD'].map((symbol) => alert({
+        id: `v-${symbol}`, category: 'valuation', symbol, session: 'pre', icon: '🔔',
+        occurred_at: '2026-10-20T13:20:17.000Z', indicators: { level: 2 },
+        text: `[盘前] 🟢 ${symbol} · 低估值 · $333.88`,
+      })),
+    });
+
+    expect(html).toContain('盘前估值 · 5 个标的');
+    expect(html).toContain('data-alert-group');
+    expect(html).not.toContain('$333.88');
+  });
+
+  it('已作废的默认不显示，开关上写明有几条', () => {
+    const alerts = [
+      alert({ id: 'v1', occurred_at: '2026-10-16T08:05:12.000Z', text: '作废的一条', voided: true, voided_reason: '参考价错误' }),
+      alert({ id: 'n1', occurred_at: '2026-10-16T09:07:12.000Z', text: '正常的一条' }),
+    ];
+
+    const folded = render({ alerts });
+    expect(folded).not.toContain('作废的一条');
+    expect(folded).toContain('正常的一条');
+    expect(folded).toContain('已作废 1');
+
+    expect(render({ alerts, showAllLevels: true })).toContain('作废的一条');
+  });
+
+  it('更正过的条目标「已更正」', () => {
+    const html = render({
+      alerts: [alert({
+        symbol: 'SOXL', text: '[盘后] SOXL +6.2% · 103.59 · 持仓标的大涨',
+        corrected: true, corrected_reason: '参考价错误', corrected_from: '[盘后] SOXL +5.0% · 103.59 · 持仓标的大涨',
+      })],
+    });
+
+    expect(html).toContain('[已更正]');
+    expect(html).toContain('+6.2%');
   });
 });
 

@@ -17,12 +17,12 @@ export function MarketStatusBar({
 }) {
   return (
     <div data-market-status-bar="true" className="space-y-1.5">
-      <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
         {cards.map((card) => (
           <div
             key={card.key}
             data-status-card={card.key}
-            className="min-w-0 rounded-xl border border-neutral/35 bg-surface-overlay px-2 py-1.5"
+            className="w-[5.5rem] shrink-0 rounded-xl border border-neutral/35 bg-surface-overlay px-2 py-1.5 sm:w-auto sm:flex-1"
           >
             <p className="truncate text-[10px] text-ink-muted">{card.label}</p>
             <p className={`truncate text-sm font-bold tabular-nums ${TONE_CLASS[card.tone]}`}>{card.value}</p>

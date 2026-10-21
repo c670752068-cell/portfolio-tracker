@@ -59,6 +59,7 @@ import {
   outcomeSymbol, summarizeOutcomes, writeAlertOutcomes,
 } from './alert-outcomes.mjs';
 import { voidDustRecords } from './void-dust-records.mjs';
+import { applyReferencePriceFixes } from './fix-reference-price-alerts.mjs';
 import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 import { SESSION_CADENCE_MS, sessionLabel } from './realtime-alerts.mjs';
 import { feedStateReading, intradayZPreview, monitorSymbols, runRealtimeTick } from './realtime-monitor.mjs';
@@ -1443,9 +1444,39 @@ void voidDustRecords(PORTFOLIO_ALERTS_ROOT)
     }
   })
   .catch((error) => console.warn(`void dust records failed: ${error instanceof Error ? error.message : String(error)}`));
+// 旧账二：非常规时段「较昨收」参考价用错，按真实日线收盘价重算一次。
+// 实际没到阈值的标作废，仍超过阈值的改正数字并保留原文。跑第二遍什么都不改。
+async function runReferencePriceFixCycle() {
+  try {
+    const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+    const symbols = [...new Set((store.alerts || [])
+      .filter((item) => item.voided !== true && item.corrected !== true
+        && item.session && item.session !== 'regular'
+        && String(item.dedupe_key || '').startsWith('big-move:'))
+      .map((item) => String(item.symbol || '').toUpperCase())
+      .filter(Boolean))];
+    if (symbols.length === 0) return;
+    const series = new Map();
+    for (const symbol of symbols) series.set(symbol, await closedDailySeries(symbol));
+    const next = applyReferencePriceFixes(store, { seriesFor: (symbol) => series.get(symbol) || [] });
+    if (next !== store) {
+      await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
+      const voided = next.alerts.filter((item) => item.voided_reason === '参考价错误').length;
+      const corrected = next.alerts.filter((item) => item.corrected === true).length;
+      console.warn(`reference price fixes: ${voided} voided, ${corrected} corrected`);
+    }
+  } catch (error) {
+    console.warn(`reference price fix failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 // 提醒效果平时跟着每天的收盘审查算；刚上线这一次先补算一份，免得分页空着等一天。
 // 延后一分钟再跑，不和启动时的其他任务抢行情接口。
-setTimeout(() => void runAlertOutcomesCycle(), 60_000).unref?.();
+setTimeout(async () => {
+  // 先把参考价算错的旧条目处理掉，再算效果统计，免得统计里混进作废的
+  await runReferencePriceFixCycle();
+  await runAlertOutcomesCycle();
+}, 60_000).unref?.();
 server.on('close', () => {
   clearInterval(realtimeMonitorTimer);
   clearInterval(pushRetryTimer);

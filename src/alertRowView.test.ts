@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AlertLogEntry } from './alertLog';
 import {
-  HEADLINE_MAX, alertAccent, alertHeadline, isLogOnly, partitionAlerts, pushStateIcon, suggestedSide,
+  HEADLINE_MAX, alertAccent, alertHeadline, dayLabel, groupTimeline, isLogOnly, partitionAlerts,
+  pushStateIcon, suggestedSide,
 } from './alertRowView';
 
 function entry(partial: Partial<AlertLogEntry>): AlertLogEntry {
@@ -16,20 +17,20 @@ describe('手机上每条提醒只占一行', () => {
   it('去掉时段标签，长段落压成关键数字', () => {
     expect(alertHeadline(entry({
       text: '[盘中] UDOW $67.41 · Z 0.38 → 0.52 · 涨得更多，偏强',
-    }))).toBe('UDOW $67.41 Z 0.52 偏强');
+    }))).toBe('UDOW $67.41 · Z 0.52 · 偏强');
   });
 
   it('跌得更深那一条同样压成一行', () => {
     expect(alertHeadline(entry({
       icon: '🟢', symbol: 'GDX', text: '[盘中] GDX $85.66 · Z -0.45 → -0.53 · 跌得更深，偏弱',
-    }))).toBe('GDX $85.66 Z -0.53 偏弱');
+    }))).toBe('GDX $85.66 · Z -0.53 · 偏弱');
   });
 
   it('估值推送那一条砍掉分号后面的操作说明', () => {
     expect(alertHeadline(entry({
       category: 'valuation', symbol: 'AVGO', icon: '🔔',
       text: '[盘前] 🟢 AVGO · 低估值 · $333.88 · 远期 PE 22.60；按计划分批买入或继续持有。',
-    }))).toBe('🟢 AVGO 低估值 $333.88 远期 PE…');
+    }))).toBe('🟢 AVGO · 低估值 · $333.88…');
   });
 
   it('再长也不会超过一行的字数上限', () => {
@@ -44,13 +45,13 @@ describe('手机上每条提醒只占一行', () => {
     expect(alertHeadline(entry({
       category: 'drawdown', symbol: 'QQQ', icon: '📉',
       text: 'QQQ 回撤 -5.02%（前高 759.66 → 收盘 721.53）· 本轮首次跌破 -5%',
-    }))).toBe('QQQ 回撤 -5.02%（前高 759.66…');
+    }))).toBe('QQQ 回撤 -5.02% · 本轮首次跌破 -5%');
   });
 
   it('汇总行显示「N 个标的」，不显示明细', () => {
     expect(alertHeadline(entry({
       category: 'valuation', symbol: null, icon: '📋', text: '[盘前] 估值汇总 · 5 个标的',
-    }))).toBe('估值汇总 5 个标的');
+    }))).toBe('估值汇总 · 5 个标的');
   });
 
   it('换行的长文只取第一行', () => {
@@ -114,14 +115,16 @@ describe('置顶、未读与「以下是新提醒」分隔线', () => {
     entry({ id: 'old-normal', occurred_at: '2026-10-19T12:00:00.000Z', indicators: { level: 2 } }),
   ];
 
-  it('未读的重要提醒置顶，读过的回到时间顺序', () => {
-    const fresh = partitionAlerts(rows, { readIds: [], lastOpenedAt: '2026-10-20T00:00:00.000Z' });
-    expect(fresh.pinned.map((item) => item.id)).toEqual(['new-important', 'old-important']);
-    expect(fresh.timeline.map((item) => item.id)).toEqual(['new-normal', 'old-normal']);
+  const AT = new Date('2026-10-20T13:45:00.000Z');
 
-    const read = partitionAlerts(rows, { readIds: ['new-important'], lastOpenedAt: '2026-10-20T00:00:00.000Z' });
-    expect(read.pinned.map((item) => item.id)).toEqual(['old-important']);
-    expect(read.timeline.map((item) => item.id)).toEqual(['new-important', 'new-normal', 'old-normal']);
+  it('未读的重要提醒置顶，读过的回到时间顺序', () => {
+    const fresh = partitionAlerts(rows, { readIds: [], lastOpenedAt: '2026-10-20T00:00:00.000Z', now: AT });
+    expect(fresh.pinned.map((item) => item.id)).toEqual(['new-important']);
+    expect(fresh.timeline.map((item) => item.id)).toEqual(['new-normal', 'old-important', 'old-normal']);
+
+    const read = partitionAlerts(rows, { readIds: ['new-important'], lastOpenedAt: '2026-10-20T00:00:00.000Z', now: AT });
+    expect(read.pinned).toEqual([]);
+    expect(read.timeline.map((item) => item.id)).toEqual(['new-important', 'new-normal', 'old-important', 'old-normal']);
   });
 
   it('未读数量按上次打开时间算', () => {
@@ -131,7 +134,7 @@ describe('置顶、未读与「以下是新提醒」分隔线', () => {
   });
 
   it('分隔线放在上次打开之后新增的最后一条下面', () => {
-    const view = partitionAlerts(rows, { readIds: ['new-important'], lastOpenedAt: '2026-10-20T00:00:00.000Z' });
+    const view = partitionAlerts(rows, { readIds: ['new-important'], lastOpenedAt: '2026-10-20T00:00:00.000Z', now: AT });
     // new-important、new-normal 是新的，分隔线在它们之后
     expect(view.newCount).toBe(2);
     expect(view.timeline.slice(0, view.newCount).map((item) => item.id)).toEqual(['new-important', 'new-normal']);
@@ -151,3 +154,111 @@ describe('「我据此下单了」的方向', () => {
   });
 });
 
+describe('单行摘要要保住标的和关键数字', () => {
+  it('括号里的说明不留半个括号；括号前有数字就只留括号前', () => {
+    expect(alertHeadline(entry({
+      symbol: 'QQQ', text: 'QQQ 回到前高 · 本轮回撤结束（最深 -11.3%，持续 112 天）',
+    }))).toBe('QQQ 回到前高 · 最深 -11.3%');
+
+    expect(alertHeadline(entry({
+      symbol: 'NKE', icon: '🔔',
+      text: '[盘前] 🟢 NKE · 可买 · $37.45 · 自身深度位达标；斜率 +5.20%（强势上涨，仅风险提示）',
+    }))).toBe('🟢 NKE · 可买 · $37.45 · 自身深…');
+  });
+
+  it('原文里没有标的代码时，前面补上标的', () => {
+    expect(alertHeadline(entry({
+      symbol: 'AVL', icon: '🟢',
+      text: '[盘中] Z-Score -1.42 阈值提醒 · 1 个标的 · 首次进入负值提醒区',
+    }))).toBe('AVL · Z-Score -1.42 阈值提醒…');
+  });
+
+  it('截断之后不会留下孤零零的右括号', () => {
+    const headline = alertHeadline(entry({
+      text: '某条很长很长的提醒 · 说明（这里是括号里的内容，还有更多）',
+    }));
+    expect(headline.includes('）') && !headline.includes('（')).toBe(false);
+  });
+});
+
+describe('日期', () => {
+  it('北京时间的日期加星期', () => {
+    expect(dayLabel('2026-10-20T13:38:55.000Z')).toBe('10-20 周二');
+    expect(dayLabel('2026-10-19T04:00:00.000Z')).toBe('10-19 周一');
+    expect(dayLabel('不是时间')).toBe('');
+  });
+});
+
+describe('置顶区只放最近 24 小时', () => {
+  const now = new Date('2026-10-20T13:40:00.000Z');
+  const rows = [
+    entry({ id: 'fresh', occurred_at: '2026-10-20T13:00:00.000Z', indicators: { level: 1 } }),
+    entry({ id: 'old', occurred_at: '2026-10-18T13:00:00.000Z', indicators: { level: 1 } }),
+  ];
+
+  it('超过 24 小时的重要提醒回到时间线，不再置顶', () => {
+    const view = partitionAlerts(rows, { readIds: [], lastOpenedAt: null, now });
+
+    expect(view.pinned.map((item) => item.id)).toEqual(['fresh']);
+    expect(view.timeline.map((item) => item.id)).toEqual(['old']);
+  });
+
+  it('不传 now 时按当前时间算：很久以前的重要提醒不置顶', () => {
+    const ancient = [entry({ id: 'ancient', occurred_at: '2026-01-01T00:00:00.000Z', indicators: { level: 1 } })];
+    expect(partitionAlerts(ancient, { readIds: [], lastOpenedAt: null }).pinned).toEqual([]);
+  });
+});
+
+
+describe('同一时间、同一类合并成一行', () => {
+  const valuation = (symbol: string, minute = '13:20') => entry({
+    id: `v-${symbol}`, category: 'valuation', symbol, icon: '🔔', session: 'pre',
+    occurred_at: `2026-10-20T${minute}:17.000Z`,
+    text: `[盘前] 🟢 ${symbol} · 低估值 · $333.88`,
+    indicators: { level: 2 },
+  });
+  const trade = (symbol: string) => entry({
+    id: `t-${symbol}`, category: 'position', symbol, icon: '🧾', session: 'regular',
+    occurred_at: '2026-10-19T00:06:00.000Z',
+    text: `IBKR · 买入 ${symbol} 10 @ $100.00 · 已同步到决策日志，待补充理由`,
+    indicators: { level: 2 },
+  });
+
+  it('同一分钟的估值提醒并成「盘前估值 · N 个标的」', () => {
+    const items = groupTimeline(['AVGO', 'MCD', 'META', 'NVDA', 'PDD'].map((s) => valuation(s)));
+
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe('group');
+    expect(items[0].label).toBe('盘前估值 · 5 个标的');
+    expect(items[0].entries).toHaveLength(5);
+  });
+
+  it('同一分钟的成交并成「IBKR 成交 · N 笔」', () => {
+    const items = groupTimeline(['NVDA', 'AVGO', 'MU', 'TSLA', 'META', 'GOOG'].map(trade));
+
+    expect(items[0].label).toBe('IBKR 成交 · 6 笔');
+    expect(items[0].entries).toHaveLength(6);
+  });
+
+  it('只有一条就不合并；不同分钟、不同类别各自成组', () => {
+    const items = groupTimeline([valuation('AVGO'), valuation('MCD', '14:20'), trade('NVDA')]);
+
+    expect(items.map((item) => item.kind)).toEqual(['single', 'single', 'single']);
+  });
+
+  it('重要提醒不被合并进去', () => {
+    const items = groupTimeline([
+      valuation('AVGO'), valuation('MCD'),
+      entry({ id: 'imp', category: 'valuation', symbol: 'NVDA', occurred_at: '2026-10-20T13:20:17.000Z', indicators: { level: 1 } }),
+    ]);
+
+    expect(items.filter((item) => item.kind === 'group')).toHaveLength(1);
+    expect(items.find((item) => item.kind === 'group')!.entries).toHaveLength(2);
+    expect(items.some((item) => item.kind === 'single' && item.entries[0].id === 'imp')).toBe(true);
+  });
+
+  it('合并行的时间取组里最新的一条', () => {
+    const items = groupTimeline([valuation('AVGO'), valuation('MCD')]);
+    expect(items[0].occurredAt).toBe('2026-10-20T13:20:17.000Z');
+  });
+});

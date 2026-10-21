@@ -1,11 +1,12 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ALERT_CATEGORY_LABELS, ALERT_FILTER_ORDER, beijingText, easternText, fetchAlertLog,
   loadHiddenAlertIds, loadLastOpenedAt, loadReadAlertIds, saveHiddenAlertIds, saveLastOpenedAt,
   saveReadAlertIds, type AlertCategory, type AlertLogEntry,
 } from '../alertLog';
 import {
-  alertAccent, alertHeadline, isLogOnly, partitionAlerts, pushStateIcon, suggestedSide,
+  alertAccent, alertHeadline, dayLabel, groupTimeline, isLogOnly, partitionAlerts, pushStateIcon,
+  suggestedSide, type TimelineItem,
 } from '../alertRowView';
 import { MaSlopeExplorer } from './MaSlopeExplorer';
 import {
@@ -115,7 +116,7 @@ export function JournalPageView(props: ViewProps) {
             {showHidden ? '隐藏已读' : `显示全部（已隐藏 ${hiddenAlertIds.length} 条）`}
           </button>
         </div>
-        <div className="mt-3 flex flex-wrap justify-center gap-2">
+        <div data-journal-tabs="true" className="mt-3 flex gap-2 overflow-x-auto pb-0.5 sm:justify-center">
           {TABS.map((item) => (
             <button
               key={item.key}
@@ -123,7 +124,7 @@ export function JournalPageView(props: ViewProps) {
               data-journal-tab={item.key}
               aria-pressed={tab === item.key}
               onClick={() => onTabChange(item.key)}
-              className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition-colors sm:text-sm ${
+              className={`min-h-9 shrink-0 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-colors sm:text-sm ${
                 tab === item.key ? 'bg-gain text-white shadow-sm' : 'bg-neutral/25 text-ink-secondary'
               }`}
             >
@@ -231,21 +232,24 @@ function AlertLogPanel({
     .filter((item) => categoryFilter === 'all' || item.category === categoryFilter)
     .filter((item) => !importantOnly || item.indicators?.level === 1)
     .filter((item) => showHidden || !hidden.has(item.id))
-    // 「仅记录」级别默认折叠，打开「显示全部」才出现
-    .filter((item) => showAllLevels || !isLogOnly(item)), [alerts, categoryFilter, hidden, importantOnly, showAllLevels, showHidden]);
+    // 「仅记录」级别和已作废的默认都收起来，打开「显示全部」才出现
+    .filter((item) => showAllLevels || (!isLogOnly(item) && item.voided !== true)), [alerts, categoryFilter, hidden, importantOnly, showAllLevels, showHidden]);
   const view = useMemo(
     () => partitionAlerts(rows, { readIds: readAlertIds, lastOpenedAt }),
     [rows, readAlertIds, lastOpenedAt],
   );
+  const timeline = useMemo(() => groupTimeline(view.timeline), [view.timeline]);
   const logOnlyCount = useMemo(() => alerts.filter(isLogOnly).length, [alerts]);
+  const voidedCount = useMemo(() => alerts.filter((item) => item.voided === true).length, [alerts]);
 
   const open = (entry: AlertLogEntry) => {
     setExpandedId((current) => (current === entry.id ? null : entry.id));
     onMarkAlertRead?.(entry.id);
   };
-  const row = (entry: AlertLogEntry) => (
+  const row = (entry: AlertLogEntry, showDate = false) => (
     <AlertRow
       key={entry.id}
+      showDate={showDate}
       entry={entry}
       expanded={expandedId === entry.id}
       highlighted={highlighted.has(entry.id)}
@@ -263,12 +267,12 @@ function AlertLogPanel({
         <MarketStatusBar cards={cards} dataTime={statusDataTime} stale={statusStale} />
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
           <button
             type="button"
             aria-pressed={importantOnly}
             onClick={() => onImportantOnlyChange?.(!importantOnly)}
-            className={`min-h-8 rounded-full px-2.5 text-[11px] font-medium ${importantOnly ? 'bg-loss text-white' : 'bg-neutral/25 text-ink-secondary'}`}
+            className={`min-h-8 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[11px] font-medium ${importantOnly ? 'bg-loss text-white' : 'bg-neutral/25 text-ink-secondary'}`}
           >
             只看重要
           </button>
@@ -276,17 +280,19 @@ function AlertLogPanel({
             type="button"
             aria-pressed={showAllLevels}
             onClick={() => onShowAllLevelsChange?.(!showAllLevels)}
-            className={`min-h-8 rounded-full px-2.5 text-[11px] font-medium ${showAllLevels ? 'bg-buy text-white' : 'bg-neutral/25 text-ink-secondary'}`}
+            className={`min-h-8 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[11px] font-medium ${showAllLevels ? 'bg-buy text-white' : 'bg-neutral/25 text-ink-secondary'}`}
           >
-            显示全部{logOnlyCount > 0 && !showAllLevels ? `（仅记录 ${logOnlyCount}）` : ''}
+            显示全部{!showAllLevels && (logOnlyCount > 0 || voidedCount > 0)
+              ? `（仅记录 ${logOnlyCount} · 已作废 ${voidedCount}）`
+              : ''}
           </button>
           {view.unread > 0 && (
-            <span data-alert-unread={view.unread} className="min-h-8 rounded-full bg-loss/15 px-2.5 py-1.5 text-[11px] font-semibold text-loss">
+            <span data-alert-unread={view.unread} className="min-h-8 shrink-0 whitespace-nowrap rounded-full bg-loss/15 px-2.5 py-1.5 text-[11px] font-semibold text-loss">
               未读 {view.unread}
             </span>
           )}
         </div>
-        <span className="text-[10px] tabular-nums text-ink-muted" role="status">
+        <span className="shrink-0 text-[10px] tabular-nums text-ink-muted" role="status">
           {liveStatus === 'disconnected'
             ? '● 已断开 · 正在重连'
             : liveStatus === 'paused'
@@ -294,14 +300,14 @@ function AlertLogPanel({
               : `● 实时 · 上次更新 ${secondsSinceUpdate === null ? '刚刚' : `${secondsSinceUpdate} 秒前`}`}
         </span>
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div data-alert-filters="true" className="flex gap-1.5 overflow-x-auto pb-0.5">
         {ALERT_FILTER_ORDER.map((key) => (
           <button
             key={key}
             type="button"
             aria-pressed={categoryFilter === key}
             onClick={() => onCategoryFilterChange(key)}
-            className={`min-h-8 rounded-full px-2.5 text-[11px] font-medium ${
+            className={`min-h-8 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[11px] font-medium ${
               categoryFilter === key ? 'bg-buy text-white' : 'bg-neutral/25 text-ink-secondary'
             }`}
           >
@@ -320,14 +326,25 @@ function AlertLogPanel({
           <>
             {view.pinned.length > 0 && (
               <ul className="mb-2 space-y-1 border-b border-white/15 pb-2" aria-label="置顶的重要提醒">
-                {view.pinned.map(row)}
+                {view.pinned.map((entry) => row(entry, true))}
               </ul>
             )}
             <ul className="space-y-1">
               {view.newCount > 0 && (
                 <li data-alert-divider="true" className="py-1 text-center text-[10px] text-white/45">—— 以下是新提醒 ——</li>
               )}
-              {view.timeline.map((entry) => <Fragment key={entry.id}>{row(entry)}</Fragment>)}
+              {timeline.map((item, index) => (
+                <Fragment key={item.key}>
+                  {(index === 0 || dayLabel(timeline[index - 1].occurredAt) !== dayLabel(item.occurredAt)) && (
+                    <li data-alert-day={dayLabel(item.occurredAt)} className="pt-2 text-center text-[10px] text-white/40">
+                      —— {dayLabel(item.occurredAt)} ——
+                    </li>
+                  )}
+                  {item.kind === 'group'
+                    ? <GroupRow item={item} renderRow={row} />
+                    : row(item.entries[0])}
+                </Fragment>
+              ))}
             </ul>
           </>
         )}
@@ -435,6 +452,32 @@ function AlertDetailPanel({ symbol, snapshot, onClose }: {
   );
 }
 
+/** 同一分钟、同一类合并成的一行：点开看明细。 */
+function GroupRow({ item, renderRow }: {
+  item: TimelineItem;
+  renderRow: (entry: AlertLogEntry, showDate?: boolean) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li data-alert-group={item.key} className="rounded">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex min-h-8 w-full items-center gap-1.5 text-left"
+      >
+        <time dateTime={item.occurredAt} className="shrink-0 tabular-nums text-white/45">
+          {beijingText(item.occurredAt).slice(6, 11)}
+        </time>
+        <span aria-hidden="true" className="shrink-0">📦</span>
+        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        <span aria-hidden="true" className="shrink-0 text-white/45">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && <ul className="mt-1 space-y-1 border-l border-white/15 pl-2">{item.entries.map((entry) => renderRow(entry))}</ul>}
+    </li>
+  );
+}
+
 const ACCENT_CLASS = {
   buy: 'border-l-2 border-emerald-500 pl-1.5',
   sell: 'border-l-2 border-red-500 pl-1.5',
@@ -443,8 +486,10 @@ const ACCENT_CLASS = {
 
 function AlertRow({
   entry, expanded, highlighted, onToggle, onHide, onOpenDetail, onOrderDraft, outcome = null,
+  showDate = false,
 }: {
   outcome?: AlertOutcome | null;
+  showDate?: boolean;
   entry: AlertLogEntry;
   expanded: boolean;
   highlighted: boolean;
@@ -475,7 +520,7 @@ function AlertRow({
             title={`北京 ${clock} · 美东 ${easternText(entry.occurred_at)}`}
             className="shrink-0 tabular-nums text-white/45"
           >
-            {clock.slice(6, 11)}
+            {showDate ? clock.slice(0, 11) : clock.slice(6, 11)}
           </time>
           <span aria-hidden="true" className="shrink-0">{entry.icon}</span>
           <span className={`min-w-0 flex-1 truncate ${entry.voided ? 'text-white/40 line-through' : ''}`}>
@@ -488,6 +533,9 @@ function AlertRow({
             >
               {voidedMark}
             </span>
+          )}
+          {entry.corrected && (
+            <span title={`已更正 · ${entry.corrected_reason || ''}`} className="shrink-0 text-white/45">[已更正]</span>
           )}
           {entry.backfilled && <span className="shrink-0 text-white/45">[回填]</span>}
           <span className="shrink-0" title={push.label} aria-label={`推送状态：${push.label}`}>{push.icon}</span>
@@ -518,6 +566,12 @@ function AlertRow({
             {entry.symbol ? ` · ${entry.symbol}` : ''} · 推送 {push.label}
           </p>
           {entry.voided && <p className="text-white/45">{voidedMark}</p>}
+          {entry.corrected && (
+            <p className="text-white/45">
+              已更正{entry.corrected_reason ? ` · ${entry.corrected_reason}` : ''}
+              {entry.corrected_from ? ` · 原文：${entry.corrected_from}` : ''}
+            </p>
+          )}
           {outcome && (
             <p data-alert-outcome={entry.id} className="text-white/60">
               提醒之后（{outcome.symbol} · 基准收盘 {outcome.base_date}）：

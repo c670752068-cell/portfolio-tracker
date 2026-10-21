@@ -51,7 +51,15 @@ export function parseYahooChartQuote(symbol, data) {
         hasMinuteSeries: true,
       })
     : 'closed';
-  const previousClose = asNumber(meta.chartPreviousClose);
+  // 「较昨收」的参考价：
+  // 盘中用 chartPreviousClose（上一个交易日的收盘价，口径正确）；
+  // 盘前 / 盘后 / 夜盘 / 休市时 chartPreviousClose 指向的是「上一个交易日的再前一天」
+  // （线上实测：10-20 盘后 SOXL 拿到的是 10-19 的 98.65，而不是当天收盘 97.55），
+  // 这时改用 regularMarketPrice——最近一个已完成常规交易日的收盘价。
+  const chartPreviousClose = asNumber(meta.chartPreviousClose);
+  const previousClose = session === 'regular'
+    ? chartPreviousClose
+    : regularMarketPrice ?? chartPreviousClose;
   const change = previousClose == null ? null : price - previousClose;
 
   return {
