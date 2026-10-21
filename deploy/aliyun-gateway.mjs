@@ -66,6 +66,7 @@ import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 import { SESSION_CADENCE_MS, cnnFloorText, sessionLabel } from './realtime-alerts.mjs';
 import { feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick } from './realtime-monitor.mjs';
 import { quietSummaryEvent, realtimeDefaults } from './realtime-push.mjs';
+import { createIndexQuotesCache, createIndexQuotesRoute, parseIndexQuote } from './index-quotes.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
   buildYahooSlopeChartUrl,
@@ -794,6 +795,19 @@ const handleAlertOutcomesRoute = createAlertOutcomesRoute({
   root: PORTFOLIO_ALERTS_ROOT,
   sendJson,
 });
+// 三大指数：服务器统一取数并缓存，网页只读缓存，不让每台设备各自去打数据源。
+const indexQuotesCache = createIndexQuotesCache({
+  fetchQuote: async (symbol) => parseIndexQuote(await getJsonOverIpv4(
+    buildYahooChartUrl(symbol),
+    { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+    8_000,
+  )),
+});
+const handleIndexQuotesRoute = createIndexQuotesRoute({
+  cache: indexQuotesCache,
+  sessionOf: () => classifyMarketSession(new Date(), { hasMinuteSeries: true }),
+  sendJson,
+});
 const handleDecisionLogRoute = createDecisionLogRoute({
   root: PORTFOLIO_ALERTS_ROOT,
   sendJson,
@@ -1239,6 +1253,7 @@ const server = createServer(async (req, res) => {
   if (await handleDecisionLogRoute(url, req, res)) return;
   if (await handleAlertLogRoute(url, req, res)) return;
   if (await handleAlertOutcomesRoute(url, req, res)) return;
+  if (await handleIndexQuotesRoute(url, req, res)) return;
   try {
     if (await handleAlertRulesRoute(url, req, res)) return;
   } catch (error) {

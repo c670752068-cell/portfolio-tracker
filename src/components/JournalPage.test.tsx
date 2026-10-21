@@ -610,3 +610,28 @@ describe('日期、合并与作废折叠', () => {
   });
 
 });
+
+describe('三大指数卡片接在状态条里', () => {
+  const indexQuotes = {
+    session: 'regular', time: '2026-10-21T16:26:52.000Z', refreshMs: 10000, source: 'Yahoo Finance',
+    items: [
+      { key: 'nasdaq', name: '纳斯达克', symbol: '^IXIC', futures: false, price: 26687.643, changePercent: 0.9947, quoteTime: '2026-10-21T16:26:50.000Z', delayMinutes: 0 },
+      { key: 'sp500', name: '标普500', symbol: '^GSPC', futures: false, price: 7748.39, changePercent: 0.4645, quoteTime: '2026-10-21T16:26:52.000Z', delayMinutes: 0 },
+      { key: 'dow', name: '道琼斯', symbol: '^DJI', futures: false, price: 52644.85, changePercent: -0.2838, quoteTime: '2026-10-21T16:26:51.000Z', delayMinutes: 0 },
+    ],
+  };
+
+  it('排在 QQQ 那张卡片前面，QQQ 卡片保留', () => {
+    const html = render({ statusCards: statusCards({ qqq: { price: 712.3, previousClose: 721.53 } }), indexQuotes });
+
+    expect(html).toContain('data-index-card="true"');
+    expect(html).toContain('三大指数');
+    expect(html.indexOf('data-index-card')).toBeLessThan(html.indexOf('data-status-card="qqq"'));
+    expect(html).toContain('data-status-card="qqq"');
+  });
+
+  it('没有指数数据时不渲染这张卡片', () => {
+    expect(render({ statusCards: statusCards({}) })).not.toContain('data-index-card');
+  });
+});
+

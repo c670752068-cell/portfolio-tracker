@@ -21,10 +21,14 @@ import {
 import { DecisionLogSection, ReturnsSection } from './DecisionJournal';
 import { fetchMaSlopeDashboard } from '../maSlopeQuery';
 import {
-  getServerAlertLogUrl, getServerAlertOutcomesUrl, getServerDecisionLogUrl, getServerMaSlopeUrl,
-  getServerQuoteProxyUrl,
+  getServerAlertLogUrl, getServerAlertOutcomesUrl, getServerDecisionLogUrl, getServerIndexQuotesUrl,
+  getServerMaSlopeUrl, getServerQuoteProxyUrl,
 } from '../runtimeConfig';
 import { MarketStatusBar } from './MarketStatusBar';
+import type { IndexFlash } from './IndexTripletCard';
+import {
+  INDEX_STALE_MS, fetchIndexQuotes, indexDataState, type IndexQuotes,
+} from '../indexQuotes';
 import {
   cnnFromAlerts, cnnScoreFrom, importantTodayCount, parseStatusQuotes, statusCards,
   type StatusCard, type StatusQuotes,
@@ -67,6 +71,9 @@ interface ViewProps {
   statusCards?: readonly StatusCard[];
   statusDataTime?: string | null;
   statusStale?: boolean;
+  indexQuotes?: IndexQuotes | null;
+  indexStale?: boolean;
+  indexFlash?: IndexFlash;
   snapshot?: QuantAnalysisSnapshot | null;
   outcomes?: AlertOutcomesPayload | null;
   detailSymbol?: string | null;
@@ -96,7 +103,8 @@ export function JournalPageView(props: ViewProps) {
     importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
     highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
     onMarkAlertRead, lastOpenedAt = null, statusCards: cards = [], statusDataTime = null,
-    statusStale = false, snapshot = null, outcomes = null, detailSymbol = null, onOpenDetail,
+    statusStale = false, indexQuotes = null, indexStale = false, indexFlash = {},
+    snapshot = null, outcomes = null, detailSymbol = null, onOpenDetail,
     onCloseDetail, onOrderDraft, draftNotice = '',
   } = props;
 
@@ -137,6 +145,9 @@ export function JournalPageView(props: ViewProps) {
 
       {tab === 'alerts' && (
         <AlertLogPanel
+          indexQuotes={indexQuotes}
+          indexStale={indexStale}
+          indexFlash={indexFlash}
           outcomes={outcomes?.outcomes ?? null}
           onOpenDetail={onOpenDetail}
           onOrderDraft={onOrderDraft}
@@ -193,6 +204,7 @@ export function JournalPageView(props: ViewProps) {
 }
 
 function AlertLogPanel({
+  indexQuotes = null, indexStale = false, indexFlash = {},
   outcomes = null, onOpenDetail, onOrderDraft, draftNotice = '',
   cards = [], statusDataTime = null, statusStale = false,
   alerts, hiddenAlertIds, showHidden, categoryFilter, onCategoryFilterChange, onHideAlert, loading,
@@ -200,6 +212,9 @@ function AlertLogPanel({
   highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
   onMarkAlertRead, lastOpenedAt = null,
 }: {
+  indexQuotes?: IndexQuotes | null;
+  indexStale?: boolean;
+  indexFlash?: IndexFlash;
   outcomes?: Record<string, AlertOutcome> | null;
   onOpenDetail?: (symbol: string) => void;
   onOrderDraft?: (entry: AlertLogEntry) => void;
@@ -263,8 +278,15 @@ function AlertLogPanel({
 
   return (
     <div className="space-y-2">
-      {cards.length > 0 && (
-        <MarketStatusBar cards={cards} dataTime={statusDataTime} stale={statusStale} />
+      {(cards.length > 0 || (indexQuotes?.items.length ?? 0) > 0) && (
+        <MarketStatusBar
+          cards={cards}
+          dataTime={statusDataTime}
+          stale={statusStale}
+          indexQuotes={indexQuotes}
+          indexStale={indexStale}
+          indexFlash={indexFlash}
+        />
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
@@ -624,6 +646,10 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
   const [outcomes, setOutcomes] = useState<AlertOutcomesPayload | null>(null);
   const [detailSymbol, setDetailSymbol] = useState<string | null>(null);
   const [draftNotice, setDraftNotice] = useState('');
+  const [indexQuotes, setIndexQuotes] = useState<IndexQuotes | null>(null);
+  const [indexFetchedAt, setIndexFetchedAt] = useState<number | null>(null);
+  const [indexTick, setIndexTick] = useState(() => Date.now());
+  const [indexFlash, setIndexFlash] = useState<IndexFlash>({});
   const [quotes, setQuotes] = useState<StatusQuotes | null>(null);
   const [quotesAt, setQuotesAt] = useState<number | null>(null);
   const [statusNow, setStatusNow] = useState(() => Date.now());
@@ -722,6 +748,63 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
       .then((next) => setOutcomes(next))
       .catch(() => undefined);
     return () => controller.abort();
+  }, []);
+
+  // 三大指数：服务器已经统一取数并缓存，这里按服务器给的节奏跟着拉
+  // （常规时段 10 秒，其余 30 秒）。页面切到后台就停，切回来立刻补拉。
+  useEffect(() => {
+    const endpoint = getServerIndexQuotesUrl() || '/api/portfolio/index-quotes';
+    const controller = new AbortController();
+    let stopped = false;
+    let timer = 0;
+    let flashTimer = 0;
+    let previous: IndexQuotes | null = null;
+
+    const pull = async () => {
+      if (stopped || document.visibilityState === 'hidden') return;
+      try {
+        const next = await fetchIndexQuotes(endpoint, controller.signal);
+        if (stopped) return;
+        // 涨跌幅变了就让那一行闪一下
+        const changes: IndexFlash = {};
+        for (const item of next.items) {
+          const before = previous?.items.find((row) => row.key === item.key)?.changePercent ?? null;
+          if (before !== null && item.changePercent !== null && item.changePercent !== before) {
+            changes[item.key] = item.changePercent > before ? 'up' : 'down';
+          }
+        }
+        previous = next;
+        setIndexQuotes(next);
+        setIndexFetchedAt(Date.now());
+        if (Object.keys(changes).length > 0) {
+          setIndexFlash(changes);
+          window.clearTimeout(flashTimer);
+          flashTimer = window.setTimeout(() => setIndexFlash({}), 1_300);
+        }
+      } catch {
+        // 取不到就保留上一份数字，超过 2 分钟由界面标「数据延迟」
+      } finally {
+        if (!stopped) {
+          setIndexTick(Date.now());
+          // 按服务器给的节奏排下一次
+          window.clearTimeout(timer);
+          timer = window.setTimeout(() => void pull(), previous?.refreshMs ?? INDEX_STALE_MS / 4);
+        }
+      }
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void pull();
+    };
+    void pull();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      stopped = true;
+      controller.abort();
+      window.clearTimeout(timer);
+      window.clearTimeout(flashTimer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // 顶部状态条：每 60 秒拉一次 QQQ / VIX 和服务器判定的时段。
@@ -847,6 +930,9 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
       statusCards={cards}
       statusDataTime={quotes?.time ?? null}
       statusStale={statusStale}
+      indexQuotes={indexQuotes}
+      indexStale={indexDataState(indexFetchedAt, indexTick) === 'stale'}
+      indexFlash={indexFlash}
       snapshot={snapshot}
       outcomes={outcomes}
       detailSymbol={detailSymbol}

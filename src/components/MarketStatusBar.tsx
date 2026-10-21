@@ -1,4 +1,6 @@
 import { easternText, beijingText } from '../alertLog';
+import { IndexTripletCard, type IndexFlash } from './IndexTripletCard';
+import type { IndexQuotes } from '../indexQuotes';
 import type { StatusCard } from '../marketStatusBar';
 
 const TONE_CLASS: Record<StatusCard['tone'], string> = {
@@ -9,15 +11,21 @@ const TONE_CLASS: Record<StatusCard['tone'], string> = {
 
 /** 日志页顶部那排小卡片：QQQ / VIX / CNN / 今日重要 / 当前时段。 */
 export function MarketStatusBar({
-  cards, dataTime, stale,
+  cards, dataTime, stale, indexQuotes = null, indexStale = false, indexFlash = {},
 }: {
   cards: readonly StatusCard[];
   dataTime: string | null;
   stale: boolean;
+  indexQuotes?: IndexQuotes | null;
+  indexStale?: boolean;
+  indexFlash?: IndexFlash;
 }) {
   return (
     <div data-market-status-bar="true" className="space-y-1.5">
       <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+        {indexQuotes && indexQuotes.items.length > 0 && (
+          <IndexTripletCard quotes={indexQuotes} stale={indexStale} flash={indexFlash} />
+        )}
         {cards.map((card) => (
           <div
             key={card.key}

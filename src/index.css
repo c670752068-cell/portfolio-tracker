@@ -198,3 +198,20 @@ a:focus-visible {
 .alert-row-new {
   animation: alert-row-flash 3s ease-out 1;
 }
+
+/* 日志页状态条：三大指数涨跌幅变化时短暂闪一下 */
+@keyframes index-flash-up {
+  from { background-color: rgb(var(--gain) / 28%); }
+  to { background-color: rgb(var(--gain) / 0%); }
+}
+@keyframes index-flash-down {
+  from { background-color: rgb(var(--loss) / 28%); }
+  to { background-color: rgb(var(--loss) / 0%); }
+}
+.index-flash-up { animation: index-flash-up 1.2s ease-out 1; }
+.index-flash-down { animation: index-flash-down 1.2s ease-out 1; }
+@media (prefers-reduced-motion: reduce) {
+  .index-flash-up,
+  .index-flash-down { animation: none; }
+}
+

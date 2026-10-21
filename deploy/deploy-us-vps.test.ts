@@ -320,3 +320,15 @@ describe('券商同步提醒上线所需', () => {
   });
 });
 
+describe('三大指数卡片上线所需', () => {
+  it('模块要上传、语法检查，并接上只读路由', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/index-quotes.mjs "${SERVER}:${REMOTE_RELEASE_APP}/index-quotes.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/index-quotes.mjs'");
+
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('createIndexQuotesCache(');
+    expect(gateway).toContain('handleIndexQuotesRoute');
+  });
+});
+
