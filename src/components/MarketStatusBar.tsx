@@ -35,6 +35,9 @@ export function MarketStatusBar({
             <p className="truncate text-[10px] text-ink-muted">{card.label}</p>
             <p className={`truncate text-sm font-bold tabular-nums ${TONE_CLASS[card.tone]}`}>{card.value}</p>
             <p className="truncate text-[10px] tabular-nums text-ink-muted">{card.detail}</p>
+            {card.detail2 && (
+              <p data-status-detail2={card.key} className="truncate text-[10px] tabular-nums text-ink-muted">{card.detail2}</p>
+            )}
           </div>
         ))}
       </div>

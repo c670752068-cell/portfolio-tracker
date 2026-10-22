@@ -232,6 +232,51 @@ export function intradayZAlerts({ symbol, price, previousZ, currentZ, session, f
   return alerts;
 }
 
+// 期货大跌：夜盘/盘前最能看出隔夜情绪。三档分别只记录、普通、重要，
+// 每个交易时段每档一次；回到 -0.5% 以内写一条「回稳」。
+export const FUTURES_DROP_TIERS = [1, 1.5, 2.5];
+export const FUTURES_STEADY_PCT = -0.5;
+const FUTURES_TIER_LEVELS = { 1: 'log_only', 1.5: 'normal', 2.5: 'important' };
+
+export function futuresDropAlerts({ items = [], session, firedKeys, day }) {
+  const alerts = [];
+  for (const raw of items) {
+    const item = typeof raw === 'object' && raw !== null ? raw : {};
+    if (item.futures !== true) continue;
+    const change = finite(item.change_percent);
+    if (change === null) continue;
+    const delay = finite(item.delay_minutes);
+    const delayNote = delay !== null && delay > 0 ? ` · 延迟 ${Math.round(delay)} 分钟` : '';
+    const name = String(item.name || item.key || '期货');
+
+    if (change > FUTURES_STEADY_PCT) {
+      // 之前跌破过哪一档，才写「回稳」
+      const dropped = FUTURES_DROP_TIERS.some(
+        (tier) => firedKeys.has(`futures-drop:${item.key}:${tier}:${day}:${session}`),
+      );
+      const key = `futures-steady:${item.key}:${day}:${session}`;
+      if (dropped && !firedKeys.has(key)) {
+        alerts.push({
+          kind: 'futures_steady', dedupe_key: key, category: 'other', symbol: null, icon: '🌤',
+          level: 'normal', value: change, threshold: FUTURES_STEADY_PCT, session,
+          text: `${tag(session)} ${name} ${change >= 0 ? '+' : ''}${change.toFixed(2)}%${delayNote} · 回稳`,
+        });
+      }
+      continue;
+    }
+    for (const tier of FUTURES_DROP_TIERS) {
+      const key = `futures-drop:${item.key}:${tier}:${day}:${session}`;
+      if (firedKeys.has(key) || change > -tier) continue;
+      alerts.push({
+        kind: 'futures_drop', dedupe_key: key, category: 'other', symbol: null, icon: '📉',
+        level: FUTURES_TIER_LEVELS[tier] || 'normal', value: change, threshold: -tier, session,
+        text: `${tag(session)} ${name} ${change.toFixed(2)}%${delayNote} · 夜盘持续走弱`,
+      });
+    }
+  }
+  return alerts;
+}
+
 // 接近露头（买入方向）：Z 在 0 以下趴够久之后开始往上抬，先给一声提醒，
 // 真的穿过 0 仍然由现有的「向上露头」负责。连续天数和露头规则保持一致。
 export const NEAR_BREAKOUT_MIN_SESSIONS = 15;

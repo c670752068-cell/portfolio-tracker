@@ -5,13 +5,22 @@ export const SESSION_LABELS: Readonly<Record<string, string>> = {
   pre: '盘前', regular: '盘中', post: '盘后', overnight: '夜盘', closed: '休市',
 };
 
-export interface StatusQuote { price: number | null; previousClose: number | null }
+export interface StatusQuote {
+  price: number | null;
+  previousClose: number | null;
+  /** 价格本身的时间；夜盘最要紧——不能拿拉取时间冒充。 */
+  priceTime?: string | null;
+  stale?: boolean;
+  staleNote?: string | null;
+}
 export interface CnnReading { score: number | null; previous: number | null; at: string | null }
 export interface StatusCard {
   key: 'qqq' | 'vix' | 'cnn' | 'important' | 'session';
   label: string;
   value: string;
   detail: string;
+  /** QQQ 卡片下面那一小行：距下一档回撤还差多少。 */
+  detail2?: string;
   tone: 'warn' | 'calm' | 'muted';
 }
 
@@ -98,7 +107,13 @@ export function parseStatusQuotes(body: unknown): StatusQuotes {
       return names.includes(symbol);
     }) as Record<string, unknown> | undefined;
     if (!row) return null;
-    return { price: finite(row.price), previousClose: finite(row.previousClose) };
+    return {
+      price: finite(row.price),
+      previousClose: finite(row.previousClose),
+      priceTime: typeof row.priceTime === 'string' ? row.priceTime : null,
+      stale: row.stale === true,
+      staleNote: typeof row.stale_note === 'string' ? row.stale_note : null,
+    };
   };
   const session = typeof value.session === 'string' && SESSION_LABELS[value.session] ? value.session : null;
   const time = typeof value.time === 'string' && !Number.isNaN(Date.parse(value.time)) ? value.time : null;
@@ -113,6 +128,39 @@ export function cnnScoreFrom(snapshot: { context?: Record<string, unknown> } | n
     : {}) as Record<string, unknown>;
   const at = typeof fear.as_of === 'string' ? fear.as_of : null;
   return { score: fear.available === false ? null : finite(fear.score), at };
+}
+
+// 和服务器端 QQQ_DRAWDOWN_TIERS 一致：只用来显示「还差多少」，不改任何判定。
+export const DRAWDOWN_TIERS = [5, 10, 15, 20, 25, 30];
+
+export interface DrawdownGap { tier: number; gapPct: number; triggerPrice: number }
+
+/** 离下一档回撤还差几个百分点，以及那一档对应的价格。 */
+export function nextDrawdownTier(
+  price: number | null, series: readonly { close: number; date?: string }[],
+): DrawdownGap | null {
+  const current = finite(price);
+  const peak = series.reduce<number | null>(
+    (best, point) => (finite(point.close) !== null && (best === null || point.close > best) ? point.close : best),
+    null,
+  );
+  if (current === null || peak === null || peak <= 0) return null;
+  const drawdown = (current / peak - 1) * 100;
+  const tier = DRAWDOWN_TIERS.find((value) => drawdown > -value);
+  if (tier === undefined) return null;
+  return { tier, gapPct: drawdown + tier, triggerPrice: peak * (1 - tier / 100) };
+}
+
+export function drawdownGapText(gap: DrawdownGap | null): string {
+  if (!gap) return '';
+  return `距 -${gap.tier}% 档还差 ${gap.gapPct.toFixed(1)}%（${gap.triggerPrice.toFixed(2)}）`;
+}
+
+/** 状态条的数据时间：优先用价格本身的时间，没有才退回服务器给的时间。 */
+export function quoteTimeOf(quotes: (StatusQuotes & { qqq: StatusQuote | null }) | null): string | null {
+  if (!quotes) return null;
+  const priceTime = (quotes.qqq as { priceTime?: unknown } | null)?.priceTime;
+  return typeof priceTime === 'string' && priceTime ? priceTime : quotes.time;
 }
 
 export function statusCards({
@@ -134,6 +182,7 @@ export function statusCards({
       key: 'qqq', label: 'QQQ',
       value: finite(qqq?.price) === null ? '暂无' : Number(qqq?.price).toFixed(2),
       detail: `离前高 ${drawdown === null ? '暂无' : `${signed(drawdown, 1)}%`}`,
+      detail2: drawdownGapText(nextDrawdownTier(qqq?.price ?? null, qqqSeries)),
       tone: drawdown !== null && drawdown <= -5 ? 'warn' : 'muted',
     },
     {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { emptyAlertLog } from './alert-log.mjs';
 import { realtimeDefaults } from './realtime-push.mjs';
-import { feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick } from './realtime-monitor.mjs';
+import { estimatedZFromPrice, feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick } from './realtime-monitor.mjs';
 
 const base = {
   now: new Date('2026-10-17T01:30:00.000Z'), // 美东 21:30 → 夜盘
@@ -442,7 +442,7 @@ describe('盘中 Z 只在常规时段判定', () => {
     expect(result.alerts.filter((item) => item.category === 'zscore')).toHaveLength(2);
   });
 
-  it.each(['pre', 'post', 'overnight'] as const)('%s 不判定盘中 Z', async (session) => {
+  it.each(['pre', 'post'] as const)('%s 不判定盘中 Z（缓存里是上一个交易日的）', async (session) => {
     const result = await runRealtimeTick({
       ...base, session, now: new Date('2026-10-20T11:00:00.000Z'),
       store: emptyAlertLog(), dispatch: vi.fn(), quotes: {}, cnnScore: null, previousCnnScore: null,
@@ -519,6 +519,48 @@ describe('接近露头接进实时监控', () => {
       nearBreakout: { WMT: { streak: 20, currentZ: -0.62, previousZ: -0.05, price: 100 } },
     });
     expect(reset.store.states['near-breakout:WMT']).toBeUndefined();
+  });
+});
+
+describe('夜盘的 Z 预估', () => {
+  const dashboard = {
+    dashboard: {
+      series: [
+        { date: '2026-10-20', close: 700, ma200: 650, std200: 40, zscore200: 1.25, is_partial: false },
+        { date: '2026-10-21', close: 717.63, ma200: 652, std200: 40, zscore200: 1.64, is_partial: false },
+      ],
+    },
+  };
+
+  it('用现价和最后一根完整收盘的均值/标准差估一个 Z', () => {
+    const reading = estimatedZFromPrice(dashboard, 725.2);
+
+    // (725.2 - 652) / 40 = 1.83
+    expect(reading).toMatchObject({ previousZ: 1.64, price: 725.2, basis_date: '2026-10-21' });
+    expect(reading!.currentZ).toBeCloseTo(1.83, 2);
+  });
+
+  it('缺均值或标准差就算不出来，不瞎估', () => {
+    expect(estimatedZFromPrice({ dashboard: { series: [{ date: 'x', close: 1, is_partial: false }] } }, 10)).toBeNull();
+    expect(estimatedZFromPrice(dashboard, null)).toBeNull();
+    expect(estimatedZFromPrice(null, 10)).toBeNull();
+  });
+
+  it('标准差为 0 时不算，免得除出无穷大', () => {
+    const flat = { dashboard: { series: [{ date: 'x', close: 1, ma200: 1, std200: 0, zscore200: 0, is_partial: false }] } };
+    expect(estimatedZFromPrice(flat, 10)).toBeNull();
+  });
+
+  it('夜盘照常判定盘中 Z（读数由网关按现价估算）', async () => {
+    const result = await runRealtimeTick({
+      ...base, session: 'overnight', now: new Date('2026-10-22T05:00:00.000Z'),
+      store: emptyAlertLog(), dispatch: vi.fn(), quotes: {}, cnnScore: null, previousCnnScore: null,
+      qqqPreviousHigh: null, qqqPeakDate: null,
+      intradayZ: { TQQQ: { previousZ: 0.95, currentZ: 1.06, price: 72.61 } },
+    });
+
+    expect(result.alerts.filter((item) => item.category === 'zscore')).toHaveLength(1);
+    expect(result.alerts[0].text).toContain('[夜盘]');
   });
 });
 

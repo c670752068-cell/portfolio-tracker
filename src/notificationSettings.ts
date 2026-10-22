@@ -28,6 +28,8 @@ export interface RealtimeNotificationSettingsValue {
   cnn: boolean;
   intradayZ: boolean;
   nearBreakout: boolean;
+  futuresDrop: boolean;
+  portfolioLoss: boolean;
   bigMove: boolean;
   sellLine: boolean;
   holdings: boolean;
@@ -39,7 +41,8 @@ export interface RealtimeNotificationSettingsValue {
 export function defaultRealtimeNotification(): RealtimeNotificationSettingsValue {
   return {
     enabled: false, qqqDrawdown: false, vix: false, cnn: false, intradayZ: false,
-    nearBreakout: false, bigMove: false, sellLine: false, holdings: false, resonance: false,
+    nearBreakout: false, futuresDrop: false, portfolioLoss: false,
+    bigMove: false, sellLine: false, holdings: false, resonance: false,
     importantRepeat: 3, quietSummary: true,
   };
 }

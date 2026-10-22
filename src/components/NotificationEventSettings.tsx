@@ -53,6 +53,8 @@ const REALTIME_ITEMS: ReadonlyArray<{ key: keyof RealtimeNotificationSettingsVal
   { key: 'cnn', name: '恐慌指数', description: 'CNN 恐惧贪婪跌破 30 / 25 / 20 / 15、恐慌加剧或缓解。' },
   { key: 'intradayZ', name: '盘中 Z-Score', description: '盘中 Z 穿过 ±0.5 / ±1.0 / ±1.5 / ±2.0 / ±2.5。' },
   { key: 'nearBreakout', name: '接近露头', description: 'Z 在 0 以下连续 15 个交易日以上之后回升到 -0.1，盘中先提醒一次，收盘再确认一次。' },
+  { key: 'futuresDrop', name: '期货大跌', description: '纳指/标普/道指期货较上一结算价跌到 -1%（仅记录）、-1.5%、-2.5%，回到 -0.5% 以内写一条回稳。' },
+  { key: 'portfolioLoss', name: '持仓整体浮亏', description: '用最新价格（含夜盘）估算全部持仓今日盈亏，占总资产达到 -2% / -4% 时提醒。' },
   { key: 'bigMove', name: '个股大幅波动', description: '持仓或观察标的当天涨跌超过 ±5%（QQQ ±2%，2 倍 ETF ±8%，3 倍 ETF ±12%）。' },
   { key: 'sellLine', name: '卖出线', description: '实时价格达到卖出军令的卖出线。' },
   { key: 'holdings', name: '持仓变化', description: '券商同步发现新买、加仓、减仓或清仓。' },

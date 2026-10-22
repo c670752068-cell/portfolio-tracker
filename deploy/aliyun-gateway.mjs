@@ -64,9 +64,12 @@ import { applyReferencePriceFixes } from './fix-reference-price-alerts.mjs';
 import { brokerHealthReadings } from './broker-health.mjs';
 import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 import { SESSION_CADENCE_MS, cnnFloorText, sessionLabel } from './realtime-alerts.mjs';
-import { feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick } from './realtime-monitor.mjs';
+import { estimatedZFromPrice, feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick } from './realtime-monitor.mjs';
 import { quietSummaryEvent, realtimeDefaults } from './realtime-push.mjs';
 import { createIndexQuotesCache, createIndexQuotesRoute, parseIndexQuote } from './index-quotes.mjs';
+import { createOvernightQuoteStore, createOvernightQuotesRoute } from './overnight-quotes.mjs';
+import { feedOutageReading, markQuoteFreshness, pickOvernightQuote } from './quote-freshness.mjs';
+import { portfolioDayLoss } from './portfolio-loss.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
   buildYahooSlopeChartUrl,
@@ -736,12 +739,21 @@ async function fetchYahooQuote(symbol) {
 }
 
 async function fetchNasdaqQuote(symbol) {
-  const url = `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/info?assetclass=stocks`;
-  const data = await getJsonOverIpv4(url, {
-      Accept: 'application/json',
-      'User-Agent': 'Mozilla/5.0',
-      'Accept-Language': 'en-US,en;q=0.9',
-    }, 12_000);
+  // QQQ 这类 ETF 用 assetclass=stocks 会被拒（HTTP 400），要换成 etf
+  const classes = ['stocks', 'etf'];
+  let data = null;
+  for (const assetClass of classes) {
+    try {
+      data = await getJsonOverIpv4(
+        `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/info?assetclass=${assetClass}`,
+        { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'en-US,en;q=0.9' },
+        12_000,
+      );
+    } catch {
+      data = null;
+    }
+    if (data?.data?.primaryData?.lastSalePrice) break;
+  }
   const primary = data?.data?.primaryData;
   const price = asNumber(primary?.lastSalePrice);
   if (price == null) throw new Error('NASDAQ 未返回有效价格');
@@ -758,6 +770,40 @@ async function fetchNasdaqQuote(symbol) {
     source: 'proxy',
     isRealtime: Boolean(primary?.isRealTime),
   };
+}
+
+// 夜盘（美东 20:00–04:00）：免费源的价格停在 19:59，用富途推上来的夜盘价；
+// 推送断了退到 Nasdaq 的最后成交价；都没有就标「夜盘无报价」，不沿用旧价格。
+async function fetchOvernightQuote(symbol, now) {
+  const pushed = overnightQuotes.get(symbol, now);
+  let nasdaq = null;
+  if (!pushed) {
+    try {
+      nasdaq = await fetchNasdaqQuote(symbol);
+    } catch { /* 退到下一档 */ }
+  }
+  let yahoo = null;
+  try {
+    yahoo = await fetchYahooQuote(symbol);
+  } catch { /* 夜盘本来就可能没有 */ }
+  const picked = pickOvernightQuote({ pushed, nasdaq, yahoo, now });
+  const previousClose = alertNumber(picked.previousClose);
+  return {
+    symbol,
+    currency: 'USD',
+    ...picked,
+    priceTime: picked.priceTime ?? null,
+    timestamp: picked.priceTime ?? null,
+    changePercent: picked.price !== null && previousClose ? picked.price / previousClose - 1 : null,
+    change: picked.price !== null && previousClose ? picked.price - previousClose : null,
+    session: 'overnight',
+  };
+}
+
+/** 按时段取价，并打上新鲜度标记：过期的一律不再当实时价格。 */
+async function fetchSessionQuote(symbol, session, now = new Date()) {
+  if (session === 'overnight') return fetchOvernightQuote(symbol, now);
+  return markQuoteFreshness(await fetchFreeQuote(symbol), { now, session });
 }
 
 async function fetchFreeQuote(symbol) {
@@ -795,6 +841,15 @@ const handleAlertOutcomesRoute = createAlertOutcomesRoute({
   root: PORTFOLIO_ALERTS_ROOT,
   sendJson,
 });
+// 夜盘报价：Mac 上的 sync/push-overnight-quotes.mjs 定时把 OpenD 的夜盘价推上来。
+const overnightQuotes = createOvernightQuoteStore();
+const handleOvernightQuotesRoute = createOvernightQuotesRoute({
+  store: overnightQuotes,
+  token: PORTFOLIO_SYNC_TOKEN,
+  sendJson,
+  readBody: readPositionsBody,
+});
+
 // 三大指数：服务器统一取数并缓存，网页只读缓存，不让每台设备各自去打数据源。
 const indexQuotesCache = createIndexQuotesCache({
   fetchQuote: async (symbol) => parseIndexQuote(await getJsonOverIpv4(
@@ -1166,9 +1221,10 @@ async function runStoredChannelReviewCycle() {
 async function proxyQuotes(req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
   const symbols = [...new Set((url.searchParams.get('symbols') || '').split(',').map((value) => value.trim().toUpperCase()).filter(Boolean))].slice(0, 50);
+  const session = classifyMarketSession(new Date(), { hasMinuteSeries: true });
   const rows = await Promise.all(symbols.map(async (symbol) => {
     try {
-      return { symbol, quote: await fetchFreeQuote(symbol) };
+      return { symbol, quote: await fetchSessionQuote(symbol, session) };
     } catch (error) {
       return { symbol, reason: error instanceof Error ? error.message : String(error) };
     }
@@ -1178,7 +1234,7 @@ async function proxyQuotes(req, res) {
     failedSymbols: rows.filter((row) => !row.quote).map((row) => ({ symbol: row.symbol, reason: row.reason })),
     // 日志页顶部状态条要显示「当前时段」和数据时间：时段由服务器判定，
     // 假期表在服务器这一侧，网页不再自己猜。
-    session: classifyMarketSession(new Date(), { hasMinuteSeries: true }),
+    session,
     time: new Date().toISOString(),
   });
 }
@@ -1254,6 +1310,7 @@ const server = createServer(async (req, res) => {
   if (await handleAlertLogRoute(url, req, res)) return;
   if (await handleAlertOutcomesRoute(url, req, res)) return;
   if (await handleIndexQuotesRoute(url, req, res)) return;
+  if (await handleOvernightQuotesRoute(url, req, res)) return;
   try {
     if (await handleAlertRulesRoute(url, req, res)) return;
   } catch (error) {
@@ -1318,15 +1375,31 @@ async function runRealtimeMonitorCycle() {
     const quotes = {};
     for (const symbol of symbols) {
       try {
-        const quote = await fetchFreeQuote(symbol === 'VIX' ? '^VIX' : symbol);
+        const quote = await fetchSessionQuote(symbol === 'VIX' ? '^VIX' : symbol, session, now);
         if (quote) {
           quotes[symbol] = quote;
           // 持仓接口要用这份报价重算市值，存一份在内存里。
           // fetchedAt 是「我们什么时候取到的」：休市日拿到的是上一个交易日的
           // 收盘价，行情时间很旧但报价本身是新的，判新鲜度要用取数时间。
-          if (symbol !== 'VIX') LIVE_QUOTES.set(symbol, { ...quote, fetchedAt: new Date().toISOString() });
+          // 过期的价格不进持仓估值，免得拿盘后最后一笔当现价
+          if (symbol !== 'VIX' && quote.stale !== true && quote.price !== null) {
+            LIVE_QUOTES.set(symbol, { ...quote, fetchedAt: new Date().toISOString() });
+          }
         }
       } catch { /* 单个标的取价失败不影响其他 */ }
+    }
+
+    // 价格拿到了但全都过期（夜盘最典型：停在 19:59）也要报一条，
+    // 不然页面会一直拿盘后最后一笔当实时价。
+    try {
+      const outage = feedOutageReading({ session, quotes, now });
+      if (outage) {
+        const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+        const next = applyStateAlerts(store, [outage], now);
+        if (next !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
+      }
+    } catch (error) {
+      console.warn(`overnight feed reading failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     // 行情源中断超过 10 分钟写一条系统提醒；恢复后再写一条。
@@ -1358,7 +1431,7 @@ async function runRealtimeMonitorCycle() {
     // 盘中 Z 用决策页「盘中预览」那一根未收盘日线，只有常规时段才有；
     // 每轮按游标刷几个标的的日线缓存，整个监控范围都能轮到，不再只看前 8 个。
     const zSymbols = symbols.filter((symbol) => symbol !== 'VIX');
-    if ((session === 'regular' || session === 'post') && zSymbols.length > 0) {
+    if ((session === 'regular' || session === 'post' || session === 'overnight') && zSymbols.length > 0) {
       for (let step = 0; step < REALTIME_DASHBOARD_PER_TICK; step += 1) {
         await loadDashboard(zSymbols[(REALTIME_STATE.dashboardCursor + step) % zSymbols.length]);
       }
@@ -1368,12 +1441,20 @@ async function runRealtimeMonitorCycle() {
     const nearBreakout = {};
     for (const symbol of zSymbols) {
       const dashboard = maSlopeCache.lastGood(`dashboard:${symbol}:5y:8`);
-      const reading = intradayZPreview(dashboard);
+      // 夜盘日线不更新：用新鲜的夜盘价和最后一根完整收盘的均值/标准差估一个 Z
+      const live = quotes[symbol];
+      const reading = session === 'overnight'
+        ? (live && live.stale !== true ? estimatedZFromPrice(dashboard, live.price) : null)
+        : intradayZPreview(dashboard);
       if (reading) intradayZ[symbol] = reading;
       // 接近露头：常规时段看未收盘那根，盘后用刚收盘那根确认一次
       if (session === 'regular' || session === 'post') {
         const near = nearBreakoutReading(dashboard, { confirmation: session === 'post' });
         if (near) nearBreakout[symbol] = near;
+      } else if (session === 'overnight' && reading) {
+        // 夜盘用估算出来的 Z 判断接近露头，连续天数仍按完整收盘数
+        const near = nearBreakoutReading(dashboard, { confirmation: false });
+        if (near) nearBreakout[symbol] = { ...near, currentZ: reading.currentZ, price: reading.price };
       }
     }
 
@@ -1390,6 +1471,20 @@ async function runRealtimeMonitorCycle() {
         sellLines[symbol] = { trigger, reference, label: plan.action_stage_key === 'trim_stock' ? '正股分批' : '开始降风险' };
       }
     }
+
+    // 三大指数/期货的当前读数（服务器缓存里取，不额外打上游）
+    let indexItems = [];
+    try {
+      indexItems = (await indexQuotesCache.read(session)).items;
+    } catch (error) {
+      console.warn(`index quotes for alerts failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    // 持仓今日预估盈亏：用刚取到的报价和券商持仓算
+    const portfolioLoss = portfolioDayLoss({
+      positions,
+      quotes,
+      nav: alertNumber(snapshot?.ammo_overview?.nav_usd),
+    });
 
     const cnnScore = alertNumber(snapshot?.context?.cnn_fear_greed?.score);
     const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
@@ -1416,6 +1511,8 @@ async function runRealtimeMonitorCycle() {
       cooldownMs: NOISE_CONFIG.cooldownMinutes * 60_000,
       bigMove: NOISE_CONFIG.bigMove,
       nearBreakout,
+      indexItems,
+      portfolioLoss,
     });
     if (cnnScore !== null) REALTIME_STATE.lastCnn = cnnScore;
     if (result.store !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, result.store);

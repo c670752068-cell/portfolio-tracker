@@ -1,9 +1,10 @@
 import { appendAlerts } from './alert-log.mjs';
 import { withinCooldown } from './alert-noise.mjs';
 import {
-  bigMoveAlert, cnnAlerts, cnnTierStates, intradayZAlerts, nearBreakoutAlerts, nearBreakoutStates,
-  negativeStreak, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
+  bigMoveAlert, cnnAlerts, cnnTierStates, futuresDropAlerts, intradayZAlerts, nearBreakoutAlerts,
+  nearBreakoutStates, negativeStreak, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
+import { portfolioLossAlerts } from './portfolio-loss.mjs';
 import { tradingDate } from './market-session.mjs';
 import { pushPlanFor, realtimeDefaults } from './realtime-push.mjs';
 import { isSaneSellPrice } from './sell-price-sanity.mjs';
@@ -50,6 +51,10 @@ export async function runRealtimeTick({
   bigMove = {},
   // 接近露头的读数：{ 标的: { streak, currentZ, previousZ, price } }
   nearBreakout = {},
+  // 三大指数/期货的当前读数，用来判「期货大跌」
+  indexItems = [],
+  // 持仓今日预估盈亏，用来判「持仓整体浮亏」
+  portfolioLoss = null,
 }) {
   // 去重用「美东交易日」，不是日历日期：周六重新开一天，不该把周五记过的再记一遍。
   const day = tradingDate(now);
@@ -79,9 +84,11 @@ export async function runRealtimeTick({
       floorReported: cnnFloorReported, tierStates,
     }));
   }
-  // 盘中 Z 读的是日线仪表盘缓存，而缓存只在常规时段刷新：盘前/盘后/夜盘拿到的
-  // 「未收盘那根」其实是上一个交易日的，会把昨天的穿越重放一遍。只在常规时段判定。
-  for (const [symbol, reading] of (session === 'regular' ? Object.entries(intradayZ) : [])) {
+  // 盘中 Z：常规时段用未收盘那根；夜盘日线不更新，用现价估算（网关那边给读数）。
+  // 盘前/盘后仍然不判定——那两个时段缓存里的「未收盘那根」是上一个交易日的，
+  // 会把昨天的穿越重放一遍。
+  const zSessions = session === 'regular' || session === 'overnight';
+  for (const [symbol, reading] of (zSessions ? Object.entries(intradayZ) : [])) {
     alerts.push(...intradayZAlerts({
       symbol, price: reading?.price, previousZ: reading?.previousZ, currentZ: reading?.currentZ,
       session, firedKeys, day,
@@ -134,6 +141,11 @@ export async function runRealtimeTick({
     });
     if (resonance) alerts.push(resonance);
   }
+
+  // 期货大跌：夜盘和盘前最能看出隔夜情绪
+  alerts.push(...futuresDropAlerts({ items: indexItems, session, firedKeys, day }));
+  // 持仓整体浮亏
+  if (portfolioLoss) alerts.push(...portfolioLossAlerts({ loss: portfolioLoss, session, firedKeys, day }));
 
   const quietQueue = [];
   const dryRunPushes = [];
@@ -222,6 +234,29 @@ export function intradayZPreview(dashboard) {
   if (currentZ === null || previousZ === null) return null;
   return {
     previousZ, currentZ, price: finite(partial?.close), date: partial?.date ?? null,
+  };
+}
+
+/**
+ * 夜盘的 Z 预估：日线在夜盘不更新，没有「未收盘那根」可用，
+ * 所以拿现价和最后一根完整收盘的 200 日均值/标准差估一个 Z。
+ * 缺均值或标准差就返回 null，不瞎估。
+ */
+export function estimatedZFromPrice(dashboard, price) {
+  const series = dashboard?.dashboard?.series;
+  if (!Array.isArray(series)) return null;
+  const closed = series.filter((point) => point && point.is_partial !== true);
+  const last = closed.at(-1);
+  const current = finite(price);
+  const mean = finite(last?.ma200);
+  const deviation = finite(last?.std200);
+  if (current === null || mean === null || deviation === null || deviation <= 0) return null;
+  return {
+    previousZ: finite(last?.zscore200),
+    currentZ: (current - mean) / deviation,
+    price: current,
+    basis_date: last?.date ?? null,
+    estimated: true,
   };
 }
 

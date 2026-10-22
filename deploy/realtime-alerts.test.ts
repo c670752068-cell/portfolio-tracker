@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  NEAR_BREAKOUT_LEVEL, NEAR_BREAKOUT_MIN_SESSIONS, NEAR_BREAKOUT_RESET, QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT, bigMoveAlert, bigMoveLimitFor, cnnAlerts, cnnFloorText, cnnTierStates, intradayZAlerts, nearBreakoutAlerts, nearBreakoutStateKey, nearBreakoutStates, negativeStreak, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
+  FUTURES_DROP_TIERS, NEAR_BREAKOUT_LEVEL, NEAR_BREAKOUT_MIN_SESSIONS, NEAR_BREAKOUT_RESET, QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT, bigMoveAlert, bigMoveLimitFor, cnnAlerts, cnnFloorText, cnnTierStates, futuresDropAlerts, intradayZAlerts, nearBreakoutAlerts, nearBreakoutStateKey, nearBreakoutStates, negativeStreak, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
 
 describe('实时监控的节奏与时段', () => {
@@ -393,6 +393,63 @@ describe('接近露头（买入方向）', () => {
     expect(NEAR_BREAKOUT_MIN_SESSIONS).toBe(15);
     expect(NEAR_BREAKOUT_LEVEL).toBe(-0.1);
     expect(NEAR_BREAKOUT_RESET).toBe(-0.5);
+  });
+});
+
+describe('期货大跌', () => {
+  const items = (pct: number) => [
+    { key: 'nasdaq', name: '纳指期货', futures: true, change_percent: pct, delay_minutes: 10 },
+    { key: 'sp500', name: '标普期货', futures: true, change_percent: -0.2, delay_minutes: 10 },
+    { key: 'dow', name: '道指期货', futures: true, change_percent: -0.1, delay_minutes: 10 },
+  ];
+
+  it('三档阈值和级别', () => {
+    expect(FUTURES_DROP_TIERS).toEqual([1, 1.5, 2.5]);
+
+    const [log] = futuresDropAlerts({ items: items(-1.2), session: 'overnight', firedKeys: new Set(), day: '2026-10-22' });
+    expect(log).toMatchObject({ kind: 'futures_drop', category: 'other', level: 'log_only', threshold: -1 });
+
+    const normal = futuresDropAlerts({ items: items(-1.62), session: 'overnight', firedKeys: new Set(), day: '2026-10-22' });
+    expect(normal.map((item) => item.level)).toEqual(['log_only', 'normal']);
+    expect(normal[1].text).toBe('[夜盘] 纳指期货 -1.62% · 延迟 10 分钟 · 夜盘持续走弱');
+
+    const big = futuresDropAlerts({ items: items(-2.6), session: 'overnight', firedKeys: new Set(), day: '2026-10-22' });
+    expect(big.at(-1)).toMatchObject({ level: 'important', threshold: -2.5 });
+  });
+
+  it('每个交易时段每档只报一次', () => {
+    const fired = new Set(['futures-drop:nasdaq:1:2026-10-22:overnight']);
+    const alerts = futuresDropAlerts({ items: items(-1.2), session: 'overnight', firedKeys: fired, day: '2026-10-22' });
+    expect(alerts).toEqual([]);
+  });
+
+  it('回升到 -0.5% 以内写一条「回稳」，没跌过就不写', () => {
+    const fired = new Set(['futures-drop:nasdaq:1.5:2026-10-22:overnight']);
+    const [steady] = futuresDropAlerts({ items: items(-0.3), session: 'overnight', firedKeys: fired, day: '2026-10-22' });
+
+    expect(steady).toMatchObject({ kind: 'futures_steady', level: 'normal' });
+    expect(steady.text).toContain('回稳');
+    expect(futuresDropAlerts({ items: items(-0.3), session: 'overnight', firedKeys: new Set(), day: '2026-10-22' })).toEqual([]);
+  });
+
+  it('涨着的、不是期货的、没有数的都不报', () => {
+    expect(futuresDropAlerts({ items: items(0.8), session: 'overnight', firedKeys: new Set(), day: '2026-10-22' })).toEqual([]);
+    expect(futuresDropAlerts({
+      items: [{ key: 'nasdaq', name: '纳斯达克', futures: false, change_percent: -3 }],
+      session: 'regular', firedKeys: new Set(), day: '2026-10-22',
+    })).toEqual([]);
+    expect(futuresDropAlerts({
+      items: [{ key: 'nasdaq', name: '纳指期货', futures: true, change_percent: null }],
+      session: 'overnight', firedKeys: new Set(), day: '2026-10-22',
+    })).toEqual([]);
+  });
+
+  it('没有延迟时不写延迟那一段', () => {
+    const [alert] = futuresDropAlerts({
+      items: [{ key: 'nasdaq', name: '纳指期货', futures: true, change_percent: -1.2, delay_minutes: 0 }],
+      session: 'overnight', firedKeys: new Set(), day: '2026-10-22',
+    });
+    expect(alert.text).toBe('[夜盘] 纳指期货 -1.20% · 夜盘持续走弱');
   });
 });
 

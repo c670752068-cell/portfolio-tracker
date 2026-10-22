@@ -635,3 +635,22 @@ describe('三大指数卡片接在状态条里', () => {
   });
 });
 
+describe('QQQ 卡片下面的档位行', () => {
+  it('显示距下一档回撤还差多少和触发价', () => {
+    const html = render({
+      statusCards: statusCards({
+        qqq: { price: 700, previousClose: 721.53 },
+        qqqSeries: [{ date: '2026-10-15', close: 759.66 }],
+      }),
+    });
+
+    expect(html).toContain('data-status-detail2="qqq"');
+    expect(html).toContain('距 -10% 档还差 2.1%（683.69）');
+  });
+
+  it('算不出来时不画这一行', () => {
+    const html = render({ statusCards: statusCards({ qqq: null, qqqSeries: [] }) });
+    expect(html).not.toContain('data-status-detail2');
+  });
+});
+

@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AlertLogEntry } from './alertLog';
 import {
-  SESSION_LABELS, cnnFromAlerts, cnnScoreFrom, importantTodayCount, parseStatusQuotes, qqqDrawdownPct,
-  statusCards, vixChangePct,
+  SESSION_LABELS, cnnFromAlerts, cnnScoreFrom, drawdownGapText, importantTodayCount, nextDrawdownTier, parseStatusQuotes, qqqDrawdownPct, quoteTimeOf, statusCards, vixChangePct,
 } from './marketStatusBar';
 
 function alert(partial: Partial<AlertLogEntry>): AlertLogEntry {
@@ -122,7 +121,7 @@ describe('状态条的数据来源', () => {
       ],
       session: 'regular',
       time: '2026-10-20T13:40:12.000Z',
-    })).toEqual({
+    })).toMatchObject({
       qqq: { price: 712.3, previousClose: 721.53 },
       vix: { price: 21.96, previousClose: 16.46 },
       session: 'regular',
@@ -133,7 +132,7 @@ describe('状态条的数据来源', () => {
   it('返回缺字段或格式不对时一律给空值', () => {
     expect(parseStatusQuotes(null)).toEqual({ qqq: null, vix: null, session: null, time: null });
     expect(parseStatusQuotes({ quotes: [{ symbol: 'QQQ' }], session: '乱写', time: '不是时间' }))
-      .toEqual({ qqq: { price: null, previousClose: null }, vix: null, session: null, time: null });
+      .toMatchObject({ qqq: { price: null, previousClose: null }, vix: null, session: null, time: null });
   });
 
   it('从量化快照读 CNN，取不到就是空', () => {
@@ -143,6 +142,54 @@ describe('状态条的数据来源', () => {
       .toEqual({ score: null, at: null });
     expect(cnnScoreFrom(null)).toEqual({ score: null, at: null });
     expect(cnnScoreFrom({ context: {} })).toEqual({ score: null, at: null });
+  });
+});
+
+describe('QQQ 还差多少到下一档回撤', () => {
+  it('算出还差几个百分点和触发价：下一档是第一个还没跌破的', () => {
+    // 前高 759.66，现价 722.85 → 已经 -4.84%，下一档是 -5%，触发价 721.68
+    const near = nextDrawdownTier(722.85, [{ date: '2026-10-15', close: 759.66 }]);
+    expect(near).toMatchObject({ tier: 5 });
+    expect(near!.gapPct).toBeCloseTo(0.154, 3);
+    expect(near!.triggerPrice).toBeCloseTo(721.68, 2);
+
+    // 现价 700 → 已经 -7.85%，下一档是 -10%，触发价 683.69
+    const gap = nextDrawdownTier(700, [{ date: '2026-10-15', close: 759.66 }]);
+    expect(gap).toMatchObject({ tier: 10 });
+    expect(gap!.gapPct).toBeCloseTo(2.15, 2);
+    expect(gap!.triggerPrice).toBeCloseTo(683.69, 2);
+  });
+
+  it('已经跌破 -10% 时看下一档 -15%', () => {
+    const gap = nextDrawdownTier(670, [{ date: '2026-10-15', close: 759.66 }]);
+    expect(gap).toMatchObject({ tier: 15 });
+  });
+
+  it('跌破最深一档之后就没有下一档了', () => {
+    expect(nextDrawdownTier(400, [{ date: '2026-10-15', close: 759.66 }])).toBeNull();
+    expect(nextDrawdownTier(null, [{ date: 'x', close: 759.66 }])).toBeNull();
+    expect(nextDrawdownTier(700, [])).toBeNull();
+  });
+
+  it('文案写成「距 -10% 档还差 5.2%（683.69）」', () => {
+    expect(drawdownGapText(nextDrawdownTier(700, [{ date: 'x', close: 759.66 }])))
+      .toBe('距 -10% 档还差 2.1%（683.69）');
+    expect(drawdownGapText(null)).toBe('');
+  });
+});
+
+describe('状态条的数据时间用价格本身的时间', () => {
+  it('行情里带价格时间就用它，不用拉取时间', () => {
+    expect(quoteTimeOf({
+      qqq: { price: 1, previousClose: 1, priceTime: '2026-10-22T07:01:41.000Z' },
+      vix: null, session: 'overnight', time: '2026-10-22T07:05:00.000Z',
+    })).toBe('2026-10-22T07:01:41.000Z');
+  });
+
+  it('没有价格时间就退回服务器给的时间', () => {
+    expect(quoteTimeOf({ qqq: { price: 1, previousClose: 1 }, vix: null, session: 'regular', time: '2026-10-22T16:00:00.000Z' }))
+      .toBe('2026-10-22T16:00:00.000Z');
+    expect(quoteTimeOf(null)).toBeNull();
   });
 });
 

@@ -30,7 +30,7 @@ import {
   INDEX_STALE_MS, fetchIndexQuotes, indexDataState, type IndexQuotes,
 } from '../indexQuotes';
 import {
-  cnnFromAlerts, cnnScoreFrom, importantTodayCount, parseStatusQuotes, statusCards,
+  cnnFromAlerts, cnnScoreFrom, importantTodayCount, parseStatusQuotes, quoteTimeOf, statusCards,
   type StatusCard, type StatusQuotes,
 } from '../marketStatusBar';
 import type { ClosePoint } from '../twr';
@@ -928,7 +928,7 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
       showAllLevels={showAllLevels}
       onShowAllLevelsChange={setShowAllLevels}
       statusCards={cards}
-      statusDataTime={quotes?.time ?? null}
+      statusDataTime={quoteTimeOf(quotes)}
       statusStale={statusStale}
       indexQuotes={indexQuotes}
       indexStale={indexDataState(indexFetchedAt, indexTick) === 'stale'}

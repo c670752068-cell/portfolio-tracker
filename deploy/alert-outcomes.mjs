@@ -17,7 +17,7 @@ export const UNRELIABLE_NOTE = '样本太少，结论不可靠';
 // 统计里的九类。没列进来的（0.5 档穿越、回升、持仓变化、系统提醒）不统计。
 export const OUTCOME_KINDS = [
   'qqq_drawdown', 'vix_spike', 'cnn_fear', 'z_enter', 'z_cross_1', 'near_breakout',
-  'big_move', 'sell_line', 'resonance', 'valuation_buy',
+  'big_move', 'sell_line', 'resonance', 'valuation_buy', 'futures_drop', 'portfolio_loss',
 ];
 export const OUTCOME_KIND_LABELS = {
   qqq_drawdown: 'QQQ 回撤档位',
@@ -30,6 +30,8 @@ export const OUTCOME_KIND_LABELS = {
   sell_line: '卖出线',
   resonance: '多指标共振',
   valuation_buy: '可买 / 低估值',
+  futures_drop: '期货大跌',
+  portfolio_loss: '持仓整体浮亏',
 };
 
 function record(value) {
@@ -55,6 +57,8 @@ export function alertOutcomeKind(entry) {
     return tier === 1 ? 'z_cross_1' : null;
   }
   if (/^near-breakout(-confirm)?:/.test(key)) return 'near_breakout';
+  if (key.startsWith('futures-drop:')) return 'futures_drop';
+  if (key.startsWith('portfolio-loss:')) return 'portfolio_loss';
   if (key.startsWith('big-move:')) return 'big_move';
   if (key.startsWith('sell-line-live:') || /^state:sell:/.test(key)) return 'sell_line';
   if (key.startsWith('resonance:')) return 'resonance';

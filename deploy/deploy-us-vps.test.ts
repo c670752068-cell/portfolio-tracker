@@ -332,3 +332,23 @@ describe('三大指数卡片上线所需', () => {
   });
 });
 
+describe('夜盘行情上线所需', () => {
+  it('两个新模块要上传并语法检查', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    for (const name of ['overnight-quotes', 'quote-freshness', 'portfolio-loss']) {
+      expect(script).toContain(`deploy/${name}.mjs "\${SERVER}:\${REMOTE_RELEASE_APP}/${name}.mjs"`);
+      expect(script).toContain(`node --check '\${REMOTE_RELEASE_APP}/${name}.mjs'`);
+    }
+  });
+
+  it('网关按时段取价、接收夜盘推送、并判断价格是否过期', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('fetchSessionQuote(');
+    expect(gateway).toContain('handleOvernightQuotesRoute');
+    expect(gateway).toContain('markQuoteFreshness(');
+    expect(gateway).toContain('feedOutageReading(');
+    // 实时监控在夜盘也要取价（不能再只在有交易时段时跑）
+    expect(gateway).toContain("session === 'overnight'");
+  });
+});
+
