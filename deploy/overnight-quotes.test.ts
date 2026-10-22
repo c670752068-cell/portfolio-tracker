@@ -24,17 +24,28 @@ describe('接收富途推上来的夜盘报价', () => {
     expect(normalizeOvernightUpload(null)).toEqual({});
     expect(normalizeOvernightUpload({ quotes: 'x' })).toEqual({});
   });
+
+  it('收到的是 Buffer 或字符串也要能解析——网关的读体函数给的就是 Buffer', () => {
+    const json = JSON.stringify({
+      quotes: [{ symbol: 'QQQ', price: 725.2, priceTime: '2026-10-22T07:01:41.000Z' }],
+    });
+
+    expect(normalizeOvernightUpload(Buffer.from(json))).toMatchObject({ QQQ: { price: 725.2 } });
+    expect(normalizeOvernightUpload(json)).toMatchObject({ QQQ: { price: 725.2 } });
+    expect(normalizeOvernightUpload(Buffer.from('不是 JSON'))).toEqual({});
+  });
 });
 
 describe('夜盘报价仓库', () => {
-  it('存进去能按标的取出来，过期的取不到', () => {
+  it('按「什么时候推上来的」判活，不按成交时间——夜盘成交稀疏，十几分钟不成交很正常', () => {
     const store = createOvernightQuoteStore();
     store.put(normalizeOvernightUpload({
-      quotes: [{ symbol: 'QQQ', price: 725.2, previousClose: 717.63, priceTime: '2026-10-22T07:01:41.000Z' }],
-    }));
+      quotes: [{ symbol: 'QQQ', price: 725.2, previousClose: 717.63, priceTime: '2026-10-22T06:40:00.000Z' }],
+    }), NOW);
 
+    // 成交是 22 分钟前的，但刚推上来，照样能用
     expect(store.get('QQQ', NOW)).toMatchObject({ price: 725.2 });
-    // 20 分钟之后就不该再用了
+    // 推送本身停了 20 分钟就不能再用了
     expect(store.get('QQQ', new Date('2026-10-22T07:25:00.000Z'))).toBeNull();
     expect(store.get('TQQQ', NOW)).toBeNull();
   });

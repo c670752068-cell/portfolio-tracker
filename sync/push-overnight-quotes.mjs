@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const DEFAULT_ORIGIN = 'https://myopenid.top';
 const DEFAULT_TOKEN_FILE = join(homedir(), '.portfolio-sync-token');
@@ -118,8 +119,22 @@ async function main() {
   }
   const origin = process.env.PORTFOLIO_SYNC_ORIGIN || DEFAULT_ORIGIN;
   const token = await readSyncToken();
+  // 持仓和观察标的从网关的只读接口拿，省得这边再维护一份名单
   const held = (process.env.OVERNIGHT_EXTRA_SYMBOLS || '').split(',').filter(Boolean);
-  const symbols = overnightSymbols({ held });
+  const watch = [];
+  try {
+    const response = await fetch(`${origin.replace(/\/+$/, '')}/api/portfolio/positions`);
+    if (response.ok) {
+      const payload = (await response.json())?.payload;
+      for (const item of payload?.positions || []) {
+        if (item?.asset_type === 'option') continue;
+        watch.push(String(item?.symbol || ''));
+      }
+    }
+  } catch {
+    // 拿不到就只推核心几个，不影响这一轮
+  }
+  const symbols = overnightSymbols({ held, watch });
   const quotes = parseOpendOutput(await readOpend(symbols));
   if (quotes.length === 0) {
     console.warn('[overnight] OpenD 没有返回有效报价，这一轮不推送');
@@ -136,7 +151,7 @@ async function main() {
   console.log(`[overnight] 已推送 ${quotes.length} 条（${quotes[0].symbol} ${quotes[0].price}）`);
 }
 
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(`[overnight] 推送失败：${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;

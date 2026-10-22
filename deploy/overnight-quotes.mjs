@@ -12,7 +12,16 @@ function finite(value) {
 
 /** 把推上来的报价规整成 { 标的: 报价 }；形状不对的直接丢。 */
 export function normalizeOvernightUpload(body) {
-  const value = typeof body === 'object' && body !== null ? body : {};
+  // 网关的读体函数给的是 Buffer，先转成对象
+  let parsed = body;
+  if (Buffer.isBuffer(body) || typeof body === 'string') {
+    try {
+      parsed = JSON.parse(String(body));
+    } catch {
+      return {};
+    }
+  }
+  const value = typeof parsed === 'object' && parsed !== null ? parsed : {};
   const rows = Array.isArray(value.quotes) ? value.quotes : [];
   const source = typeof value.source === 'string' && value.source ? value.source : 'futu_opend';
   const quotes = {};
@@ -40,13 +49,18 @@ export function createOvernightQuoteStore({ ttlMs = OVERNIGHT_QUOTE_TTL_MS } = {
   let updatedAt = null;
   return {
     put(next, at = new Date()) {
-      quotes = { ...quotes, ...next };
-      updatedAt = +at;
+      const pushedAt = +at;
+      quotes = { ...quotes, ...Object.fromEntries(
+        Object.entries(next).map(([symbol, quote]) => [symbol, { ...quote, pushedAt }]),
+      ) };
+      updatedAt = pushedAt;
     },
+    // 判活看「什么时候推上来的」：夜盘成交稀疏，十几分钟没有新成交很正常，
+    // 价格本身有多旧交给 pickOvernightQuote 去标。
     get(symbol, now = new Date()) {
       const quote = quotes[String(symbol || '').toUpperCase()];
       if (!quote) return null;
-      const age = +now - Date.parse(quote.priceTime);
+      const age = +now - Number(quote.pushedAt);
       return Number.isFinite(age) && age <= ttlMs ? quote : null;
     },
     updatedAt() {

@@ -51,15 +51,17 @@ export function markQuoteFreshness(quote, { now = new Date(), session = 'closed'
  * 3) 两个都没有就标「夜盘无报价」——不沿用盘后最后一笔。
  */
 export function pickOvernightQuote({ pushed = null, nasdaq = null, yahoo = null, now = new Date() } = {}) {
-  const pushedAge = pushed ? ageMs(pushed.priceTime, now) : null;
-  if (pushed && finite(pushed.price) !== null && pushedAge !== null && pushedAge <= QUOTE_STALE_MS) {
+  const tradeAge = pushed ? ageMs(pushed.priceTime, now) : null;
+  if (pushed && finite(pushed.price) !== null && tradeAge !== null) {
+    // 推送还活着就用它；成交时间太旧只标出来，不丢掉这个价
+    const stale = tradeAge > QUOTE_STALE_MS;
     return {
       ...pushed,
-      isRealtime: true,
-      stale: false,
+      isRealtime: !stale,
+      stale,
       price_time_known: true,
-      price_age_minutes: Math.round(pushedAge / 60_000),
-      stale_note: null,
+      price_age_minutes: Math.round(tradeAge / 60_000),
+      stale_note: stale ? stoppedAtNote(pushed.priceTime) : null,
     };
   }
   if (nasdaq && finite(nasdaq.price) !== null) {

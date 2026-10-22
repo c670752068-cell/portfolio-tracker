@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.portfolio.overnight-quotes</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/wuhuazhou/Desktop/股票Dashboard/portfolio-tracker/sync/push-overnight-quotes.mjs</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <!-- 每分钟跑一次；脚本自己判断，不是夜盘就立刻退出 -->
+  <key>StartInterval</key>
+  <integer>60</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/wuhuazhou/Library/Logs/portfolio-overnight-quotes.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/wuhuazhou/Library/Logs/portfolio-overnight-quotes.log</string>
+</dict>
+</plist>

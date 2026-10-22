@@ -59,9 +59,16 @@ describe('夜盘取哪一份报价', () => {
     });
   });
 
-  it('富途那份过期了就退到 Nasdaq', () => {
+  it('富途那份成交时间较旧时照样用，但标明价格停在几点', () => {
     const old = { ...pushed, priceTime: '2026-10-22T06:00:00.000Z' };
-    expect(pickOvernightQuote({ pushed: old, nasdaq, yahoo, now: NOW })).toMatchObject({ source: 'nasdaq' });
+    const picked = pickOvernightQuote({ pushed: old, nasdaq, yahoo, now: NOW });
+
+    expect(picked).toMatchObject({ source: 'futu_opend', stale: true, isRealtime: false });
+    expect(picked.stale_note).toBe('数据停在 02:00');
+  });
+
+  it('推送通道断了（没有 pushed）才退到 Nasdaq', () => {
+    expect(pickOvernightQuote({ pushed: null, nasdaq, yahoo, now: NOW })).toMatchObject({ source: 'nasdaq' });
   });
 
   it('两个都没有时不沿用旧价格，标「夜盘无报价」', () => {
