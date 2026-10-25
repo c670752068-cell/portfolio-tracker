@@ -66,6 +66,12 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
 "${SCP_CMD[@]}" deploy/data-sources.mjs "${SERVER}:${REMOTE_RELEASE_APP}/data-sources.mjs"
 "${SCP_CMD[@]}" deploy/ibkr-flex.mjs "${SERVER}:${REMOTE_RELEASE_APP}/ibkr-flex.mjs"
 "${SCP_CMD[@]}" deploy/source-compare.mjs "${SERVER}:${REMOTE_RELEASE_APP}/source-compare.mjs"
+"${SCP_CMD[@]}" deploy/server-worker.mjs "${SERVER}:${REMOTE_RELEASE_APP}/server-worker.mjs"
+"${SCP_CMD[@]}" deploy/fetch-ibkr-flex.mjs "${SERVER}:${REMOTE_RELEASE_APP}/fetch-ibkr-flex.mjs"
+"${SCP_CMD[@]}" deploy/compare-sources.mjs "${SERVER}:${REMOTE_RELEASE_APP}/compare-sources.mjs"
+"${SCP_CMD[@]}" deploy/ibkr-flex.config.template.json "${SERVER}:${REMOTE_RELEASE_APP}/ibkr-flex.config.template.json"
+# server-worker.config.json 只在服务器上还没有时才放默认值（默认全关），已有的设置不覆盖。
+"${SCP_CMD[@]}" deploy/server-worker.config.json "${SERVER}:${REMOTE_RELEASE_APP}/server-worker.config.default.json"
 "${SCP_CMD[@]}" deploy/realtime-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-alerts.mjs"
 "${SCP_CMD[@]}" deploy/realtime-push.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-push.mjs"
 "${SCP_CMD[@]}" deploy/realtime-monitor.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-monitor.mjs"
@@ -103,6 +109,10 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
   node --check '${REMOTE_RELEASE_APP}/data-sources.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/ibkr-flex.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/source-compare.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/server-worker.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/fetch-ibkr-flex.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/compare-sources.mjs' && \
+  { test -f '${REMOTE_RELEASE_APP}/server-worker.config.json' || cp '${REMOTE_RELEASE_APP}/server-worker.config.default.json' '${REMOTE_RELEASE_APP}/server-worker.config.json'; } && \
   node --check '${REMOTE_RELEASE_APP}/realtime-alerts.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-push.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-monitor.mjs' && \

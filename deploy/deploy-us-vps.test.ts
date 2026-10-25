@@ -361,6 +361,24 @@ describe('去掉 Mac 依赖的准备工作', () => {
     }
   });
 
+  it('交付报告里让我在服务器上跑的工具和配置也要上传', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    for (const name of ['server-worker', 'fetch-ibkr-flex', 'compare-sources']) {
+      expect(script).toContain(`deploy/${name}.mjs "\${SERVER}:\${REMOTE_RELEASE_APP}/${name}.mjs"`);
+      expect(script).toContain(`node --check '\${REMOTE_RELEASE_APP}/${name}.mjs'`);
+    }
+    expect(script).toContain('ibkr-flex.config.template.json');
+    expect(script).toContain('server-worker.config.json');
+  });
+
+  it('server-worker 的配置默认是关的，已有的配置不会被覆盖', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toMatch(/test -f '\$\{REMOTE_RELEASE_APP\}\/server-worker\.config\.json' \|\| cp /);
+    const config = JSON.parse(await readFile('deploy/server-worker.config.json', 'utf8'));
+    expect(config.enabled).toBe(false);
+    expect(config.push).toBe(false);
+  });
+
   it('数据状态是只读接口，服务器 OpenD 没配置时不会报警', async () => {
     const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
     expect(gateway).toContain('handleDataSourcesRoute');
