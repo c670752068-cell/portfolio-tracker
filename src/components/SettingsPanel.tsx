@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { analyzeCostCoverage, type CostGapReason } from '../costCoverage';
 import { isInvalidEndpointUrl, looksLikeApiKey, sanitizeEndpointUrl } from '../endpointUrl';
 import { KimiError, activeAiEndpoint, activeAiProviderLabel, testAiConnection } from '../kimi';
@@ -73,6 +73,9 @@ function CostCoverageCard({
     </div>
   );
 }
+import { DataSourceStatusPanel } from './DataSourceStatusPanel';
+import { fetchDataSources, type DataSourceStatus } from '../dataSources';
+import { getServerDataSourcesUrl } from '../runtimeConfig';
 
 export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSave }: SettingsPanelProps) {
   const [draft, setDraft] = useState<AppSettings>(settings);
@@ -81,6 +84,16 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
   const [testingAi, setTestingAi] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string; hint?: string } | null>(null);
+  const [dataSources, setDataSources] = useState<DataSourceStatus | null>(null);
+
+  // 数据状态：进设置页读一次就够，服务器那边是现算的
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchDataSources(getServerDataSourcesUrl() || '/api/portfolio/data-sources', controller.signal)
+      .then((next) => setDataSources(next))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
   const aiLabel = activeAiProviderLabel(draft);
   const serverGatewayEnabled = hasServerGateway();
   const dirtyCount = Object.keys(draft).filter((key) => (
@@ -285,6 +298,10 @@ export function SettingsPanel({ settings, holdings = [], holdingCosts = {}, onSa
       </Field>
       </div>
       <div data-testid="mobile-settings-section-grid" className="grid grid-cols-2 gap-2 md:gap-3">
+      <div className="min-w-0 rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
+        <h3 className="mb-2 text-sm font-semibold">数据状态</h3>
+        <DataSourceStatusPanel status={dataSources} />
+      </div>
       <div className="min-w-0 rounded-lg border border-neutral/40 p-3 dark:border-neutral/60">
         <h3 className="mb-2 text-sm font-semibold">量化系统同步</h3>
         <p className="text-xs text-ink-muted">

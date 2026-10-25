@@ -1,0 +1,5 @@
+{
+  "_说明": "服务器直接拉 IBKR 持仓用的配置。复制成 /opt/portfolio-tracker-data/ibkr-flex.config.json，权限 600，再把下面两项填上。",
+  "token": "<<<在这里填 IBKR Flex Web Service 的 token>>>",
+  "positionsQueryId": "<<<在这里填持仓查询的编号>>>"
+}

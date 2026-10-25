@@ -1,0 +1,30 @@
+# 富途 OpenD 配置模板（服务器版）
+# 用法：复制成 /opt/futu-opend/OpenD.xml 同目录下的 OpenD.ini，把 <<< >>> 的地方换成你自己的内容。
+# 这份模板里没有、也绝不会有：交易解锁密码、下单相关的任何配置。
+# 本程序在服务器上只用于「读行情 + 读持仓」。
+
+[server]
+# 只监听本机回环地址，外网访问不到；网关和它在同一台机器上
+ip=127.0.0.1
+port=11111
+# 不开放对外的 websocket
+websocket_port=0
+
+[account]
+# 你的富途账号（手机号或 UID），回来后自己填
+login_account=<<<在这里填你的富途账号>>>
+# 登录密码的 MD5（OpenD 要求用 MD5，不是明文）
+# 生成方法见 server/README.md「怎么算密码 MD5」一节；也可以留空，改用交互式登录
+login_pwd_md5=<<<在这里填密码的MD5，或留空改用交互式登录>>>
+
+[lang]
+# 简体中文
+lang=chs
+
+[log]
+log_level=no_output
+# 日志写到这里，方便排查登录和验证码问题
+log_path=/opt/futu-opend/logs
+
+[qot]
+# 只订阅行情，不做任何交易动作

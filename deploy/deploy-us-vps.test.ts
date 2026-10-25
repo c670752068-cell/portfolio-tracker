@@ -352,3 +352,20 @@ describe('夜盘行情上线所需', () => {
   });
 });
 
+describe('去掉 Mac 依赖的准备工作', () => {
+  it('三个新模块要上传并语法检查', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    for (const name of ['data-sources', 'ibkr-flex', 'source-compare']) {
+      expect(script).toContain(`deploy/${name}.mjs "\${SERVER}:\${REMOTE_RELEASE_APP}/${name}.mjs"`);
+      expect(script).toContain(`node --check '\${REMOTE_RELEASE_APP}/${name}.mjs'`);
+    }
+  });
+
+  it('数据状态是只读接口，服务器 OpenD 没配置时不会报警', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('handleDataSourcesRoute');
+    expect(gateway).toContain("configured: false");
+    expect(gateway).toContain('opendReadingForAlerts(');
+  });
+});
+

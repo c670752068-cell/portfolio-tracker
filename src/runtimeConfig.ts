@@ -63,6 +63,10 @@ export function getServerAlertOutcomesUrl(): string {
   return apiUrl('/api/portfolio/alert-outcomes');
 }
 
+export function getServerDataSourcesUrl(): string {
+  return apiUrl('/api/portfolio/data-sources');
+}
+
 export function getServerIndexQuotesUrl(): string {
   return apiUrl('/api/portfolio/index-quotes');
 }

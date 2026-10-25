@@ -1,0 +1,29 @@
+# futu-assistant 的配置模板（服务器版）。<<< >>> 的地方回来后自己填。
+# 这份文件里会有密钥，权限必须是 600，而且不要提交进任何仓库。
+# 服务器上这份只用于「读行情 + 读持仓」，不要配任何交易解锁密码。
+
+opend:
+  host: 127.0.0.1
+  port: 11111
+  # 服务器上只读行情，这里保持 SIMULATE；真实下单一律不在服务器上做
+  trade_env: SIMULATE
+
+ibkr_flex:
+  # IBKR 账户管理 → 报告 → Flex Queries → Flex Web Service 里生成的 token
+  token: "<<<在这里填 IBKR Flex token>>>"
+  # 两个查询的编号（持仓、成交）
+  positions_query_id: "<<<在这里填持仓查询编号>>>"
+  trades_query_id: "<<<在这里填成交查询编号>>>"
+
+# 服务器版先只开 IBKR 和富途；长桥已停用
+position_sources:
+  - ibkr_flex
+  - futu
+
+bark:
+  # 服务器这份默认不推送，避免和 Mac 那份重复
+  enabled: false
+  base_url: "<<<可留空；要推送再填>>>"
+  device_key: "<<<可留空；要推送再填>>>"
+  group: portfolio
+  sound: default

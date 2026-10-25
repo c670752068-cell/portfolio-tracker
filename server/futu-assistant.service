@@ -1,0 +1,23 @@
+# futu-assistant（服务器版）systemd 单元
+# 装好之后先不要 enable --now：等 OpenD 能登录、channels.yaml 填好再开。
+[Unit]
+Description=futu-assistant (read-only quant snapshot builder)
+After=futu-opend.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/futu-assistant
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/futu-assistant/.venv/bin/futu-assistant run
+Restart=always
+RestartSec=15
+# 这台机器内存紧张，超了就重启而不是把整机拖垮
+MemoryMax=400M
+StandardOutput=append:/var/log/futu-assistant.log
+StandardError=append:/var/log/futu-assistant.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

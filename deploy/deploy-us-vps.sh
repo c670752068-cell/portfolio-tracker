@@ -63,6 +63,9 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
 "${SCP_CMD[@]}" deploy/overnight-quotes.mjs "${SERVER}:${REMOTE_RELEASE_APP}/overnight-quotes.mjs"
 "${SCP_CMD[@]}" deploy/quote-freshness.mjs "${SERVER}:${REMOTE_RELEASE_APP}/quote-freshness.mjs"
 "${SCP_CMD[@]}" deploy/portfolio-loss.mjs "${SERVER}:${REMOTE_RELEASE_APP}/portfolio-loss.mjs"
+"${SCP_CMD[@]}" deploy/data-sources.mjs "${SERVER}:${REMOTE_RELEASE_APP}/data-sources.mjs"
+"${SCP_CMD[@]}" deploy/ibkr-flex.mjs "${SERVER}:${REMOTE_RELEASE_APP}/ibkr-flex.mjs"
+"${SCP_CMD[@]}" deploy/source-compare.mjs "${SERVER}:${REMOTE_RELEASE_APP}/source-compare.mjs"
 "${SCP_CMD[@]}" deploy/realtime-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-alerts.mjs"
 "${SCP_CMD[@]}" deploy/realtime-push.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-push.mjs"
 "${SCP_CMD[@]}" deploy/realtime-monitor.mjs "${SERVER}:${REMOTE_RELEASE_APP}/realtime-monitor.mjs"
@@ -97,6 +100,9 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
   node --check '${REMOTE_RELEASE_APP}/overnight-quotes.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/quote-freshness.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/portfolio-loss.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/data-sources.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/ibkr-flex.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/source-compare.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-alerts.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-push.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/realtime-monitor.mjs' && \

@@ -70,6 +70,7 @@ import { createIndexQuotesCache, createIndexQuotesRoute, parseIndexQuote } from 
 import { createOvernightQuoteStore, createOvernightQuotesRoute } from './overnight-quotes.mjs';
 import { feedOutageReading, markQuoteFreshness, pickOvernightQuote } from './quote-freshness.mjs';
 import { portfolioDayLoss } from './portfolio-loss.mjs';
+import { buildDataSourceStatus, opendReadingForAlerts } from './data-sources.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
   buildYahooSlopeChartUrl,
@@ -843,6 +844,39 @@ const handleAlertOutcomesRoute = createAlertOutcomesRoute({
 });
 // 夜盘报价：Mac 上的 sync/push-overnight-quotes.mjs 定时把 OpenD 的夜盘价推上来。
 const overnightQuotes = createOvernightQuoteStore();
+// 数据状态：每一样数据跑在哪、最后什么时候更新。只读。
+// 服务器上的 OpenD 还没装，所以 configured 先写 false，不会报警。
+const SERVER_OPEND = { configured: false, reachable: false, reason: 'not_configured' };
+async function handleDataSourcesRoute(url, req, res) {
+  if (url.pathname !== '/api/portfolio/data-sources') return false;
+  if (req.method !== 'GET') {
+    sendJson(res, 405, { error: { code: 'method_not_allowed', message: '数据状态只读' } });
+    return true;
+  }
+  const fileTime = async (path) => {
+    try {
+      return (await stat(path)).mtime.toISOString();
+    } catch {
+      return null;
+    }
+  };
+  let workerSeenAt = null;
+  try {
+    workerSeenAt = (await notificationControl.status())?.workerSeenAt ?? null;
+  } catch { /* 读不到就留空 */ }
+  sendJson(res, 200, {
+    status: buildDataSourceStatus({
+      positionsAt: await fileTime(join(PORTFOLIO_POSITIONS_ROOT, 'latest.json')),
+      analysisAt: await fileTime(join(PORTFOLIO_ANALYSIS_ROOT, 'latest.json')),
+      overnightPushAt: overnightQuotes.updatedAt(),
+      overnightActive: classifyMarketSession(new Date(), { hasMinuteSeries: true }) === 'overnight',
+      workerSeenAt,
+      opend: SERVER_OPEND,
+    }),
+  });
+  return true;
+}
+
 const handleOvernightQuotesRoute = createOvernightQuotesRoute({
   store: overnightQuotes,
   token: PORTFOLIO_SYNC_TOKEN,
@@ -1311,6 +1345,7 @@ const server = createServer(async (req, res) => {
   if (await handleAlertOutcomesRoute(url, req, res)) return;
   if (await handleIndexQuotesRoute(url, req, res)) return;
   if (await handleOvernightQuotesRoute(url, req, res)) return;
+  if (await handleDataSourcesRoute(url, req, res)) return;
   try {
     if (await handleAlertRulesRoute(url, req, res)) return;
   } catch (error) {
@@ -1387,6 +1422,18 @@ async function runRealtimeMonitorCycle() {
           }
         }
       } catch { /* 单个标的取价失败不影响其他 */ }
+    }
+
+    // 服务器上的 OpenD 掉线 / 登录失效 / 要验证码时写一条系统提醒。
+    try {
+      const opendReading = opendReadingForAlerts(SERVER_OPEND);
+      if (opendReading) {
+        const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
+        const next = applyStateAlerts(store, [opendReading], now);
+        if (next !== store) await writeAlertLog(PORTFOLIO_ALERTS_ROOT, next);
+      }
+    } catch (error) {
+      console.warn(`server opend reading failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     // 价格拿到了但全都过期（夜盘最典型：停在 19:59）也要报一条，
