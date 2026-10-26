@@ -379,10 +379,19 @@ describe('去掉 Mac 依赖的准备工作', () => {
     expect(config.push).toBe(false);
   });
 
+  it('设置页的 OpenD 状态是真探测出来的，不是写死的', async () => {
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain("from './opend-probe.mjs'");
+    expect(gateway).toContain('makeOpendProbe(');
+    expect(gateway).not.toContain("const SERVER_OPEND = { configured: false");
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/opend-probe.mjs "${SERVER}:${REMOTE_RELEASE_APP}/opend-probe.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/opend-probe.mjs'");
+  });
+
   it('数据状态是只读接口，服务器 OpenD 没配置时不会报警', async () => {
     const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
     expect(gateway).toContain('handleDataSourcesRoute');
-    expect(gateway).toContain("configured: false");
     expect(gateway).toContain('opendReadingForAlerts(');
   });
 });

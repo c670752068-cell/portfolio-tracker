@@ -66,6 +66,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
 "${SCP_CMD[@]}" deploy/data-sources.mjs "${SERVER}:${REMOTE_RELEASE_APP}/data-sources.mjs"
 "${SCP_CMD[@]}" deploy/ibkr-flex.mjs "${SERVER}:${REMOTE_RELEASE_APP}/ibkr-flex.mjs"
 "${SCP_CMD[@]}" deploy/source-compare.mjs "${SERVER}:${REMOTE_RELEASE_APP}/source-compare.mjs"
+"${SCP_CMD[@]}" deploy/opend-probe.mjs "${SERVER}:${REMOTE_RELEASE_APP}/opend-probe.mjs"
 "${SCP_CMD[@]}" deploy/server-worker.mjs "${SERVER}:${REMOTE_RELEASE_APP}/server-worker.mjs"
 "${SCP_CMD[@]}" deploy/fetch-ibkr-flex.mjs "${SERVER}:${REMOTE_RELEASE_APP}/fetch-ibkr-flex.mjs"
 "${SCP_CMD[@]}" deploy/compare-sources.mjs "${SERVER}:${REMOTE_RELEASE_APP}/compare-sources.mjs"
@@ -109,6 +110,7 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
   node --check '${REMOTE_RELEASE_APP}/data-sources.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/ibkr-flex.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/source-compare.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/opend-probe.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/server-worker.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/fetch-ibkr-flex.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/compare-sources.mjs' && \

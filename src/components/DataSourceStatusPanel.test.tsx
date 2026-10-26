@@ -39,3 +39,34 @@ describe('设置页的数据状态', () => {
     expect(renderToStaticMarkup(<DataSourceStatusPanel status={null} />)).toContain('读取中');
   });
 });
+
+describe('服务器 OpenD 这一行', () => {
+  const statusWith = (opend: Record<string, unknown>) => ({
+    version: 1,
+    generated_at: '2026-10-26T03:30:00.000Z',
+    macAlive: true,
+    sources: [{ key: 'server_opend', name: '服务器 OpenD', location: 'server', updatedAt: null, ageMinutes: null, stale: false, ...opend }],
+  }) as never;
+
+  it('在跑的时候显示「运行中」，不再说未配置', () => {
+    const html = renderToStaticMarkup(
+      <DataSourceStatusPanel status={statusWith({ ready: true, reason: null })} />,
+    );
+    expect(html).toContain('运行中');
+    expect(html).not.toContain('未配置');
+  });
+
+  it('还没配置时才说「未配置」', () => {
+    const html = renderToStaticMarkup(
+      <DataSourceStatusPanel status={statusWith({ ready: false, reason: 'not_configured' })} />,
+    );
+    expect(html).toContain('未配置');
+  });
+
+  it('配置了但连不上时说「连不上」', () => {
+    const html = renderToStaticMarkup(
+      <DataSourceStatusPanel status={statusWith({ ready: false, reason: 'connect_refused' })} />,
+    );
+    expect(html).toContain('连不上');
+  });
+});

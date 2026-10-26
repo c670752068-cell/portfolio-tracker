@@ -7,6 +7,12 @@ const OPEND_REASON = {
   login_expired: '登录失效',
 } as const;
 
+function opendText(ready: boolean | undefined, reason: string | null | undefined) {
+  if (ready === true) return '运行中';
+  const key = (reason || 'not_configured') as keyof typeof OPEND_REASON;
+  return OPEND_REASON[key] || reason;
+}
+
 /** 设置页的「数据状态」：每一样数据跑在哪、最后什么时候更新。只读。 */
 export function DataSourceStatusPanel({ status }: { status: DataSourceStatus | null }) {
   if (!status) {
@@ -28,7 +34,7 @@ export function DataSourceStatusPanel({ status }: { status: DataSourceStatus | n
             </span>
             <span className={`shrink-0 tabular-nums ${row.stale ? 'font-semibold text-loss' : 'text-ink-secondary'}`}>
               {row.key === 'server_opend'
-                ? OPEND_REASON[(row.reason || 'not_configured') as keyof typeof OPEND_REASON] || row.reason
+                ? opendText(row.ready, row.reason)
                 : sourceAgeText(row)}
             </span>
           </li>

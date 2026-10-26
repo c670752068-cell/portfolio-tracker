@@ -71,6 +71,7 @@ import { createOvernightQuoteStore, createOvernightQuotesRoute } from './overnig
 import { feedOutageReading, markQuoteFreshness, pickOvernightQuote } from './quote-freshness.mjs';
 import { portfolioDayLoss } from './portfolio-loss.mjs';
 import { buildDataSourceStatus, opendReadingForAlerts } from './data-sources.mjs';
+import { makeOpendProbe } from './opend-probe.mjs';
 import { createSectorRotationRoute } from './sector-rotation.mjs';
 import {
   buildYahooSlopeChartUrl,
@@ -846,7 +847,8 @@ const handleAlertOutcomesRoute = createAlertOutcomesRoute({
 const overnightQuotes = createOvernightQuoteStore();
 // 数据状态：每一样数据跑在哪、最后什么时候更新。只读。
 // 服务器上的 OpenD 还没装，所以 configured 先写 false，不会报警。
-const SERVER_OPEND = { configured: false, reachable: false, reason: 'not_configured' };
+// 服务器上的 OpenD 状态：看配置在不在、端口连不连得上，结果缓存 60 秒。
+const serverOpend = makeOpendProbe();
 async function handleDataSourcesRoute(url, req, res) {
   if (url.pathname !== '/api/portfolio/data-sources') return false;
   if (req.method !== 'GET') {
@@ -871,7 +873,7 @@ async function handleDataSourcesRoute(url, req, res) {
       overnightPushAt: overnightQuotes.updatedAt(),
       overnightActive: classifyMarketSession(new Date(), { hasMinuteSeries: true }) === 'overnight',
       workerSeenAt,
-      opend: SERVER_OPEND,
+      opend: await serverOpend(),
     }),
   });
   return true;
@@ -1426,7 +1428,7 @@ async function runRealtimeMonitorCycle() {
 
     // 服务器上的 OpenD 掉线 / 登录失效 / 要验证码时写一条系统提醒。
     try {
-      const opendReading = opendReadingForAlerts(SERVER_OPEND);
+      const opendReading = opendReadingForAlerts(await serverOpend());
       if (opendReading) {
         const store = await readAlertLog(PORTFOLIO_ALERTS_ROOT);
         const next = applyStateAlerts(store, [opendReading], now);
