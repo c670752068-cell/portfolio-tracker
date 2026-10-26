@@ -8,15 +8,17 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/futu-opend
-ExecStart=/opt/futu-opend/FutuOpenD -cfg_file=/opt/futu-opend/OpenD.ini
+# 不带密码启动：首次交互式登录成功后，login_by_remember 用记住的凭据续登。
+ExecStart=/opt/futu-opend/FutuOpenD -cfg_file=/opt/futu-opend/OpenD.xml -login_account=18079298523 -login_by_remember=1 -console=1
 Restart=always
 RestartSec=10
 # 这台机器内存紧张，给它一个上限，超了就重启而不是把整机拖垮
 MemoryMax=450M
-# OpenD 在没有终端时会一直刷提示符，写进普通文件会把磁盘撑爆；
-# 交给 journal，它自带限流和容量上限。看日志：journalctl -u futu-opend -f
-StandardOutput=journal
-StandardError=journal
+# OpenD 在没有终端时每分钟刷 2 MB 的 > 提示符，全部丢弃；
+# 它自己的日志在 /opt/futu-opend/logs/Log/，排查看那里。
+StandardInput=null
+StandardOutput=null
+StandardError=null
 # 只读行情，不需要额外权限
 NoNewPrivileges=true
 PrivateTmp=true

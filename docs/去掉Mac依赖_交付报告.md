@@ -33,44 +33,50 @@ objdump -T 需要的最高 glibc        → GLIBC_2.14（系统是 2.39）
 
 **18.04 的包在 24.04 上能跑。**
 
-### 第 2 步：填 OpenD 的配置并首次登录（要手机验证码）
+### 第 2 步：~~配置并登录 OpenD~~ 已经做完了
 
-安装脚本已经把配置模板放好了（`/opt/futu-opend/OpenD.ini`，权限 600），直接编辑它：
-
-```bash
-ssh root@67.215.255.196
-nano /opt/futu-opend/OpenD.ini
-```
-
-把三个 `<<<...>>>` 占位符换成你自己的：`login_account`（富途账号）、`login_pwd_md5`（登录密码的 MD5）、`api_port` 保持 11111。
-**配置里没有、也不要加交易解锁密码**（`trade_pwd` / `trd_env` 这类字段一律不填）——服务器上的 OpenD 只用来看行情和查持仓。
-
-第一次要在前台跑，因为会要手机验证码：
-
-```bash
-cd /opt/futu-opend && ./FutuOpenD -cfg_file=/opt/futu-opend/OpenD.ini
-```
-
-屏幕上出现 `input_phone_verify_code` 这类提示时，在同一个窗口里敲：
+2026-10-25 晚上你自己在终端完成了登录（账号、密码、验证码全程由你输入，我没有接手）。现在的状态：
 
 ```
-input_phone_verify_code -code=你收到的6位验证码
+systemctl is-enabled futu-opend   → enabled   （开机自启）
+systemctl is-active  futu-opend   → active    （运行中）
+NRestarts                          → 0         （没有反复重启）
+ss -ltn | grep 11111               → 127.0.0.1:11111   （只听本机）
+MemoryCurrent                      → 93 MB
 ```
 
-看到登录成功、行情连接正常后，`Ctrl+C` 退出，然后交给 systemd 托管：
+实测服务器自己能取到美股实时行情：
 
-```bash
-systemctl enable --now futu-opend
-systemctl status futu-opend --no-pager
+```
+US.QQQ     最新    704.4  更新 2026-10-25 23:20:50
+US.TQQQ    最新    66.29  更新 2026-10-25 23:20:46
+US.SOXL    最新    83.56  更新 2026-10-25 23:20:52
 ```
 
-验证只监听本机、外面连不上：
+账号的行情权限（登录时打印的）：
 
-```bash
-bash /opt/portfolio-server-setup/check-firewall.sh 11111
-```
+| 市场 | 权限 |
+|---|---|
+| 美股 | LV3 正常 |
+| 港股 / 港股期权 / 港股期货 | LV1 正常 |
+| 加密货币 | LV1 正常 |
+| **美股指数** | **无权限** |
+| **美股期权、美期 CME/CBOT/NYMEX/COMEX/CBOE** | **无权限** |
+| 上证 / 深证 / 日本 / 新加坡 / 马来西亚 | 无权限 |
 
-应该打印「检查通过：OpenD 端口只在本机可用。」如果不是，**先不要继续**。
+和 Mac 上那台 OpenD 一致：**美股个股能取，美股指数和期货取不到**，所以三大指数卡片仍然得走 Yahoo。
+
+踩过的坑，都已经修掉：
+
+| 问题 | 原因 | 处理 |
+|---|---|---|
+| `加载本地配置失败` | 我一开始写的是 ini，官方要 XML（包里自带 `FutuOpenD.xml` 样例） | 按官方格式重做成 `/opt/futu-opend/OpenD.xml` |
+| 账号密码写进配置不生效 | 它们是启动参数，不是配置项 | 首次用 `-login_pwd_md5=` 登录，之后靠 `-login_by_remember=1` |
+| systemd 每 10 秒重启一次 | `-console=0` 父进程立刻退出，systemd 以为挂了 | 改成 `-console=1` 常驻前台 |
+| 控制台每分钟刷 2 MB 的 `>` | 没有终端时它一直刷提示符 | service 里 `StandardOutput=null`；它自己的日志在 `/opt/futu-opend/logs/Log/` |
+| 首次登录最后报 `问卷评估与协议拉取失败` | 从美国 VPS 拉富途的问卷接口失败 | 用记住的凭据重登就正常了，不影响行情 |
+
+防火墙四项检查全过：只有 `127.0.0.1:11111`、没有对外监听、ufw 没放行 11111、从公网自连失败。
 
 ### 第 3 步：填 IBKR Flex 的 token
 

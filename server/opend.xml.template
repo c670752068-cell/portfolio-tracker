@@ -1,0 +1,20 @@
+<futu_opend>
+	<!-- 服务器版配置：只用于读行情和查持仓。 -->
+	<!-- 账号和密码不写在这里，它们是启动参数；首次登录成功后由 login_by_remember 记住。 -->
+	<!-- 这份配置里没有、也绝不会有交易解锁密码或任何下单相关配置。 -->
+
+	<!-- 只监听本机回环地址，外网访问不到；网关和它在同一台机器上 -->
+	<ip>127.0.0.1</ip>
+	<api_port>11111</api_port>
+	<lang>chs</lang>
+
+	<!-- 登录和行情出问题时看这里的日志 -->
+	<log_level>info</log_level>
+	<log_path>/opt/futu-opend/logs</log_path>
+
+	<push_proto_type>0</push_proto_type>
+	<price_reminder_push>1</price_reminder_push>
+	<auto_hold_quote_right>1</auto_hold_quote_right>
+
+	<!-- 不启用 websocket：不配置 websocket_port 就不会开这个口 -->
+</futu_opend>
