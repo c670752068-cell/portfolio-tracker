@@ -12,30 +12,34 @@
 
 按顺序做，每一步做完再做下一步。涉及账号、密码、验证码、token 的地方**全部由你自己输入**，我没有读取、保存或询问过任何一项。
 
-### 第 1 步：把 OpenD 的 Linux 安装包弄到服务器上
+### 第 1 步：~~下载安装包~~ 已经做完了
 
-富途的下载页要 JS 和登录才能拿到链接，我拿不到，所以这一步只能你做。
+原本这一步要你自己下载再传上去。后来在文档页里点出了直链，服务器自己下完装好了，你不用做任何事。
 
-1. 在你的 Mac 上打开 <https://openapi.futunn.com/futu-api-doc/opend/opend-cmd.html>，下载 **Linux x86_64 的 OpenD 命令行版**压缩包。
-2. 传到服务器：
+- 来源：`https://softwaredownload.futunn.com/Futu_OpenD_10.11.7108_Ubuntu18.04.tar.gz`（富途官方，腾讯云 COS）
+- 大小 467,914,895 字节，MD5 `c79d54658b9f9408007e5dc902e781ff`，与官方 etag 一致
+- 版本 10.11.7108，和服务器上已装的 `futu-api 10.11.7108` 对得上
+- 压缩包留在 `/opt/futu-opend-download/`（446 MB），万一要重装不用再下
+- 已解压到 `/opt/futu-opend/`，配置模板已生成在 `/opt/futu-opend/OpenD.ini`
 
-```bash
-scp ~/Downloads/FutuOpenD*.tar.gz root@67.215.255.196:/root/
+兼容性也验过了（官方只提供 Ubuntu 18.04 的包，我们是 24.04）：
+
+```
+ldd FutuOpenD | grep "not found"   → 没有缺库
+objdump -T 需要的最高 glibc        → GLIBC_2.14（系统是 2.39）
+实跑一次                            → Futu OpenD版本信息: 10.11.7108(20260916134500)
+                                      Futu OpenD运行中
 ```
 
-3. 在服务器上安装（脚本会解压到 `/opt/futu-opend`，不会启动）：
-
-```bash
-ssh root@67.215.255.196 'bash /opt/portfolio-server-setup/install-opend.sh /root/FutuOpenD*.tar.gz'
-```
+**18.04 的包在 24.04 上能跑。**
 
 ### 第 2 步：填 OpenD 的配置并首次登录（要手机验证码）
 
+安装脚本已经把配置模板放好了（`/opt/futu-opend/OpenD.ini`，权限 600），直接编辑它：
+
 ```bash
 ssh root@67.215.255.196
-cp /opt/portfolio-server-setup/opend.conf.template /opt/futu-opend/opend.conf
-chmod 600 /opt/futu-opend/opend.conf
-nano /opt/futu-opend/opend.conf
+nano /opt/futu-opend/OpenD.ini
 ```
 
 把三个 `<<<...>>>` 占位符换成你自己的：`login_account`（富途账号）、`login_pwd_md5`（登录密码的 MD5）、`api_port` 保持 11111。
@@ -44,7 +48,7 @@ nano /opt/futu-opend/opend.conf
 第一次要在前台跑，因为会要手机验证码：
 
 ```bash
-cd /opt/futu-opend && ./FutuOpenD -cfg_file=./opend.conf
+cd /opt/futu-opend && ./FutuOpenD -cfg_file=/opt/futu-opend/OpenD.ini
 ```
 
 屏幕上出现 `input_phone_verify_code` 这类提示时，在同一个窗口里敲：
@@ -207,7 +211,7 @@ Mac 上的东西我一个都没动，所以 Mac 这边不需要回退。
 
 ### 服务器上（已装好，**没启动、没登录**）
 
-- `/opt/futu-opend/` —— 等你放安装包；`install-opend.sh` 会解压并就位
+- `/opt/futu-opend/` —— 已安装（10.11.7108，MD5 校验过），配置模板 `OpenD.ini` 已就位，**没有启动、没有登录**
 - `/opt/futu-assistant/` —— 代码已从 Mac 同步过去，Python 虚拟环境和全部依赖已装好，`futu-assistant --help` 跑得通
 - `/etc/systemd/system/futu-opend.service`、`futu-assistant.service` —— 已注册，状态都是 `disabled` + `inactive`
 - `/opt/portfolio-server-setup/` —— 安装脚本、配置模板、防火墙检查脚本
@@ -217,7 +221,7 @@ Mac 上的东西我一个都没动，所以 Mac 这边不需要回退。
 
 - 配置模板里所有敏感字段都是 `<<<...>>>` 占位符，**没有任何真实账号、密码、token 进入代码或仓库**
 - `opend.conf.template` 里**没有交易解锁密码字段**，代码里也没有任何下单调用
-- `opend.conf` 写死 `ip=127.0.0.1`，只监听本机
+- `OpenD.ini` 写死 `ip=127.0.0.1`，只监听本机
 - `check-firewall.sh` 做四项检查（监听地址、ufw 规则、公网自连、进程归属），现在的结果是「11111 没有监听」——符合预期，因为 OpenD 还没启动
 
 ### 新代码（全部先写测试再写实现）
@@ -314,7 +318,8 @@ ss -ltnp | grep 11111                           → 没有监听
 
 | 情况 | 我怎么处理的 | 为什么 |
 |---|---|---|
-| OpenD 的 Linux 安装包拿不到（下载页要 JS + 登录，直接猜路径返回 404） | 安装脚本写成「接受一个压缩包路径或 URL」，下载这一步列进你的清单 | 不猜链接、不装来路不明的二进制 |
+| OpenD 的 Linux 安装包一开始拿不到（直接猜路径返回 404） | 后来在文档页里点出了官方直链，服务器自己下载安装，校验 MD5 与官方 etag 一致 | 不猜链接；下完先核对校验和再解压 |
+| OpenD 在没有终端时会一直刷 `>` 提示符（15 秒 91 KB） | service 的输出从「无上限 append 到文件」改成写 journal（自带限流和容量上限） | 真配置下会不会也这样我没法先验，先把最坏情况挡住 |
 | 内存不够 | 加 2 GB 交换文件，service 里设内存上限 | 比加内存便宜，而且随时能撤 |
 | 服务器 worker 什么时候该接手 | 默认 `enabled: false`；就算开了也要等 Mac 静默 90 分钟 | 宁可漏推，也不能两边重复推 |
 | futu-assistant 的推送通道 | 模板里 `bark.enabled: false` | 并行对比阶段不该让你手机收两份 |
@@ -324,6 +329,7 @@ ss -ltnp | grep 11111                           → 没有监听
 
 ### 还没验证的部分（必须等你登录之后才能验）
 
+- 服务器上的 OpenD 填了真配置之后会不会仍然刷提示符（现在是占位符，它读不动就直接「加载本地配置失败」退出了）
 - 服务器上的 OpenD 能不能连上富途、行情权限够不够（Mac 上的 OpenD 查过：美股指数「暂不支持」，美股期货要付费，这些在服务器上大概率一样）
 - IBKR Flex 的 token 和查询编号对不对——取数逻辑只用假 XML 测过，没碰过真实接口
 - 服务器自己算出来的量化快照和 Mac 那份差多少——这正是第 5 步并行对比要回答的问题
