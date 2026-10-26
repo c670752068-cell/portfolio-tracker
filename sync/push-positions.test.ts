@@ -53,6 +53,7 @@ elif [ "$1" = "sync-ibkr" ]; then
   : > "$FAKE_IBKR_FIXED"
   printf '%s' '{"ok":true,"as_of":"2026-07-15"}'
 elif [ "$1" = "site-export" ]; then
+  if [ -n "$FAKE_SITE_EXPORT_SLEEP" ]; then sleep "$FAKE_SITE_EXPORT_SLEEP"; fi
   printf '%s' '{"source":"futu-assistant","generated_at":"2026-07-15T16:00:00-04:00","rule_version":"2.2","symbols":{"MSFT":{"gates":{},"gates_passed":0,"gates_total":6}}}' > "$FUTU_ASSISTANT_SITE_EXPORT"
   if [ "${analysisStdoutBytes}" -gt 0 ]; then
     head -c "${analysisStdoutBytes}" /dev/zero | tr '\\0' 'x'
@@ -503,6 +504,19 @@ describe('portfolio Mac push chain', () => {
     try {
       await expect(pushPositions()).resolves.toEqual(expect.objectContaining({ count: 1, analysisPushed: false }));
       expect(fixture.requests[0].url).toBe('/api/portfolio/positions');
+      expect(await readFile(fixture.log, 'utf8')).toContain('status=analysis_failure');
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('honours FUTU_ASSISTANT_SITE_EXPORT_TIMEOUT_SECONDS for a slow site-export', async () => {
+    const fixture = await setup(200);
+    vi.stubEnv('FAKE_SITE_EXPORT_SLEEP', '2');
+    vi.stubEnv('FUTU_ASSISTANT_SITE_EXPORT_TIMEOUT_SECONDS', '1');
+    try {
+      await expect(pushPositions()).resolves.toEqual(expect.objectContaining({ count: 1, analysisPushed: false }));
+      expect(fixture.requests.map((item) => item.url)).toEqual(['/api/portfolio/positions']);
       expect(await readFile(fixture.log, 'utf8')).toContain('status=analysis_failure');
     } finally {
       await fixture.close();

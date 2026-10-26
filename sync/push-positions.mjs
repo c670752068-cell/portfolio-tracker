@@ -11,6 +11,13 @@ const DEFAULT_SITE_EXPORT = join(homedir(), 'Projects/futu-assistant/data/site_e
 const DEFAULT_ORIGIN = 'https://myopenid.top';
 const DEFAULT_TOKEN_FILE = join(homedir(), '.portfolio-sync-token');
 const DEFAULT_LOG_FILE = join(homedir(), 'Library/Logs/portfolio-sync.log');
+const DEFAULT_SITE_EXPORT_TIMEOUT_SECONDS = 180;
+
+// 1 核服务器上 site-export 和常驻进程抢 CPU，180 秒不够，可用环境变量放宽。
+function siteExportTimeoutMs() {
+  const seconds = Number(process.env.FUTU_ASSISTANT_SITE_EXPORT_TIMEOUT_SECONDS);
+  return (Number.isFinite(seconds) && seconds > 0 ? seconds : DEFAULT_SITE_EXPORT_TIMEOUT_SECONDS) * 1000;
+}
 
 function runPositionsStatus(cliPath) {
   return new Promise((resolve, reject) => {
@@ -114,7 +121,7 @@ async function loadCompletePositionsPayload(cliPath) {
 
 function runSiteExport(cliPath) {
   return new Promise((resolve, reject) => {
-    execFile(cliPath, ['site-export'], { timeout: 180_000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(cliPath, ['site-export'], { timeout: siteExportTimeoutMs(), maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(`site-export 失败：${error.message}${stderr ? `；${String(stderr).trim().slice(0, 200)}` : ''}`));
         return;
