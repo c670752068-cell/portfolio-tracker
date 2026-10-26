@@ -14,7 +14,8 @@ websocket_port=0
 # 你的富途账号（手机号或 UID），回来后自己填
 login_account=<<<在这里填你的富途账号>>>
 # 登录密码的 MD5（OpenD 要求用 MD5，不是明文）
-# 生成方法见 server/README.md「怎么算密码 MD5」一节；也可以留空，改用交互式登录
+# 在你自己的电脑上算：printf '%s' '你的密码' | md5sum   （macOS 用 md5 -q -s '你的密码'）
+# 也可以整行留空，改用交互式登录
 login_pwd_md5=<<<在这里填密码的MD5，或留空改用交互式登录>>>
 
 [lang]

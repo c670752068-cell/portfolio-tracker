@@ -15,3 +15,12 @@ describe('服务器 systemd 单元', () => {
     expect(unit).not.toMatch(/trade_pwd|unlock/i);
   });
 });
+
+describe('服务器脚本和模板里的指路不能指向不存在的文件', () => {
+  it('不再引用不存在的 server/README.md', async () => {
+    for (const name of ['opend.conf.template', 'install-opend.sh', 'install-futu-assistant.sh']) {
+      const text = await readFile(`server/${name}`, 'utf8');
+      expect(text).not.toContain('server/README.md');
+    }
+  });
+});

@@ -50,4 +50,4 @@ echo "    已安装 futu-opend.service；确认能登录之后再执行："
 echo "      systemctl enable --now futu-opend"
 
 echo
-echo "装好了，但没有启动、也没有登录。接下来看 server/README.md 的「我回来后要做的事」。"
+echo "装好了，但没有启动、也没有登录。接下来看 docs/去掉Mac依赖_交付报告.md 的「我回来后要做的事」。"
