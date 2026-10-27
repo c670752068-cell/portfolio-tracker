@@ -12,7 +12,11 @@ describe('sector rotation presentation', () => {
     expect(html).toContain('11大板块排名');
     for (const label of ['1月', '3月', '6月', '1年']) expect(html).toContain(`>${label}</button>`);
     expect(html).toContain('非专有 JdK RRG');
-    expect(html).toContain('百分点');
+    expect(html).toContain('相对标普');
+    expect(html).toContain('按比值，非相减');
+    expect(html).toContain('不是两者收益相减');
+    expect(html).not.toContain('个百分点');
+    expect(html).not.toContain('较标普');
     expect(html).toContain('不改变现有决策、推送或交易规则');
     expect(html).not.toContain('演示数据 · 非实时行情');
     expect(html).not.toContain('+10.0%');

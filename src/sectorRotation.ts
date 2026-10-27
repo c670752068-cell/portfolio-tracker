@@ -69,7 +69,7 @@ export interface RelativePerformance {
   end: string | null;
   assetReturn: number | null;
   benchmarkReturn: number | null;
-  excessPp: number | null;
+  relativeReturn: number | null;
   points: RelativePoint[];
   stale: boolean;
 }
@@ -84,7 +84,7 @@ function validPoints(history?: RotationHistory): RotationPrice[] {
 }
 
 export function relativePerformance(asset: RotationHistory | undefined, benchmark: RotationHistory | undefined, sessions: number): RelativePerformance {
-  const result: RelativePerformance = { available: false, reason: '', start: null, end: null, assetReturn: null, benchmarkReturn: null, excessPp: null, points: [], stale: Boolean(asset?.stale || benchmark?.stale) };
+  const result: RelativePerformance = { available: false, reason: '', start: null, end: null, assetReturn: null, benchmarkReturn: null, relativeReturn: null, points: [], stale: Boolean(asset?.stale || benchmark?.stale) };
   const base = validPoints(benchmark);
   const stock = new Map(validPoints(asset).map(p => [p.date, p.close]));
   if (!asset?.available || !benchmark?.available) return { ...result, reason: '完整收盘数据暂不可用' };
@@ -96,7 +96,21 @@ export function relativePerformance(asset: RotationHistory | undefined, benchmar
   const benchmarkStart = window[0].close;
   const points = window.map(p => ({ date: p.date, asset: stock.get(p.date)! / assetStart * 100, benchmark: p.close / benchmarkStart * 100, ratio: (stock.get(p.date)! / p.close) / (assetStart / benchmarkStart) * 100 }));
   const last = points.at(-1)!;
-  return { ...result, available: true, start, end, points, assetReturn: last.asset - 100, benchmarkReturn: last.benchmark - 100, excessPp: last.asset - last.benchmark };
+  return { ...result, available: true, start, end, points, assetReturn: last.asset - 100, benchmarkReturn: last.benchmark - 100, relativeReturn: last.ratio - 100 };
+}
+
+/** Ratio comparison of two interval returns (in %): (1 + a) / (1 + b) − 1, not a − b. */
+export function relativeTo(assetReturn: number, baseReturn: number): number {
+  return ((1 + assetReturn / 100) / (1 + baseReturn / 100) - 1) * 100;
+}
+
+/** Explains when the interval result and the weekly quadrant point opposite ways; null otherwise. */
+export function rotationDivergence(relativeReturn: number | null, state: RotationState | undefined, periodLabel: string): string | null {
+  if (relativeReturn == null || !state || state === 'neutral' || relativeReturn === 0) return null;
+  const trendAbove = state === 'leading' || state === 'weakening';
+  if (relativeReturn > 0 && !trendAbove) return `近${periodLabel}整体跑赢标普，但相对强度已低于近10周均值，所以周度象限偏弱。`;
+  if (relativeReturn < 0 && trendAbove) return `近${periodLabel}整体跑输标普，但相对强度已高于近10周均值，所以周度象限偏强。`;
+  return null;
 }
 
 function weekFriday(date: string): string {
@@ -144,7 +158,6 @@ export function signedPercent(value: number | null, digits = 1): string {
   const rounded = Number(value.toFixed(digits));
   return `${rounded > 0 ? '+' : ''}${rounded.toFixed(digits)}%`;
 }
-export function signedPp(value: number | null): string { return value == null ? '—' : `${signedPercent(value).slice(0, -1)} 个百分点`; }
 
 export async function fetchRotation(endpoint: string, symbols?: string[], signal?: AbortSignal): Promise<RotationPayload> {
   const response = await fetch(`${endpoint}${symbols?.length ? `?symbols=${encodeURIComponent(symbols.join(','))}` : ''}`, { cache: 'no-store', signal });

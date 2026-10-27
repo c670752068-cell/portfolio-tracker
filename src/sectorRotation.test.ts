@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { relativePerformance, rotationTrail, rotationState, stockSector, signedPercent, signedPp, SECTORS, type RotationHistory } from './sectorRotation';
+import { relativePerformance, relativeTo, rotationDivergence, rotationTrail, rotationState, stockSector, signedPercent, SECTORS, type RotationHistory } from './sectorRotation';
 
 function history(count = 400, rate = .001): RotationHistory {
   const series = [];
@@ -18,16 +18,34 @@ describe('sector relative strength', () => {
     expect(stockSector('TSLA')).toBe('XLY');
     for (const symbol of ['SPCX', 'TQQQ', 'GLDM', 'MAGS', 'SOXL', 'VOO']) expect(stockSector(symbol)).toBeNull();
   });
-  it('uses identical dates and percentage POINTS, not ratio return, for excess', () => {
+  it('uses identical dates and the RATIO return, not a subtraction, for relative strength', () => {
     const benchmark = history(22, 0); benchmark.series!.at(-1)!.close = 105;
     const stock = history(22, 0); stock.series!.at(-1)!.close = 110;
     const result = relativePerformance(stock, benchmark, 21);
     expect(result.available).toBe(true);
     expect(result.assetReturn).toBeCloseTo(10);
     expect(result.benchmarkReturn).toBeCloseTo(5);
-    expect(result.excessPp).toBeCloseTo(5);
-    expect(result.points.at(-1)!.ratio - 100).toBeCloseTo(4.76190476);
+    expect(result.relativeReturn).toBeCloseTo(4.76190476);
+    expect(result.relativeReturn).toBeCloseTo(result.points.at(-1)!.ratio - 100);
     expect(result.points[0]).toMatchObject({ asset: 100, benchmark: 100, ratio: 100 });
+    expect(relativePerformance(undefined, benchmark, 21).relativeReturn).toBeNull();
+  });
+  it('compares two returns by ratio and keeps the direction of the plain difference', () => {
+    expect(relativeTo(10, 5)).toBeCloseTo(4.76190476);
+    expect(relativeTo(-10, -20)).toBeCloseTo(12.5);
+    expect(relativeTo(3, 8)).toBeLessThan(0);
+  });
+  it('explains only when the interval result and the weekly quadrant point opposite ways', () => {
+    expect(rotationDivergence(5.3, 'lagging', '3月')).toBe('近3月整体跑赢标普，但相对强度已低于近10周均值，所以周度象限偏弱。');
+    expect(rotationDivergence(2, 'improving', '1月')).toBe('近1月整体跑赢标普，但相对强度已低于近10周均值，所以周度象限偏弱。');
+    expect(rotationDivergence(-9.4, 'leading', '3月')).toBe('近3月整体跑输标普，但相对强度已高于近10周均值，所以周度象限偏强。');
+    expect(rotationDivergence(-1, 'weakening', '6月')).toBe('近6月整体跑输标普，但相对强度已高于近10周均值，所以周度象限偏强。');
+    expect(rotationDivergence(17.5, 'leading', '3月')).toBeNull();
+    expect(rotationDivergence(-7, 'lagging', '3月')).toBeNull();
+    expect(rotationDivergence(4, 'neutral', '3月')).toBeNull();
+    expect(rotationDivergence(null, 'lagging', '3月')).toBeNull();
+    expect(rotationDivergence(4, undefined, '3月')).toBeNull();
+    expect(rotationDivergence(0, 'lagging', '3月')).toBeNull();
   });
   it('requires the full interval and never silently fills gaps or mixes raw with adjusted prices', () => {
     const stock = history(), benchmark = history();
@@ -41,7 +59,7 @@ describe('sector relative strength', () => {
   it('permits relative outperformance while both instruments fall and preserves stale flags', () => {
     const result = relativePerformance({ ...history(50, -.001), stale: true }, history(50, -.002), 21);
     expect(result.assetReturn).toBeLessThan(0);
-    expect(result.excessPp).toBeGreaterThan(0);
+    expect(result.relativeReturn).toBeGreaterThan(0);
     expect(result.stale).toBe(true);
   });
   it('computes 10/4-week normalized trails only from completed weeks', () => {
@@ -60,6 +78,6 @@ describe('sector relative strength', () => {
     expect(rotationState(101, 101)).toBe('leading'); expect(rotationState(101, 99)).toBe('weakening');
     expect(rotationState(99, 99)).toBe('lagging'); expect(rotationState(99, 101)).toBe('improving');
     expect(rotationState(100, 101)).toBe('neutral');
-    expect(signedPercent(-.0001)).toBe('0.0%'); expect(signedPp(5)).toBe('+5.0 个百分点');
+    expect(signedPercent(-.0001)).toBe('0.0%');
   });
 });

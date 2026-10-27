@@ -3,7 +3,7 @@ import type { Holding, QuantAnalysisSnapshot } from '../types';
 import { getServerSectorRotationUrl } from '../runtimeConfig';
 import { technicalPresetSymbols, technicalSymbolName } from '../technicalSymbols';
 import { withSingleRetry } from '../requestRetry';
-import { fetchRotation, PERIODS, relativePerformance, ROTATION_COPY, ROTATION_LABELS, rotationTrail, SECTORS, signedPercent, signedPp, stockSector, type RelativePerformance, type RotationHistory, type RotationPayload, type RotationPoint, type RotationState, type SectorSymbol } from '../sectorRotation';
+import { fetchRotation, PERIODS, relativePerformance, relativeTo, ROTATION_COPY, ROTATION_LABELS, rotationDivergence, rotationTrail, SECTORS, signedPercent, stockSector, type RelativePerformance, type RotationHistory, type RotationPayload, type RotationPoint, type RotationState, type SectorSymbol } from '../sectorRotation';
 import './SectorRotation.css';
 
 interface Props { snapshot: QuantAnalysisSnapshot | null; holdings: readonly Holding[]; onOpenDecision: (symbol: string) => void }
@@ -60,10 +60,11 @@ export function SectorRotation({ snapshot, holdings, onOpenDecision }: Props) {
   })), [payload, sessions]);
   const row = rows.find(item => item.symbol === selected)!;
   const current = row.trail.at(-1);
+  const divergence = rotationDivergence(row.performance.relativeReturn, current?.state, period.label);
   const ranked = [...rows].sort((a, b) => {
-    if (a.performance.excessPp == null) return b.performance.excessPp == null ? 0 : 1;
-    if (b.performance.excessPp == null) return -1;
-    return (b.performance.excessPp - a.performance.excessPp) * (descending ? 1 : -1);
+    if (a.performance.relativeReturn == null) return b.performance.relativeReturn == null ? 0 : 1;
+    if (b.performance.relativeReturn == null) return -1;
+    return (b.performance.relativeReturn - a.performance.relativeReturn) * (descending ? 1 : -1);
   });
   const available = rows.filter(item => item.performance.available).length;
   const stale = rows.filter(item => item.performance.stale).length;
@@ -71,14 +72,14 @@ export function SectorRotation({ snapshot, holdings, onOpenDecision }: Props) {
   const showWatch = (symbol: string) => {
     const stock = relativePerformance(watchHistory[symbol], payload?.series.SPY, sessions);
     const comparable = stock.available && row.performance.available && stock.start === row.performance.start && stock.end === row.performance.end;
-    const vsSector = comparable ? stock.assetReturn! - row.performance.assetReturn! : null;
-    const description = !comparable ? stock.reason || '等待同期板块数据' : stock.excessPp! >= 0
+    const vsSector = comparable ? relativeTo(stock.assetReturn!, row.performance.assetReturn!) : null;
+    const description = !comparable ? stock.reason || '等待同期板块数据' : stock.relativeReturn! >= 0
       ? vsSector! >= 0 ? '强于大盘，也强于板块' : '跑赢大盘，但落后于板块'
       : vsSector! >= 0 ? '落后于大盘，但强于板块' : '弱于大盘，也弱于板块';
     return <article className="rotation-stock" key={symbol}>
       <div className="rotation-stock-heading"><h3>{symbol} <span>{technicalSymbolName(symbol, holdings, snapshot?.growth_watchlist?.names)}</span></h3><button onClick={() => onOpenDecision(symbol)} aria-label={`查看 ${symbol} 个股决策`}>查看决策 ↗</button></div>
-      <div className="rotation-metrics is-stock"><Metric label={`近${period.label}`} value={stock.assetReturn} /><Metric label="较标普" value={stock.excessPp} pp /><Metric label={`较${row.name}`} value={vsSector} pp /></div>
-      <p className={`rotation-stock-summary ${comparable && stock.excessPp! >= 0 && vsSector! >= 0 ? 'is-positive' : ''}`}>{description}</p>
+      <div className="rotation-metrics is-stock"><Metric label={`近${period.label}`} value={stock.assetReturn} /><Metric label="相对标普" value={stock.relativeReturn} ratio /><Metric label={`相对${row.name}`} value={vsSector} ratio /></div>
+      <p className={`rotation-stock-summary ${comparable && stock.relativeReturn! >= 0 && vsSector! >= 0 ? 'is-positive' : ''}`}>{description}</p>
       {(stock.stale || row.performance.stale) && <p className="rotation-warning">含过期或缓存行情，仅供回看</p>}
     </article>;
   };
@@ -90,25 +91,25 @@ export function SectorRotation({ snapshot, holdings, onOpenDecision }: Props) {
     {payload && !payload.calendar_verified && <p className="rotation-warning">交易日历年份未覆盖，收盘日期需人工核验。</p>}
     <div className="rotation-grid">
       <section className="rotation-card rotation-map-card"><div className="rotation-card-title"><div><h3>板块轮动</h3><p>周度观察 · 最近12个完整周轨迹 · 不随表现区间改变</p></div><select aria-label="选择板块" value={selected} onChange={event => chooseSector(event.target.value as SectorSymbol)}>{SECTORS.map(sector => <option value={sector.symbol} key={sector.symbol}>{sector.name} {sector.symbol}</option>)}</select></div><RotationMap rows={rows} selected={selected} onSelect={chooseSector} /><div className="rotation-map-foot"><span>轨迹记录过去，不预测未来。</span><span>自定义 10 / 4 周模型 ⓘ</span></div></section>
-      <section className="rotation-card rotation-selection" aria-label="选中板块详情"><h3>{row.name} <span>· {selected}</span></h3>{current ? <><span className={`rotation-state state-${current.state}`}>相对{ROTATION_LABELS[current.state]}</span><p>{ROTATION_COPY[current.state]}</p><small>象限截至 {current.date} · 周度，不是当日涨跌</small></> : <p className="rotation-unavailable">周度样本不足，暂不判断象限</p>}
-        <div className="rotation-metrics"><Metric label={`${row.name}近${period.label}`} value={row.performance.assetReturn} /><Metric label={`标普近${period.label}`} value={row.performance.benchmarkReturn} neutral /><Metric label="较标普" value={row.performance.excessPp} pp /></div>
+      <section className="rotation-card rotation-selection" aria-label="选中板块详情"><h3>{row.name} <span>· {selected}</span></h3>{current ? <><span className={`rotation-state state-${current.state}`}>相对{ROTATION_LABELS[current.state]}</span><p>{ROTATION_COPY[current.state]}</p>{divergence && <p className="rotation-divergence">{divergence}</p>}<small>象限截至 {current.date} · 周度，不是当日涨跌</small></> : <p className="rotation-unavailable">周度样本不足，暂不判断象限</p>}
+        <div className="rotation-metrics"><Metric label={`${row.name}近${period.label}`} value={row.performance.assetReturn} /><Metric label={`标普近${period.label}`} value={row.performance.benchmarkReturn} neutral /><Metric label="相对标普" value={row.performance.relativeReturn} ratio /></div>
         {!row.performance.available && <p className="rotation-warning">{row.performance.reason}</p>}
         {row.performance.stale && <p className="rotation-warning">数据未更新至预期收盘日，或刷新失败；不作为实时状态。</p>}
         <div className="rotation-comparison"><h4>近{period.label}表现对比</h4><p>复权累计表现 · 起点=100 · 非相对比值线</p><PerformanceChart performance={row.performance} symbol={selected} /><small>{row.performance.start ?? '—'} → {row.performance.end ?? '—'} · {sessions} 个交易日</small></div>
       </section>
-      <section className="rotation-card rotation-ranking"><div className="rotation-card-title"><div><h3>11大板块排名</h3><p>同一收盘日期与区间 · 复权收益差，以百分点表示</p><small className="rotation-scroll-hint">左右滑动查看轮动状态与走势 →</small></div></div><div className="rotation-table-scroll" tabIndex={0} aria-label="板块排名，可左右滚动"><table><thead><tr><th>板块 / ETF</th><th>近{period.label}涨跌</th><th aria-sort={descending ? 'descending' : 'ascending'}><button onClick={() => setDescending(value => !value)}>较标普 {descending ? '↓' : '↑'}</button></th><th>轮动状态<small>周度</small></th><th>相对走势</th></tr></thead><tbody>{ranked.map(item => {
+      <section className="rotation-card rotation-ranking"><div className="rotation-card-title"><div><h3>11大板块排名</h3><p>同一收盘日期与区间 · 相对强度按比值计算</p><small className="rotation-scroll-hint">左右滑动查看轮动状态与走势 →</small></div></div><div className="rotation-table-scroll" tabIndex={0} aria-label="板块排名，可左右滚动"><table><thead><tr><th>板块 / ETF</th><th>近{period.label}涨跌</th><th aria-sort={descending ? 'descending' : 'ascending'}><button onClick={() => setDescending(value => !value)}>相对标普 {descending ? '↓' : '↑'}</button></th><th>轮动状态<small>周度</small></th><th>相对走势</th></tr></thead><tbody>{ranked.map(item => {
         const latest = item.trail.at(-1);
-        return <tr key={item.symbol} className={selected === item.symbol ? 'is-selected' : ''}><th><button aria-pressed={selected === item.symbol} onClick={() => chooseSector(item.symbol)}><strong>{item.name}</strong><span>{item.symbol}</span></button></th><td className={numberTone(item.performance.assetReturn)}>{signedPercent(item.performance.assetReturn)}{item.performance.stale && <small>日期/来源待核查</small>}</td><td className={numberTone(item.performance.excessPp)}>{signedPp(item.performance.excessPp)}{!item.performance.available && <small>{item.performance.reason}</small>}</td><td>{latest ? <span className={`rotation-state state-${latest.state}`}>{ROTATION_LABELS[latest.state]}</span> : <span className="rotation-unavailable">数据不足</span>}</td><td><Sparkline points={item.performance.points.map(p => p.ratio)} color={latest ? COLORS[latest.state] : COLORS.neutral} /></td></tr>;
+        return <tr key={item.symbol} className={selected === item.symbol ? 'is-selected' : ''}><th><button aria-pressed={selected === item.symbol} onClick={() => chooseSector(item.symbol)}><strong>{item.name}</strong><span>{item.symbol}</span></button></th><td className={numberTone(item.performance.assetReturn)}>{signedPercent(item.performance.assetReturn)}{item.performance.stale && <small>日期/来源待核查</small>}</td><td className={numberTone(item.performance.relativeReturn)}>{signedPercent(item.performance.relativeReturn)}{!item.performance.available && <small>{item.performance.reason}</small>}</td><td>{latest ? <span className={`rotation-state state-${latest.state}`}>{ROTATION_LABELS[latest.state]}</span> : <span className="rotation-unavailable">数据不足</span>}</td><td><Sparkline points={item.performance.points.map(p => p.ratio)} color={latest ? COLORS[latest.state] : COLORS.neutral} /></td></tr>;
       })}</tbody></table></div></section>
       <section className="rotation-card rotation-watch"><div className="rotation-card-title"><div><h3>关注股票 · {row.name}</h3><p>从当前成长股与持仓匹配 · {selectedStocks.length} 支</p></div></div>{watchError && <p className="rotation-error" role="alert">{watchError}，请刷新重试；旧数据仍需核对日期。</p>}{selectedStocks.length ? <div className="rotation-watch-list">{selectedStocks.map(showWatch)}</div> : <div className="rotation-empty"><strong>这个板块暂无已匹配的关注股票</strong><p>可选择其他板块。不会把不确定的分类自动套入。</p></div>}</section>
     </div>
-    <details className="rotation-card rotation-method"><summary>计算口径与数据说明</summary><div className="rotation-method-grid"><section><h4>表现与相对强度</h4><p>以 SPY ETF 代表标普500、11 只 Select Sector SPDR ETF 代表板块，不是对全部标普成分股重新编制指数。使用 Yahoo Finance 拆股及分红调整收盘价；不与原始收盘价混用。</p><p>1月/3月/6月/1年分别为 21/63/126/252 个交易日。收益 = 期末复权价 ÷ 期初复权价 − 1；“较标普” = 标的收益 − SPY 收益，单位为百分点。相对比值 RS = 标的复权价 ÷ SPY 复权价。</p><p>表内短走势为区间 RS 归一化曲线；右侧两条线分别是标的与 SPY 的累计表现。跑赢基准仍可能亏损；领先也可能发生在下跌市场。</p></section><section><h4>透明的周度轮动模型</h4><p>仅使用完整周最后一个交易日：横轴 = 100 × 周 RS / 最近10周 RS 均值；纵轴 = 100 × 横轴 / 最近4周横轴均值。中心为 100，保留最近12周轨迹。此为自定义相对趋势模型，并非专有 JdK RRG 指标，也不是 RSI。</p><p>右上领先、右下转弱、左下落后、左上改善；恰在中轴为临界。四象限不保证顺时针轮动。区间跑赢与周度象限可能不同，不代表计算矛盾。</p><p>数据每15分钟检查缓存，收盘后延迟20分钟纳入当日。日期未对齐、调整价缺失或样本不足时不计算，不向前补价格。更新失败保留上次数据并标记。</p></section></div><details className="rotation-mapping"><summary>关注股票分类与未归类标的（{unmapped.length}）</summary><p>按维护的行业映射关联当前关注股票，包含非标普成分股及 ADR，不声称这些股票均在标普500。跨板块指数、杠杆产品、商品和未知分类不强行放入单一板块。</p><p>未归类：{unmapped.join('、') || '无'}</p><p>分类维护日期：2026-10-06。分类变化需核验更新。</p></details><p className="rotation-boundary">相对强弱不等于绝对涨跌，也不直接构成买卖信号；不改变现有决策、推送或交易规则。</p></details>
+    <details className="rotation-card rotation-method"><summary>计算口径与数据说明</summary><div className="rotation-method-grid"><section><h4>表现与相对强度</h4><p>以 SPY ETF 代表标普500、11 只 Select Sector SPDR ETF 代表板块，不是对全部标普成分股重新编制指数。使用 Yahoo Finance 拆股及分红调整收盘价；不与原始收盘价混用。</p><p>1月/3月/6月/1年分别为 21/63/126/252 个交易日。收益 = 期末复权价 ÷ 期初复权价 − 1；“相对标普” = (1 + 标的收益) ÷ (1 + SPY 收益) − 1，即区间末 RS 相对起点的变化，不是两者收益相减。相对比值 RS = 标的复权价 ÷ SPY 复权价。</p><p>表内短走势为区间 RS 归一化曲线；右侧两条线分别是标的与 SPY 的累计表现。跑赢基准仍可能亏损；领先也可能发生在下跌市场。</p></section><section><h4>透明的周度轮动模型</h4><p>仅使用完整周最后一个交易日：横轴 = 100 × 周 RS / 最近10周 RS 均值；纵轴 = 100 × 横轴 / 最近4周横轴均值。中心为 100，保留最近12周轨迹。此为自定义相对趋势模型，并非专有 JdK RRG 指标，也不是 RSI。</p><p>右上领先、右下转弱、左下落后、左上改善；恰在中轴为临界。四象限不保证顺时针轮动。区间跑赢与周度象限可能不同，不代表计算矛盾。</p><p>数据每15分钟检查缓存，收盘后延迟20分钟纳入当日。日期未对齐、调整价缺失或样本不足时不计算，不向前补价格。更新失败保留上次数据并标记。</p></section></div><details className="rotation-mapping"><summary>关注股票分类与未归类标的（{unmapped.length}）</summary><p>按维护的行业映射关联当前关注股票，包含非标普成分股及 ADR，不声称这些股票均在标普500。跨板块指数、杠杆产品、商品和未知分类不强行放入单一板块。</p><p>未归类：{unmapped.join('、') || '无'}</p><p>分类维护日期：2026-10-06。分类变化需核验更新。</p></details><p className="rotation-boundary">相对强弱不等于绝对涨跌，也不直接构成买卖信号；不改变现有决策、推送或交易规则。</p></details>
   </section>;
 }
 
 function numberTone(value: number | null) { return value == null || value === 0 ? '' : value > 0 ? 'is-positive' : 'is-negative'; }
-function Metric({ label, value, pp = false, neutral = false }: { label: string; value: number | null; pp?: boolean; neutral?: boolean }) {
-  return <div><span>{label}</span><strong className={neutral ? '' : numberTone(value)}>{pp && value != null ? <>{signedPercent(value).slice(0, -1)}<small> 个百分点</small></> : signedPercent(value)}</strong></div>;
+function Metric({ label, value, ratio = false, neutral = false }: { label: string; value: number | null; ratio?: boolean; neutral?: boolean }) {
+  return <div><span>{label}</span><strong className={neutral ? '' : numberTone(value)}>{signedPercent(value)}{ratio && <small> 按比值，非相减</small>}</strong></div>;
 }
 function Sparkline({ points, color }: { points: number[]; color: string }) {
   if (points.length < 2) return <span className="rotation-unavailable">—</span>;
