@@ -19,7 +19,14 @@ export const OPTION_BUDGET_CAPS = {
 } as const;
 
 export interface OptionBudgetLine {
+  /** 已用额度：每张期权取「买入成本」和「当前市值」里大的那个再相加。跌了不会空出额度。 */
   value: number;
+  /** 这些期权买入时一共花了多少（没有成本的按当前市值补上）。 */
+  costValue: number;
+  /** 这些期权现在值多少。 */
+  marketValue: number;
+  /** 有几张期权没有买入成本，只能按当前市值算。 */
+  costMissing: number;
   weight: number;
   cap: number;
   limitValue: number;
@@ -87,42 +94,65 @@ export function buildAllocationSlices(
 }
 
 /**
- * Tracks gross option premium/current market value against the NAV budget.
- * Absolute values keep short option marks from cancelling long-option usage;
- * TQQQ shares and TQQQ ETF holdings are intentionally excluded.
+ * 期权额度按「买入时花的钱」算，不按现在的市值：期权跌了，市值变小，
+ * 但当初那笔钱已经花出去了，不能因此空出额度、让人在亏损的期权上越补越多。
+ * 每张期权取「买入成本」和「当前市值」里大的那个：亏了按成本，赚了按市值，两头都不少算。
+ * 没有成本的按当前市值算，并记下几张。空头期权取绝对值，免得和多头互相抵掉；
+ * TQQQ 正股和杠杆 ETF 不算在这里。
  */
 export function buildOptionBudget(metrics: PortfolioMetrics): OptionBudgetSummary {
-  let tqqqValue = 0;
-  let otherValue = 0;
+  const tqqq = emptyUsage();
+  const other = emptyUsage();
 
   for (const metric of metrics.holdingsMetrics) {
     if (metric.holding.assetType !== 'option') continue;
-    const value = Math.abs(metric.marketValue);
+    const marketValue = Math.abs(Number(metric.marketValue) || 0);
+    const cost = Math.abs(Number(metric.cost) || 0);
+    const costKnown = metric.costKnown === true && cost > 0;
     const underlying = normalizeOptionUnderlying(
       metric.holding.option?.underlying || metric.holding.symbol,
     );
-    if (underlying === 'TQQQ') tqqqValue += value;
-    else otherValue += value;
+    const bucket = underlying === 'TQQQ' ? tqqq : other;
+    bucket.used += costKnown ? Math.max(cost, marketValue) : marketValue;
+    bucket.cost += costKnown ? cost : marketValue;
+    bucket.market += marketValue;
+    if (!costKnown) bucket.missing += 1;
   }
 
-  const total = optionBudgetLine(tqqqValue + otherValue, metrics.totalValue, OPTION_BUDGET_CAPS.total);
-  const tqqq = optionBudgetLine(tqqqValue, metrics.totalValue, OPTION_BUDGET_CAPS.tqqq);
-  const other = optionBudgetLine(otherValue, metrics.totalValue, OPTION_BUDGET_CAPS.other);
+  const sum = {
+    used: tqqq.used + other.used,
+    cost: tqqq.cost + other.cost,
+    market: tqqq.market + other.market,
+    missing: tqqq.missing + other.missing,
+  };
+  const total = optionBudgetLine(sum, metrics.totalValue, OPTION_BUDGET_CAPS.total);
+  const tqqqLine = optionBudgetLine(tqqq, metrics.totalValue, OPTION_BUDGET_CAPS.tqqq);
+  const otherLine = optionBudgetLine(other, metrics.totalValue, OPTION_BUDGET_CAPS.other);
   return {
     total,
-    tqqq,
-    other,
-    hasOverLimit: total.overLimit || tqqq.overLimit || other.overLimit,
+    tqqq: tqqqLine,
+    other: otherLine,
+    hasOverLimit: total.overLimit || tqqqLine.overLimit || otherLine.overLimit,
   };
 }
 
-function optionBudgetLine(value: number, nav: number, cap: number): OptionBudgetLine {
+interface OptionUsage { used: number; cost: number; market: number; missing: number }
+
+function emptyUsage(): OptionUsage {
+  return { used: 0, cost: 0, market: 0, missing: 0 };
+}
+
+function optionBudgetLine(usage: OptionUsage, nav: number, cap: number): OptionBudgetLine {
+  const value = usage.used;
   const safeNav = Number.isFinite(nav) && nav > 0 ? nav : 0;
   const limitValue = safeNav * cap;
   const difference = value - limitValue;
   const overLimit = difference > 0.005;
   return {
     value,
+    costValue: usage.cost,
+    marketValue: usage.market,
+    costMissing: usage.missing,
     weight: safeNav > 0 ? value / safeNav : 0,
     cap,
     limitValue,

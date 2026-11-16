@@ -13,6 +13,8 @@ export function PositionGuardBar({ guard, displayCurrency, rates }: {
   const warn = guard.overPct !== null || guard.tqqqBlocked || guard.options.total.overLimit || guard.options.tqqq.overLimit;
   // 没超写还剩多少美金，超了写超出多少
   const room = (line: OptionBudgetLine) => (line.overLimit ? `超出 ${money(line.overByValue)}` : `还剩 ${money(line.remainingValue)}`);
+  // 现值比成本低时写出来：额度按成本占着，不是没看到亏损
+  const costNote = (line: OptionBudgetLine) => (line.marketValue < line.costValue - 0.005 ? `（现值 ${money(line.marketValue)}）` : '');
   const { panicOpen, cnn, vix } = guard.signals;
   const gates = [
     { key: 'panic', label: '恐慌性下跌', value: panicOpen === null ? '暂无' : panicOpen ? '有' : '没有', met: panicOpen === true },
@@ -43,11 +45,11 @@ export function PositionGuardBar({ guard, displayCurrency, rates }: {
           </p>
         ))}
       </div>
-      <p className={guard.options.total.overLimit ? 'text-loss' : 'text-ink-secondary'}>
-        期权 {money(guard.options.total.value)}（{(guard.options.total.weight * 100).toFixed(1)}%）· 上限 {guard.options.total.cap * 100}% · {room(guard.options.total)}
+      <p className={guard.options.total.overLimit ? 'text-loss' : 'text-ink-secondary'} title="期权按买入时花的钱算（涨了按现值）：跌了不会空出额度。">
+        期权已用 {money(guard.options.total.value)}（{(guard.options.total.weight * 100).toFixed(1)}%，按买入成本）· 上限 {guard.options.total.cap * 100}% · {room(guard.options.total)}
       </p>
       <p className={guard.options.tqqq.overLimit ? 'text-loss' : 'text-ink-muted'}>
-        TQQQ 期权 {money(guard.options.tqqq.value)} · 上限 {guard.options.tqqq.cap * 100}% · {room(guard.options.tqqq)}
+        {`TQQQ 期权已用 ${money(guard.options.tqqq.value)}${costNote(guard.options.tqqq) || ' '}· 上限 ${guard.options.tqqq.cap * 100}% · ${room(guard.options.tqqq)}`}
       </p>
       {guard.tqqqBlocked && (
         <p className="text-loss">

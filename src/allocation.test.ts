@@ -225,6 +225,43 @@ describe('buildOptionBudget', () => {
     expect(budget.hasOverLimit).toBe(true);
   });
 
+  it('按买入成本占额度：期权跌了不会空出额度，现值另外给出', () => {
+    // 6,500 买的 TQQQ 期权，现在只值 3,875.39：额度按 6,500 算
+    const losing = { ...optionRow('tqqq-option', 'TQQQ', 3_875.39), buyPrice: 65 };
+    const metrics = computeMetrics({
+      holdings: [row('core', 'AAPL', 96_124.61), losing],
+      cash: [],
+      updatedAt: '2026-11-16T00:00:00.000Z',
+    }, rates);
+
+    const budget = buildOptionBudget(metrics);
+
+    expect(metrics.totalValue).toBeCloseTo(100_000, 2);
+    expect(budget.tqqq.value).toBeCloseTo(6_500, 2);
+    expect(budget.tqqq.costValue).toBeCloseTo(6_500, 2);
+    expect(budget.tqqq.marketValue).toBeCloseTo(3_875.39, 2);
+    expect(budget.tqqq).toMatchObject({ overLimit: true, remainingValue: 0, costMissing: 0 });
+    expect(budget.tqqq.overByValue).toBeCloseTo(3_500, 2);
+    expect(budget.total.value).toBeCloseTo(6_500, 2);
+    expect(budget.total.remainingValue).toBe(0);
+    expect(budget.total.overByValue).toBeCloseTo(1_500, 2);
+  });
+
+  it('期权涨了按现值算，没有成本的也按现值算并记下张数', () => {
+    const winning = { ...optionRow('nvda-option', 'NVDA', 1_500), buyPrice: 5 };
+    const noCost = { ...optionRow('igv-option', 'IGV', 200), buyPrice: 0 };
+    const metrics = computeMetrics({
+      holdings: [row('core', 'AAPL', 98_300), winning, noCost],
+      cash: [],
+      updatedAt: '2026-11-16T00:00:00.000Z',
+    }, rates);
+
+    const budget = buildOptionBudget(metrics);
+
+    expect(budget.other).toMatchObject({ value: 1_700, costValue: 700, marketValue: 1_700, costMissing: 1 });
+    expect(budget.other.remainingValue).toBeCloseTo(300, 2);
+  });
+
   it('uses gross option market value for the safety budget and ignores TQQQ shares', () => {
     const metrics = computeMetrics({
       holdings: [

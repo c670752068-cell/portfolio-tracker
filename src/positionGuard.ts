@@ -29,7 +29,7 @@ export interface PositionGuard {
   tqqqBlocked: boolean;
   tqqqShares: number;
   tqqqOptions: number;
-  /** 期权额度（和总览一样）：总共 5%，其中 TQQQ 期权 3%；没超看还剩多少，超了看超出多少。 */
+  /** 期权额度（和总览一样，按买入成本算）：总共 5%，其中 TQQQ 期权 3%；没超看还剩多少，超了看超出多少。 */
   options: { total: OptionBudgetLine; tqqq: OptionBudgetLine };
 }
 
@@ -61,7 +61,7 @@ export function positionGuard(
     .filter((metric) => metric.holding.assetType !== 'option' && metric.holding.symbol.trim().toUpperCase() === 'TQQQ')
     .reduce((sum, metric) => sum + Math.abs(metric.marketValue), 0);
   const budget = buildOptionBudget(metrics);
-  const tqqqOptions = budget.tqqq.value;
+  const tqqqOptions = budget.tqqq.marketValue;
   const capPct = positionCap(signals);
   const over = capPct === null ? 0 : positionPct - capPct;
   return {

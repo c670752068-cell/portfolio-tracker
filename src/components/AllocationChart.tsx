@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import type { DisplayCurrency, ExchangeRates, PortfolioMetrics, QuantAnalysisSnapshot } from '../types';
-import { formatPct } from '../format';
+import { formatPct, formatSignedPct } from '../format';
 import {
   buildAllocationSlices,
   buildEffectiveExposureSlices,
@@ -298,10 +298,10 @@ function OptionBudgetPanel({
         <div className="min-w-0 flex-1">
           <h3 className="text-xs font-semibold text-ink-primary sm:text-sm">期权资金预算</h3>
           <p className="mt-1 text-[10px] leading-relaxed text-ink-muted sm:text-xs">
-            按总资产 {formatDisplayMoney(nav, displayCurrency, rates)} 计算当前期权市值；期权总计最多 5%，其中 TQQQ 期权 3%，个股 / 其他期权 2%。仅作仓位提醒，不自动交易。
+            按总资产 {formatDisplayMoney(nav, displayCurrency, rates)} 计算；期权按买入时花的钱算，涨了才按现在的市值算——期权跌了不会空出额度，不在亏损的期权上越补越多。期权总计最多 5%，其中 TQQQ 期权 3%，个股 / 其他期权 2%。仅作仓位提醒，不自动交易。
           </p>
         </div>
-        <span className="shrink-0 rounded-full bg-neutral/25 px-2 py-1 text-[10px] font-medium text-ink-secondary">当前市值口径</span>
+        <span className="shrink-0 rounded-full bg-neutral/25 px-2 py-1 text-[10px] font-medium text-ink-secondary">买入成本口径</span>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
         <div className="col-span-2 sm:col-span-1">
@@ -346,6 +346,17 @@ function OptionBudgetCard({
       <p className="mt-0.5 text-[10px] tabular-nums text-ink-secondary">
         占总资产 {formatPct(line.weight)} · 上限 {formatPct(line.cap)}
       </p>
+      {line.value > 0 && (
+        <p className="mt-0.5 text-[10px] tabular-nums text-ink-muted" data-option-cost="true">
+          买入成本 {formatDisplayMoney(line.costValue, displayCurrency, rates)} · 现值 {formatDisplayMoney(line.marketValue, displayCurrency, rates)}
+          {line.costValue > 0 && Math.abs(line.marketValue - line.costValue) >= 0.005 && (
+            <span className={line.marketValue < line.costValue ? 'text-loss' : 'text-gain'}>
+              {` (${formatSignedPct(line.marketValue / line.costValue - 1)})`}
+            </span>
+          )}
+          {line.costMissing > 0 && <span>{` · ${line.costMissing} 张没有成本，按现值算`}</span>}
+        </p>
+      )}
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral/30" aria-hidden="true">
         <span
           className={`block h-full rounded-full ${line.overLimit ? 'bg-loss' : 'bg-gain'}`}

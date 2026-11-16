@@ -627,8 +627,8 @@ describe('标普、道指、QQQ 距前高三格', () => {
 });
 
 describe('距前高下面的仓位标注', () => {
-  const line = (value: number, cap: number, nav = 180_000) => ({
-    value, weight: value / nav, cap, limitValue: nav * cap,
+  const line = (value: number, cap: number, nav = 180_000, marketValue = value) => ({
+    value, costValue: value, marketValue, costMissing: 0, weight: value / nav, cap, limitValue: nav * cap,
     remainingValue: Math.max(0, nav * cap - value), overByValue: Math.max(0, value - nav * cap), overLimit: value > nav * cap,
   });
   const guard = {
@@ -686,13 +686,19 @@ describe('距前高下面的仓位标注', () => {
 
   it('期权额度：已用多少、上限、没超就写还剩多少美金', () => {
     const block = render({ positionGuard: guard });
-    expect(block).toContain('期权 $717.93（0.4%）· 上限 5% · 还剩 $8,282.07');
-    expect(block).toContain('TQQQ 期权 $717.93 · 上限 3% · 还剩 $4,682.07');
+    expect(block).toContain('期权已用 $717.93（0.4%，按买入成本）· 上限 5% · 还剩 $8,282.07');
+    expect(block).toContain('TQQQ 期权已用 $717.93 · 上限 3% · 还剩 $4,682.07');
+  });
+
+  it('期权跌了：已用额度按买入成本，另外写出现值', () => {
+    const tqqq = line(6_500, 0.03, 180_000, 3_875.39);
+    const block = render({ positionGuard: { ...guard, options: { total: tqqq, tqqq } } });
+    expect(block).toContain('TQQQ 期权已用 $6,500.00（现值 $3,875.39）· 上限 3% · 超出 $1,100.00');
   });
 
   it('期权超了写超出多少', () => {
     const block = render({ positionGuard: { ...guard, options: { total: line(10_717.93, 0.05), tqqq: line(717.93, 0.03) } } });
-    expect(block).toContain('期权 $10,717.93（6.0%）· 上限 5% · 超出 $1,717.93');
+    expect(block).toContain('期权已用 $10,717.93（6.0%，按买入成本）· 上限 5% · 超出 $1,717.93');
   });
 
   it('没超上限、也没有 TQQQ 问题时不提示', () => {

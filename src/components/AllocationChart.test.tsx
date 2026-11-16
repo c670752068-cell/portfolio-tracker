@@ -91,6 +91,41 @@ describe('AllocationChart', () => {
     expect(html).toContain('期权预算超限');
     expect(html).toContain('暂停新增期权');
     expect(html.match(/已超出 \$1,000\.00/g)).toHaveLength(2);
+    expect(html).toContain('买入成本口径');
+    // 「当前市值口径」只剩杠杆 ETF 那一块在用
+    expect(html.match(/当前市值口径/g)).toHaveLength(1);
+  });
+
+  it('期权跌了：卡片按买入成本占额度，并写出买入成本、现值和跌了多少', () => {
+    const metrics = computeMetrics({
+      holdings: [
+        {
+          id: 'core', symbol: 'AAPL', name: 'Apple', shares: 96_124.61, buyPrice: 1,
+          currentPrice: 1, sector: '科技', currency: 'USD', assetType: 'stock',
+        },
+        {
+          id: 'tqqq-option', symbol: 'TQQQ', name: 'TQQQ Call', shares: 1, buyPrice: 65, currentPrice: 38.7539,
+          marketValueOverride: 3_875.39, sector: '期权', currency: 'USD', assetType: 'option',
+          option: {
+            underlying: 'TQQQ', optionType: 'call', strike: 70, expiration: '2027-01-15', contractMultiplier: 100,
+            delta: 0.5, theta: null, gamma: null, vega: null, impliedVolatility: null, underlyingPrice: 60,
+          },
+        },
+      ],
+      cash: [],
+      updatedAt: '2026-11-16T00:00:00.000Z',
+    }, rates);
+
+    const html = renderToStaticMarkup(
+      <AllocationChart metrics={metrics} displayCurrency="USD" rates={rates} />,
+    );
+
+    expect(html).toContain('$6,500.00');
+    expect(html).toContain('占总资产 6.50% · 上限 3.00%');
+    expect(html).toContain('买入成本 $6,500.00 · 现值 $3,875.39');
+    expect(html).toContain('(-40.38%)');
+    expect(html).toContain('已超出 $3,500.00');
+    expect(html).not.toContain('剩余额度 $1,');
   });
 });
 
