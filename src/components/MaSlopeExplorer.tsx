@@ -179,7 +179,7 @@ export function MaSlopeExplorer({ snapshot, holdings = EMPTY_HOLDINGS, selectedS
           </form>
         </div>
         {!compact && <><div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] font-semibold text-ink-muted sm:text-xs">
-          <span>每天美东 {channelReview.review_time || '16:20'} 按最新完整收盘统一审查{channelReview.review_date ? ` · 最近 ${channelReview.review_date}` : ''}</span>
+          <span>每天美东 {channelReview.review_time || '16:20'} 按最新完整收盘统一审查，{channelReview.confirm_time || '18:00'} 再用最终收盘价复核{channelReview.review_date ? ` · 最近 ${channelReview.review_date}${channelReview.confirmed_date === channelReview.review_date ? '（已按最终价复核）' : ''}` : ''}</span>
           <span className="flex flex-wrap gap-2" aria-label="通道提醒颜色说明">
             <i className="rounded bg-emerald-600 px-2 py-1 not-italic text-white">绿色＝买入区</i>
             <i className="rounded bg-red-600 px-2 py-1 not-italic text-white">红色＝卖出区</i>

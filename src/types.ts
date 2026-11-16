@@ -310,6 +310,9 @@ export interface QuantChannelReviewSnapshot {
   review_time: string;
   timezone: 'America/New_York';
   review_date: string | null;
+  /** 美东这个时间再用最终收盘价复核一次（16:20 那轮偶尔拿到的不是最终价）。 */
+  confirm_time?: string;
+  confirmed_date?: string | null;
   updated_at: string | null;
   symbols: Record<string, QuantChannelAlert>;
   failed_symbols?: string[];
