@@ -27,6 +27,18 @@ describe('三大指数卡片的数据', () => {
     expect(parsed.items[0]).toMatchObject({ name: '纳指期货', futures: true, delayMinutes: 10 });
   });
 
+  it('黄金单独一行：解析 gold，没有就是 null', () => {
+    const parsed = parseIndexQuotes({
+      indexes: {
+        ...payload.indexes,
+        gold: { key: 'gold', name: '黄金期货', symbol: 'GC=F', futures: true, price: 3968.1, change_percent: 0.703, quote_time: '2026-10-21T16:16:52.000Z', delay_minutes: 10 },
+      },
+    });
+
+    expect(parsed.gold).toMatchObject({ name: '黄金期货', symbol: 'GC=F', price: 3968.1, changePercent: 0.703, delayMinutes: 10 });
+    expect(parseIndexQuotes(payload).gold).toBeNull();
+  });
+
   it('返回坏了也给一个空结构，不让页面炸', () => {
     expect(parseIndexQuotes(null).items).toEqual([]);
     expect(parseIndexQuotes({ indexes: { items: 'x' } }).items).toEqual([]);

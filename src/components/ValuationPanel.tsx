@@ -1,4 +1,7 @@
 import { useRef } from 'react';
+import { changeText } from '../indexQuotes';
+import { CNN_UNLOCK, VIX_UNLOCK, type PositionBadge } from '../positionGuard';
+import { VXSMH_CALM_BELOW, VXSMH_HIGH_FROM, useVolatility, vxsmhZone, type VolatilityItem } from '../volatilityIndex';
 import type {
   DisplayCurrency,
   ExchangeRates,
@@ -9,15 +12,12 @@ import type {
 } from '../types';
 import { dateText } from '../format';
 import { valuationFreshness } from '../valuationFreshness';
-import { pePosition } from '../decisionIndicators';
-import type { PeHistoryPayload } from '../peData';
 import type { DepthQuote } from '../depthQuotePrice';
 import type { OneTapRefreshState } from '../oneTapRefresh';
 import { DecisionWorkspace } from './DecisionWorkspace';
 import type { ValuationSettings } from './ValuationCard';
 
 const NDX_DANJUAN_URL = 'https://danjuanfunds.com/dj-valuation-table-detail/NDX';
-const SP500_DANJUAN_URL = 'https://danjuanfunds.com/dj-valuation-table-detail/SP500';
 
 interface ValuationPanelProps {
   initialSymbol?: string;
@@ -34,6 +34,7 @@ interface ValuationPanelProps {
   rates?: ExchangeRates;
   valuationSettings?: ValuationSettings;
   totalAssets?: number;
+  positionBadge?: PositionBadge | null;
 }
 
 export function ValuationPanel({
@@ -45,13 +46,14 @@ export function ValuationPanel({
   onRefreshQuant,
   refreshState,
   refreshCooldownSeconds,
+  positionBadge,
 }: ValuationPanelProps) {
   if (!snapshot) return <PreparingState />;
   const valuation = snapshot.valuation_tab;
   if (!valuation) return <PreparingState />;
   return (
     <div className="decision-page space-y-3 md:space-y-5">
-      <MarketIndicators snapshot={snapshot} />
+      <MarketIndicators snapshot={snapshot} positionBadge={positionBadge} />
       <DecisionWorkspace
         initialSymbol={initialSymbol}
         snapshot={snapshot}
@@ -66,19 +68,22 @@ export function ValuationPanel({
   );
 }
 
-export function MarketIndicators({ snapshot }: { snapshot: QuantAnalysisSnapshot | null }) {
+export function MarketIndicators({ snapshot, positionBadge = null }: {
+  snapshot: QuantAnalysisSnapshot | null;
+  positionBadge?: PositionBadge | null;
+}) {
   if (!snapshot?.valuation_tab) return <PreparingState />;
-  return <CurrentIndicators valuation={snapshot.valuation_tab} vix={vixContext(snapshot)} peHistory={snapshot.pe_history} />;
+  return <CurrentIndicators valuation={snapshot.valuation_tab} vix={vixContext(snapshot)} positionBadge={positionBadge} />;
 }
 
 function CurrentIndicators({
   valuation,
   vix,
-  peHistory,
+  positionBadge,
 }: {
   valuation: QuantValuationTab;
   vix: QuantVixContext | null;
-  peHistory?: PeHistoryPayload;
+  positionBadge: PositionBadge | null;
 }) {
   const freshness = valuationFreshness(valuation.ndx);
   const cnnValue = finite(valuation.cnn.current_score);
@@ -87,22 +92,17 @@ function CurrentIndicators({
   const ndxState: IndicatorState = freshness.effectivelyStale
     ? 'unavailable'
     : ndxIndicatorState(peValue);
-  const vixState = thresholdState(vixValue, (value) => value > 30, (value) => value > 23);
-  const spx = pePosition('SPX', peHistory);
-  const spxState: IndicatorState = spx.current === null ? 'unavailable'
-    : spx.percentile === null ? 'neutral'
-    : spx.percentile >= 90 ? 'danger'
-    : spx.percentile >= 70 ? 'warning'
-    : spx.percentile <= 40 ? 'normal' : 'neutral';
-  const spxLookback = peHistory?.lookback_years ?? 5;
+  const vixState = thresholdState(vixValue, (value) => value >= VIX_UNLOCK);
   return (
     <div data-testid="mobile-decision-grid" className="grid grid-cols-2 gap-2 md:gap-4 xl:grid-cols-4">
       <ThresholdIndicatorCard
         title="市场情绪 · CNN 恐慌贪婪指数"
-        state={thresholdState(cnnValue, (value) => value < 30)}
+        state={thresholdState(cnnValue, (value) => value <= CNN_UNLOCK)}
+        badgeLabel={positionBadge?.text}
+        badgeAlert={positionBadge?.over}
         timestamp={`CNN · ${dateText(valuation.cnn.as_of ?? valuation.generated_at)}`}
         compactDate={compactDate(valuation.cnn.as_of ?? valuation.generated_at)}
-        target="开仓线 CNN < 30"
+        target={`CNN ≤ ${CNN_UNLOCK} 才能超 30%`}
         featured
         visual={<CnnFearGreedGauge value={cnnValue} rating={ratingText(valuation.cnn.rating)} />}
         details={[ratingText(valuation.cnn.rating)]}
@@ -114,6 +114,7 @@ function CurrentIndicators({
         state={ndxState}
         target="警戒线 PE ≥ 35"
         dangerLabel="估值过高"
+        readyLabel="估值偏低"
         compactDate={compactDate(freshness.asOf ?? valuation.generated_at)}
         activationUrl={NDX_DANJUAN_URL}
         activationLabel="双击查看雪球估值"
@@ -137,30 +138,15 @@ function CurrentIndicators({
           </p>
         )}
       </ThresholdIndicatorCard>
-      <ThresholdIndicatorCard
-        title="标普500 估值"
-        value={spx.current}
-        valuePrefix="PE "
-        state={spxState}
-        badgeLabel={spx.label}
-        target="TTM · 历史参考"
-        compactDate={compactDate(spx.asOf)}
-        timestamp={`历史 · ${spx.asOf ?? '日期暂无'}`}
-        activationUrl={SP500_DANJUAN_URL}
-        activationLabel="双击查看雪球标普500估值"
-        showDetailsOnMobile
-        details={[
-          `${spxLookback}年分位 ${percentText(spx.percentile)}`,
-          `历史中位 PE ${numberText(spx.median)}`,
-        ]}
-      />
+      <VxsmhIndicator />
       <ThresholdIndicatorCard
         title="VIX 波动率"
         value={vixValue}
         valuePrefix="VIX "
         state={vixState}
-        target="警戒线 VIX > 23"
-        warningLabel="波动警戒"
+        badgeLabel={positionBadge?.text}
+        badgeAlert={positionBadge?.over}
+        target={`VIX ≥ ${VIX_UNLOCK} 才能到 50%`}
         wideOnMobile
         compactDate={compactDate(vix?.as_of)}
         details={[
@@ -183,6 +169,34 @@ function CurrentIndicators({
   );
 }
 
+const VXSMH_ZONE_STATE = { 平稳: 'normal', 平常: 'neutral', 高波动: 'ready' } as const;
+
+/** 半导体版 VIX，占原来标普 500 估值的位置。只作参考，不进仓位上限；颜色看所在区间，不看当天涨跌。 */
+export function VxsmhCard({ item }: { item: VolatilityItem | null }) {
+  const price = item?.price ?? null;
+  const change = item?.changePercent ?? null;
+  const date = item?.quoteTime?.slice(0, 10) ?? null;
+  const zone = vxsmhZone(price);
+  return (
+    <ThresholdIndicatorCard
+      title="VXSMH 半导体波动率"
+      value={price}
+      valuePrefix="VXSMH "
+      state={zone === null ? 'unavailable' : VXSMH_ZONE_STATE[zone]}
+      badgeLabel={`${zone === null ? '' : `${zone} · `}较昨收 ${changeText(change)}`}
+      target={`平稳 < ${VXSMH_CALM_BELOW} · 高波动 ≥ ${VXSMH_HIGH_FROM}`}
+      compactDate={compactDate(date)}
+      timestamp={`Yahoo · ${date ?? '日期暂无'}`}
+      details={[]}
+    />
+  );
+}
+
+function VxsmhIndicator() {
+  const { data } = useVolatility();
+  return <VxsmhCard item={data?.items.find((item) => item.key === 'VXSMH') ?? null} />;
+}
+
 type IndicatorState = 'ready' | 'warning' | 'danger' | 'normal' | 'neutral' | 'unavailable';
 
 function ThresholdIndicatorCard({
@@ -197,9 +211,10 @@ function ThresholdIndicatorCard({
   featured = false,
   warningLabel = '警戒',
   dangerLabel = '高风险',
+  readyLabel = '已达标',
   badgeLabel,
+  badgeAlert,
   wideOnMobile = false,
-  showDetailsOnMobile = false,
   activationUrl,
   activationLabel,
   visual,
@@ -216,9 +231,11 @@ function ThresholdIndicatorCard({
   featured?: boolean;
   warningLabel?: string;
   dangerLabel?: string;
+  readyLabel?: string;
   badgeLabel?: string;
+  /** 徽章自己定颜色：true 红、false 绿、null 灰；不传就跟卡片状态走。 */
+  badgeAlert?: boolean | null;
   wideOnMobile?: boolean;
-  showDetailsOnMobile?: boolean;
   activationUrl?: string;
   activationLabel?: string;
   visual?: React.ReactNode;
@@ -235,8 +252,9 @@ function ThresholdIndicatorCard({
       ? 'border-gain/40 bg-gain/10'
       : 'border-neutral/40 bg-surface-raised';
   const valueClass = ready || danger ? 'text-loss' : warning ? 'text-trim' : state === 'normal' ? 'text-gain' : 'text-ink-muted';
-  const badgeClass = ready || danger ? 'bg-loss text-white' : warning ? 'bg-trim text-white' : state === 'normal' ? 'bg-gain text-white' : 'bg-neutral/40 text-ink-muted';
-  const badgeText = badgeLabel ?? (ready ? '恐慌 · 可开仓' : danger ? dangerLabel : warning ? warningLabel : state === 'normal' ? '未到警戒线' : '数据过期');
+  const stateBadgeClass = ready || danger ? 'bg-loss text-white' : warning ? 'bg-trim text-white' : state === 'normal' ? 'bg-gain text-white' : 'bg-neutral/40 text-ink-muted';
+  const badgeClass = badgeAlert === undefined ? stateBadgeClass : badgeAlert === null ? 'bg-neutral/40 text-ink-muted' : badgeAlert ? 'bg-loss text-white' : 'bg-gain text-white';
+  const badgeText = badgeLabel ?? (ready ? readyLabel : danger ? dangerLabel : warning ? warningLabel : state === 'normal' ? '未到警戒线' : '数据过期');
   const card = (
     <section
       data-testid={featured ? 'mobile-cnn-card' : 'mobile-indicator-card'}
@@ -251,10 +269,7 @@ function ThresholdIndicatorCard({
         <span className="shrink-0 text-[10px] tabular-nums text-ink-muted sm:hidden">数据 {compactDate}</span>
       </div>
       <div className={`${state === 'normal' && !badgeLabel ? 'hidden sm:flex' : 'flex'} mt-2 flex-wrap items-center justify-between gap-1 sm:mt-3 sm:gap-2`}>
-        <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold sm:px-2.5 sm:py-1 sm:text-xs ${badgeClass}`}>
-          <span className="sm:hidden">{ready ? '可开仓' : badgeText}</span>
-          <span className="hidden sm:inline">{badgeText}</span>
-        </span>
+        <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold sm:px-2.5 sm:py-1 sm:text-xs ${badgeClass}`}>{badgeText}</span>
         <span className="text-[9px] font-medium tabular-nums text-ink-muted sm:text-xs">{target}</span>
       </div>
       {visual ?? (
@@ -262,7 +277,7 @@ function ThresholdIndicatorCard({
           {value === null || value === undefined ? '暂无' : `${valuePrefix ?? ''}${value.toFixed(2)}`}
         </div>
       )}
-      <div className={`mt-1 ${showDetailsOnMobile ? 'flex' : 'hidden'} flex-wrap gap-x-2 gap-y-1 text-xs tabular-nums text-ink-secondary sm:mt-3 sm:flex sm:gap-x-4 sm:text-sm`}>
+      <div className={`mt-1 hidden flex-wrap gap-x-2 gap-y-1 text-xs tabular-nums text-ink-secondary sm:mt-3 sm:flex sm:gap-x-4 sm:text-sm`}>
         {details.map((detail) => <span key={detail}>{detail}</span>)}
       </div>
       <div className="hidden sm:block">{children}</div>

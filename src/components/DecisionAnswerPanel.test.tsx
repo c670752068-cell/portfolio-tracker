@@ -16,7 +16,8 @@ describe('DecisionAnswerPanel', () => {
     expect(html).toContain('$362.51');
     expect(html).toContain('-0.14');
     expect(html).toContain('-6.78%');
-    expect(html).toContain('买入观察');
+    expect(html).toContain('通道中间');
+    expect(html).not.toContain('买入观察');
     expect(html).toContain('aria-pressed="true">完整收盘');
     expect(html).toContain('aria-pressed="false">盘中预览');
     expect(html).not.toContain('未收盘确认');
@@ -31,13 +32,24 @@ describe('DecisionAnswerPanel', () => {
     expect(html).toContain('$375.23');
     expect(html).toContain('+0.23');
     expect(html).toContain('-7.21%');
-    expect(html).toContain('卖出观察');
+    expect(html).toContain('通道中间');
+    expect(html).not.toContain('卖出观察');
     expect(html).toContain('未收盘确认');
     expect(html).toContain('2026-10-06');
     expect(html).toContain('aria-pressed="true">盘中预览');
     expect(html).not.toContain('$362.51');
     expect(html).not.toContain('2026-10-05');
     expect(html).not.toContain('按计划卖出');
+  });
+
+  it('夜盘时盘中预览标明是估算和时段', () => {
+    const overnight: DecisionQuote = { ...preview, session: 'overnight' };
+    const html = renderToStaticMarkup(<DecisionAnswerPanel {...props} preview={overnight} mode="preview" />);
+    expect(html).toContain('夜盘估算');
+    expect(html).toContain('夜盘价');
+    expect(html).toContain('$375.23');
+    expect(html).not.toContain('未收盘确认');
+    expect(html).not.toContain('盘中价');
   });
 
   it('does not fill a missing preview with closed prices or old data', () => {

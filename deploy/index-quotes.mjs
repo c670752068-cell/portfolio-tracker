@@ -7,6 +7,8 @@ export const INDEX_ITEMS = [
   { key: 'sp500', name: '标普500', symbol: '^GSPC', futuresName: '标普期货', futuresSymbol: 'ES=F' },
   { key: 'dow', name: '道琼斯', symbol: '^DJI', futuresName: '道指期货', futuresSymbol: 'YM=F' },
 ];
+// 黄金：所有时段都看 COMEX 黄金期货（美元/盎司，近 24 小时交易），单独一行，不算进三大指数。
+export const GOLD_ITEM = { key: 'gold', name: '黄金期货', symbol: 'GC=F', futures: true };
 export const INDEX_REFRESH_REGULAR_MS = 10_000;
 export const INDEX_REFRESH_OTHER_MS = 30_000;
 
@@ -50,7 +52,7 @@ export function indexSymbolsFor(session) {
 }
 
 export function buildIndexPayload({ session, quotes = {}, now = new Date() }) {
-  const items = indexSymbolsFor(session).map((item) => {
+  const row = (item) => {
     const quote = quotes[item.symbol] || {};
     const price = finite(quote.price);
     const previousClose = finite(quote.previousClose);
@@ -67,23 +69,26 @@ export function buildIndexPayload({ session, quotes = {}, now = new Date() }) {
       // 行情本身的延迟（分钟），按行情时间算，拿不到就留空
       delay_minutes: quoteTime === null ? null : Math.max(0, Math.round((+now - Date.parse(quoteTime)) / 60_000)),
     };
-  });
+  };
   return {
     version: 1,
     session,
     time: now.toISOString(),
     refresh_ms: indexRefreshMs(session),
     source: 'Yahoo Finance',
-    items,
+    items: indexSymbolsFor(session).map(row),
+    gold: row(GOLD_ITEM),
   };
 }
 
 /**
  * 服务器侧缓存：同一时段在刷新间隔内只取一次；换了时段（指数↔期货）立刻重取。
- * 单个标的取数失败只让那一行留空，不影响另外两行。
+ * 单个标的取数失败不影响另外两行；期货沿用上一次取到的价格（Yahoo 偶尔超时），
+ * 延迟按那笔报价的时间算，照实变大。从没取到过的那一行留空。
  */
 export function createIndexQuotesCache({ fetchQuote, now = () => new Date() }) {
   let cached = null;
+  const lastFutures = new Map();
   return {
     async read(session) {
       const at = now();
@@ -91,13 +96,16 @@ export function createIndexQuotesCache({ fetchQuote, now = () => new Date() }) {
         return cached.payload;
       }
       const quotes = {};
-      await Promise.all(indexSymbolsFor(session).map(async (item) => {
+      await Promise.all([...indexSymbolsFor(session), GOLD_ITEM].map(async (item) => {
+        let quote = null;
         try {
-          const quote = await fetchQuote(item.symbol);
-          if (quote) quotes[item.symbol] = quote;
+          quote = await fetchQuote(item.symbol);
         } catch {
-          // 这一行留空，另外两行照常
+          // 取数失败，下面看有没有上一次的期货价可用
         }
+        if (quote && item.futures) lastFutures.set(item.symbol, quote);
+        const picked = quote || (item.futures ? lastFutures.get(item.symbol) : null);
+        if (picked) quotes[item.symbol] = picked;
       }));
       const payload = buildIndexPayload({ session, quotes, now: at });
       cached = { session, at, payload };

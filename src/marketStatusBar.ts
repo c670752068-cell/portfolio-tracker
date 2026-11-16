@@ -92,6 +92,8 @@ function arrow(value: number | null): string {
 
 export interface StatusQuotes {
   qqq: StatusQuote | null;
+  spy: StatusQuote | null;
+  dia: StatusQuote | null;
   vix: StatusQuote | null;
   session: string | null;
   time: string | null;
@@ -117,7 +119,7 @@ export function parseStatusQuotes(body: unknown): StatusQuotes {
   };
   const session = typeof value.session === 'string' && SESSION_LABELS[value.session] ? value.session : null;
   const time = typeof value.time === 'string' && !Number.isNaN(Date.parse(value.time)) ? value.time : null;
-  return { qqq: pick(['QQQ']), vix: pick(['^VIX', 'VIX']), session, time };
+  return { qqq: pick(['QQQ']), spy: pick(['SPY']), dia: pick(['DIA']), vix: pick(['^VIX', 'VIX']), session, time };
 }
 
 /** 量化快照里的 CNN 读数；字段缺失就当没有。 */
@@ -208,4 +210,46 @@ export function statusCards({
       tone: 'muted',
     },
   ];
+}
+
+// 距前高变色档位（%）：没到第一档不变色 = 不加杠杆；过一档颜色深一级（TQQQ 加杠杆参考）。
+export const LEVERAGE_TIERS = { SPY: [5, 8, 10, 12, 14], DIA: [8, 10, 12], QQQ: [10, 12, 15, 18, 20] } as const;
+const PEAK_LABELS = { SPY: '标普 SPY', DIA: '道指 DIA', QQQ: 'QQQ' } as const;
+
+export type PeakSymbol = keyof typeof LEVERAGE_TIERS;
+
+export interface PeakDistance {
+  key: PeakSymbol;
+  label: string;
+  /** 用来算的那个价（夜盘、盘前也是当时的价）。 */
+  price: number | null;
+  /** 这个价属于哪个时段；价格没有成交时间就不标，免得把收盘价当夜盘价。 */
+  priceLabel: string | null;
+  drawdownPct: number | null;
+  /** 已经过了几档，0 = 还没到第一档。 */
+  level: number;
+  tiers: readonly number[];
+  nextTier: number | null;
+  /** 离下一档还差几个百分点。 */
+  gapPct: number | null;
+}
+
+export function peakDistances({ quotes, series, session = null }: {
+  session?: string | null;
+  quotes: Partial<Record<PeakSymbol, StatusQuote | null>>;
+  series: Partial<Record<PeakSymbol, readonly { close: number; date?: string }[]>>;
+}): PeakDistance[] {
+  return (Object.keys(LEVERAGE_TIERS) as PeakSymbol[]).map((key) => {
+    const tiers = LEVERAGE_TIERS[key];
+    const quote = quotes[key] ?? null;
+    const drawdownPct = qqqDrawdownPct(quote?.price ?? null, series[key] ?? []);
+    const level = drawdownPct === null ? 0 : tiers.filter((tier) => drawdownPct <= -tier).length;
+    const nextTier = drawdownPct === null ? null : tiers[level] ?? null;
+    return {
+      key, label: PEAK_LABELS[key], drawdownPct, level, tiers,
+      price: finite(quote?.price),
+      priceLabel: session && quote?.priceTime ? SESSION_LABELS[session] ?? null : null,
+      nextTier, gapPct: drawdownPct === null || nextTier === null ? null : drawdownPct + nextTier,
+    };
+  });
 }

@@ -15,6 +15,8 @@ import { ThemeControl } from './components/ThemeControl';
 import { ValuationPanel, MarketIndicators } from './components/ValuationPanel';
 import { SectorRotation } from './components/SectorRotation';
 import { JournalPage } from './components/JournalPage';
+import { usePanicDrop } from './panicDrop';
+import { capSignalsFrom, positionBadge, positionGuard } from './positionGuard';
 import { NotificationCenter } from './components/NotificationCenter';
 import { ALERT_RULES_REFRESH_MS, deleteAlertRule, fetchAlertRules, saveAlertRule, type AlertRule, type AlertRuleDraft } from './alertRules';
 import { fetchLatestExchangeRates, loadExchangeRates } from './exchangeRates';
@@ -457,6 +459,12 @@ export default function App() {
   }, []);
 
   const metrics = useMemo(() => computeMetrics(portfolio, rates), [portfolio, rates]);
+  const panicDrop = usePanicDrop();
+  // 卡片徽章只看仓位和上限，上限不用 SPY 距前高
+  const capBadge = useMemo(
+    () => positionBadge(positionGuard(metrics, null, capSignalsFrom(quantAnalysis, panicDrop))),
+    [metrics, quantAnalysis, panicDrop],
+  );
   const needsReviewCount = countNeedsReview(portfolio.holdings);
   const deltaEstimatedCount = metrics.holdingsMetrics.filter((metric) => metric.holding.quote?.source === 'delta_estimate').length;
   const dayChangeStatus = dayChangeSessionText(marketNow, quoteStatus.lastSyncedAt, deltaEstimatedCount);
@@ -587,10 +595,11 @@ export default function App() {
 
   return (
     <div className={`portfolio-app ${tab === 'valuation' || tab === 'rotation' ? 'is-research-view' : ''} mx-auto min-h-full ${tab === 'valuation' || tab === 'rotation' ? 'max-w-[1760px]' : 'max-w-6xl'} px-2.5 py-1.5 sm:px-6 sm:py-5 md:py-8`}>
+      <div aria-hidden="true" className="ambient-glow" />
       <header className="portfolio-header elev-2 sticky top-0 z-40 -mx-2.5 mb-2 flex flex-col gap-1.5 border-b border-neutral/20 bg-surface-base/80 px-2.5 py-1.5 backdrop-blur-xl sm:-mx-6 sm:mb-6 sm:gap-3 sm:px-6 sm:py-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex items-start justify-between gap-3 xl:contents">
           <div className="min-w-0">
-            <h1 className="text-display text-lg font-semibold sm:text-3xl">我的投资组合</h1>
+            <h1 className="brand-title text-display text-lg font-semibold sm:text-3xl">我的投资组合</h1>
             <p className="mt-0.5 text-[11px] leading-relaxed text-ink-secondary sm:mt-1 sm:text-xs">
               <span className="sm:hidden">三券商自动同步</span>
               <span className="hidden sm:inline">三券商持仓由服务器跨设备同步 · 截图仅在你点击解析时发送给已选 AI</span>
@@ -621,7 +630,7 @@ export default function App() {
               title={headerSyncError || oneTapRefreshState.message || '同步行情、券商持仓与量化分析'}
               className="flex min-h-11 min-w-10 shrink-0 items-center justify-center rounded-lg px-1 text-[15px] font-semibold text-buy hover:bg-buy/10 disabled:cursor-wait disabled:text-ink-muted sm:min-w-0 sm:gap-1 sm:rounded-xl sm:border sm:border-buy/40 sm:bg-buy/15 sm:px-3 sm:text-xs sm:hover:bg-buy/25 sm:disabled:border-neutral/40 sm:disabled:bg-neutral/20"
             >
-              <span aria-hidden="true">↻</span>
+              <span aria-hidden="true" className={headerSyncBusy ? 'spin-while-busy' : undefined}>↻</span>
               <span className="sr-only sm:hidden">{headerSyncBusy ? '同步中' : '同步'}</span>
               <span className="hidden sm:inline">{headerSyncBusy ? '同步中…' : '同步数据'}</span>
             </button>
@@ -635,7 +644,7 @@ export default function App() {
           >
             <span
               aria-hidden="true"
-              className="absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%_-_0.25rem)/6)] rounded-[0.65rem] bg-buy shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] sm:bottom-1 sm:left-1 sm:top-1 sm:w-[calc((100%_-_0.5rem)/6)] sm:rounded-xl"
+              className="tab-pill absolute bottom-0.5 left-0.5 top-0.5 w-[calc((100%_-_0.25rem)/6)] rounded-[0.65rem] bg-buy shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] sm:bottom-1 sm:left-1 sm:top-1 sm:w-[calc((100%_-_0.5rem)/6)] sm:rounded-xl"
               style={{ transform: `translateX(${tabIndex * 100}%)` }}
             />
             <TabBtn label="总览" active={tab === 'dashboard'} onClick={() => changeTab('dashboard')} />
@@ -647,6 +656,8 @@ export default function App() {
           </nav>
         </div>
       </header>
+      {/* 切换标签时整块内容重新淡入，里面的卡片依次浮上来（动效见 motion.css） */}
+      <div key={tab} className="tab-stage">
       {tab !== 'settings' && privateDataState !== 'ready' && (
         <PrivateDataGate
           state={privateDataState}
@@ -656,7 +667,7 @@ export default function App() {
       )}
       {tab === 'dashboard' && privateDataState === 'ready' && (
         <section className="space-y-3 md:space-y-5">
-          <MarketIndicators snapshot={quantAnalysis} />
+          <MarketIndicators snapshot={quantAnalysis} positionBadge={capBadge} />
           {latestAlert && (
             <div className="rounded-2xl border border-trim/40 border-l-4 border-l-trim bg-trim/10 p-4 text-sm leading-relaxed text-ink-primary">
               <strong><span className="tabular-nums">{latestAlert.symbol}</span> 目标提醒已触发</strong> · <span className="tabular-nums">{latestAlert.last_reminder_at}</span>。只提醒不下单，请在券商 App 手动执行。
@@ -741,7 +752,7 @@ export default function App() {
       )}
 
       {tab === 'journal' && privateDataState === 'ready' && (
-        <JournalPage displayCurrency={settings.displayCurrency} rates={rates} snapshot={quantAnalysis} />
+        <JournalPage displayCurrency={settings.displayCurrency} rates={rates} snapshot={quantAnalysis} metrics={metrics} panicDrop={panicDrop} />
       )}
       {tab === 'settings' && (
         <section className="space-y-4">
@@ -800,6 +811,7 @@ export default function App() {
       {tab === 'valuation' && privateDataState === 'ready' && (
         <section>
           <ValuationPanel
+            positionBadge={capBadge}
             initialSymbol={decisionSymbol}
             snapshot={quantAnalysis}
             onDirtyChange={setValuationEditorDirty}
@@ -817,6 +829,7 @@ export default function App() {
           />
         </section>
       )}
+      </div>
 
       <footer className="mt-8 text-center text-xs text-ink-muted">
         持仓与决策从服务器自动读取；浏览器仅保存设置和备份。风险结果仅作教育与信息展示，不构成投资建议。

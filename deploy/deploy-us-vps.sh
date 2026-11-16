@@ -60,6 +60,8 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
 "${SCP_CMD[@]}" deploy/fix-reference-price-alerts.mjs "${SERVER}:${REMOTE_RELEASE_APP}/fix-reference-price-alerts.mjs"
 "${SCP_CMD[@]}" deploy/broker-health.mjs "${SERVER}:${REMOTE_RELEASE_APP}/broker-health.mjs"
 "${SCP_CMD[@]}" deploy/index-quotes.mjs "${SERVER}:${REMOTE_RELEASE_APP}/index-quotes.mjs"
+"${SCP_CMD[@]}" deploy/volatility-index.mjs "${SERVER}:${REMOTE_RELEASE_APP}/volatility-index.mjs"
+"${SCP_CMD[@]}" deploy/panic-drop.mjs "${SERVER}:${REMOTE_RELEASE_APP}/panic-drop.mjs"
 "${SCP_CMD[@]}" deploy/overnight-quotes.mjs "${SERVER}:${REMOTE_RELEASE_APP}/overnight-quotes.mjs"
 "${SCP_CMD[@]}" deploy/quote-freshness.mjs "${SERVER}:${REMOTE_RELEASE_APP}/quote-freshness.mjs"
 "${SCP_CMD[@]}" deploy/portfolio-loss.mjs "${SERVER}:${REMOTE_RELEASE_APP}/portfolio-loss.mjs"
@@ -104,6 +106,8 @@ rsync -e "${RSYNC_SHELL}" -az --delete dist/ "${SERVER}:${REMOTE_RELEASE_WEB}/"
   node --check '${REMOTE_RELEASE_APP}/fix-reference-price-alerts.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/broker-health.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/index-quotes.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/volatility-index.mjs' && \
+  node --check '${REMOTE_RELEASE_APP}/panic-drop.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/overnight-quotes.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/quote-freshness.mjs' && \
   node --check '${REMOTE_RELEASE_APP}/portfolio-loss.mjs' && \

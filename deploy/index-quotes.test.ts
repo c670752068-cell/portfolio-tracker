@@ -112,7 +112,7 @@ describe('服务器统一取数并缓存', () => {
     await cache.read('regular');
     await cache.read('regular');
 
-    expect(fetchQuote).toHaveBeenCalledTimes(3); // 三个标的各一次
+    expect(fetchQuote).toHaveBeenCalledTimes(4); // 三个指数 + 黄金各一次
   });
 
   it('过了刷新间隔才再取一次', async () => {
@@ -123,11 +123,11 @@ describe('服务器统一取数并缓存', () => {
     await cache.read('regular');
     clock += 5_000;
     await cache.read('regular');
-    expect(fetchQuote).toHaveBeenCalledTimes(3);
+    expect(fetchQuote).toHaveBeenCalledTimes(4);
 
     clock += 10_000;
     await cache.read('regular');
-    expect(fetchQuote).toHaveBeenCalledTimes(6);
+    expect(fetchQuote).toHaveBeenCalledTimes(8);
   });
 
   it('换了时段（指数↔期货）立刻重新取', async () => {
@@ -137,7 +137,7 @@ describe('服务器统一取数并缓存', () => {
     await cache.read('regular');
     await cache.read('post');
 
-    expect(fetchQuote).toHaveBeenCalledTimes(6);
+    expect(fetchQuote).toHaveBeenCalledTimes(8);
   });
 
   it('某个标的取数失败时其他照常返回，不整张卡片变空', async () => {
@@ -150,5 +150,86 @@ describe('服务器统一取数并缓存', () => {
 
     expect(payload.items.find((item) => item.key === 'dow')!.price).toBeNull();
     expect(payload.items.find((item) => item.key === 'nasdaq')!.price).toBe(10);
+  });
+
+  it('期货取数失败时沿用上一次成功的价格，延迟分钟按那笔报价的时间照实算', async () => {
+    let clock = +NOW;
+    let failing = false;
+    const fetchQuote = vi.fn(async (symbol: string) => {
+      if (failing && symbol === 'ES=F') throw new Error('timeout');
+      if (failing && symbol === 'YM=F') return null;
+      return { price: 200, previousClose: 100, quoteTime: new Date(clock - 10 * 60_000).toISOString() };
+    });
+    const cache = createIndexQuotesCache({ fetchQuote, now: () => new Date(clock) });
+    await cache.read('overnight');
+
+    clock += 60_000;
+    failing = true;
+    const payload = await cache.read('overnight');
+    const row = (key: string) => payload.items.find((item) => item.key === key)!;
+
+    expect(row('sp500')).toMatchObject({ price: 200, change_percent: 100, delay_minutes: 11 });
+    expect(row('dow')).toMatchObject({ price: 200, change_percent: 100, delay_minutes: 11 });
+    expect(row('nasdaq')).toMatchObject({ price: 200, delay_minutes: 10 });
+  });
+
+  it('期货从没取到过时仍显示暂无，不编数', async () => {
+    const fetchQuote = vi.fn(async (symbol: string) => {
+      if (symbol === 'ES=F') throw new Error('timeout');
+      return { price: 1, previousClose: 1, quoteTime: null };
+    });
+    const cache = createIndexQuotesCache({ fetchQuote, now: () => NOW });
+    const payload = await cache.read('overnight');
+
+    expect(payload.items.find((item) => item.key === 'sp500')!.price).toBeNull();
+  });
+});
+
+describe('黄金：所有时段都看 COMEX 黄金期货（GC=F）', () => {
+  it('单独给一行 gold，涨跌幅对上一个结算价，延迟照实算', () => {
+    // 线上实测（2026-11-04 夜盘）：GC=F 3968.1、上一结算 3940.4
+    const payload = buildIndexPayload({
+      session: 'regular',
+      quotes: { 'GC=F': { price: 3968.1, previousClose: 3940.4, quoteTime: '2026-10-21T16:16:52.000Z' } },
+      now: NOW,
+    });
+
+    expect(payload.items).toHaveLength(3);
+    expect(payload.gold).toMatchObject({
+      key: 'gold', name: '黄金期货', symbol: 'GC=F', futures: true, price: 3968.1, delay_minutes: 10,
+    });
+    expect(payload.gold.change_percent).toBeCloseTo(0.703, 2);
+  });
+
+  it('取不到就留空，不编数', () => {
+    const payload = buildIndexPayload({ session: 'overnight', quotes: {}, now: NOW });
+
+    expect(payload.gold).toMatchObject({ key: 'gold', price: null, change_percent: null, delay_minutes: null });
+  });
+
+  it.each(['regular', 'overnight'])('%s 时段都去取 GC=F', async (session) => {
+    const fetchQuote = vi.fn(async () => ({ price: 1, previousClose: 1, quoteTime: null }));
+    const cache = createIndexQuotesCache({ fetchQuote, now: () => NOW });
+
+    await cache.read(session);
+
+    expect(fetchQuote).toHaveBeenCalledWith('GC=F');
+  });
+
+  it('黄金取数失败时沿用上一次成功的价格', async () => {
+    let clock = +NOW;
+    let failing = false;
+    const fetchQuote = vi.fn(async (symbol: string) => {
+      if (failing && symbol === 'GC=F') throw new Error('timeout');
+      return { price: 3968.1, previousClose: 3940.4, quoteTime: new Date(clock - 10 * 60_000).toISOString() };
+    });
+    const cache = createIndexQuotesCache({ fetchQuote, now: () => new Date(clock) });
+    await cache.read('regular');
+
+    clock += 60_000;
+    failing = true;
+    const payload = await cache.read('regular');
+
+    expect(payload.gold).toMatchObject({ price: 3968.1, delay_minutes: 11 });
   });
 });

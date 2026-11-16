@@ -1,4 +1,5 @@
 import { easternText, beijingText } from '../alertLog';
+import { GoldCard } from './GoldCard';
 import { IndexTripletCard, type IndexFlash } from './IndexTripletCard';
 import type { IndexQuotes } from '../indexQuotes';
 import type { StatusCard } from '../marketStatusBar';
@@ -9,7 +10,7 @@ const TONE_CLASS: Record<StatusCard['tone'], string> = {
   muted: 'text-ink-secondary',
 };
 
-/** 日志页顶部那排小卡片：QQQ / VIX / CNN / 今日重要 / 当前时段。 */
+/** 日志页顶部那排小卡片：三大指数 / 黄金 / QQQ / VIX / CNN / 今日重要 / 当前时段。 */
 export function MarketStatusBar({
   cards, dataTime, stale, indexQuotes = null, indexStale = false, indexFlash = {},
 }: {
@@ -26,6 +27,7 @@ export function MarketStatusBar({
         {indexQuotes && indexQuotes.items.length > 0 && (
           <IndexTripletCard quotes={indexQuotes} stale={indexStale} flash={indexFlash} />
         )}
+        {indexQuotes?.gold && <GoldCard gold={indexQuotes.gold} stale={indexStale} />}
         {cards.map((card) => (
           <div
             key={card.key}

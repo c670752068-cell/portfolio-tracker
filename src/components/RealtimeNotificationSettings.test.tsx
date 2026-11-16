@@ -30,6 +30,7 @@ describe('设置里的实时提醒分组', () => {
       expect(html).toContain(label);
     }
     expect(html).toContain('重要提醒连发次数');
+    expect(html).toContain('盘中、夜盘、盘前、盘后 Z 穿过 ±1.0 / ±1.5 / ±2.0 / ±2.5 时推送；+1.2 / +1.3 / −0.5 只记日志不推送。');
     expect(html).toContain('默认关闭');
     // 所有开关都是关着的
     expect(html).not.toContain('notification-switch checked');

@@ -15,8 +15,10 @@ const DEFAULT_PYTHON = '/Users/wuhuazhou/Projects/futu-assistant/.venv/bin/pytho
 const OPEND_HOST = process.env.FUTU_OPEND_HOST || '127.0.0.1';
 const OPEND_PORT = Number(process.env.FUTU_OPEND_PORT || 11111);
 // 指数 ETF 固定推，其余跟着持仓和观察标的走
-const CORE_SYMBOLS = ['QQQ', 'QQQM', 'TQQQ', 'SOXL', 'TSLL'];
-const SYMBOL_LIMIT = 40;
+// SPY、DIA 给日志页的距前高用夜盘价算
+const CORE_SYMBOLS = ['QQQ', 'QQQM', 'TQQQ', 'SOXL', 'TSLL', 'SPY', 'DIA'];
+// 核心几个 + 决策页 43 个 + 持仓，富途一次快照最多 400 个，留足余量
+const SYMBOL_LIMIT = 80;
 
 /** 只在夜盘推：美东 20:00 到次日 04:00。 */
 export function shouldPushNow(now = new Date()) {
@@ -32,6 +34,12 @@ export function overnightSymbols({ held = [], watch = [] } = {}) {
     .map((item) => String(item || '').trim().toUpperCase().replace(/^US\./, ''))
     .filter(Boolean);
   return [...new Set([...CORE_SYMBOLS, ...clean(held), ...clean(watch)])].slice(0, SYMBOL_LIMIT);
+}
+
+/** 决策页的标的名单（收盘审查接口的 symbols），决策页夜盘预览要用这些标的的夜盘价。 */
+export function decisionSymbolsFrom(body) {
+  const symbols = body?.symbols;
+  return symbols && typeof symbols === 'object' && !Array.isArray(symbols) ? Object.keys(symbols) : [];
 }
 
 /** OpenD 的 update_time 是美东本地时间，补上时区再转成 ISO。 */
@@ -58,13 +66,16 @@ export function parseOpendOutput(raw) {
   const rows = Array.isArray(value?.quotes) ? value.quotes : [];
   return rows.flatMap((row) => {
     const symbol = String(row?.code || '').trim().toUpperCase().replace(/^US\./, '');
-    const price = Number(row?.last_price);
+    // 夜盘价在 overnight_price；last_price 是刚结束的常规交易日收盘价，拿它当夜盘价会漏掉夜盘的涨跌
+    const price = Number(row?.overnight_price);
     const priceTime = easternToIso(row?.update_time);
     if (!symbol || !Number.isFinite(price) || price <= 0 || !priceTime) return [];
+    const lastClose = Number(row?.last_price);
     return [{
       symbol,
       price,
-      previousClose: Number.isFinite(Number(row?.prev_close_price)) ? Number(row.prev_close_price) : null,
+      // 夜盘的涨跌按刚结束的那个常规交易日收盘算
+      previousClose: Number.isFinite(lastClose) && lastClose > 0 ? lastClose : null,
       priceTime,
     }];
   });
@@ -93,7 +104,7 @@ try:
     if ret != RET_OK:
         print(json.dumps({"quotes": [], "error": str(data)[:200]}))
     else:
-        cols = [c for c in ("code", "last_price", "prev_close_price", "update_time") if c in data.columns]
+        cols = [c for c in ("code", "last_price", "prev_close_price", "overnight_price", "update_time") if c in data.columns]
         print(json.dumps({"quotes": data[cols].to_dict("records")}, default=str))
 finally:
     ctx.close()
@@ -133,6 +144,13 @@ async function main() {
     }
   } catch {
     // 拿不到就只推核心几个，不影响这一轮
+  }
+  try {
+    // SPX、NDX 这类指数在富途拿不到夜盘价，会被 parseOpendOutput 跳过，不影响同批其他标的
+    const response = await fetch(`${origin.replace(/\/+$/, '')}/api/portfolio/channel-alerts`);
+    if (response.ok) watch.push(...decisionSymbolsFrom(await response.json()));
+  } catch {
+    // 拿不到决策页名单就只推持仓和核心几个
   }
   const symbols = overnightSymbols({ held, watch });
   const quotes = parseOpendOutput(await readOpend(symbols));

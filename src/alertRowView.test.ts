@@ -60,6 +60,23 @@ describe('手机上每条提醒只占一行', () => {
     expect(alertHeadline(entry({ text: '[盘中] 多指标共振\n历史参考：2015 年以来共 21 次…' })))
       .not.toContain('历史参考');
   });
+
+  it('露头推送只留标的、现在的 Z 和方向，390 宽手机一行放得下', () => {
+    // 实测 390 宽 iPhone：这一列 237px，11px 等宽字体，半角 6.62px、全角 11px；留出 375 宽小屏的余量
+    const width = (text: string) => [...text].reduce((sum, char) => sum + (char.charCodeAt(0) < 0x2000 ? 6.62 : 11), 0);
+    const up = alertHeadline(entry({
+      symbol: 'TSLA', icon: '🔔', session: 'post',
+      text: '[盘后] Z-Score 向上露头 · 1 个标的 · TSLA：连续78个同号交易日后，Z -0.421 → +0.165；2026-10-26 已收盘确认。\n仅为位置变化提醒，不等于买卖或极值信号。',
+    }));
+    const down = alertHeadline(entry({
+      symbol: 'META', icon: '🔔', session: 'post',
+      text: '[盘后] Z-Score 向下露头 · 1 个标的 · META：连续33个同号交易日后，Z +0.191 → -0.036；2026-10-26 已收盘确认。\n仅为位置变化提醒，不等于买卖或极值信号。',
+    }));
+
+    expect(up).toBe('TSLA · Z +0.165 · ↑ 向上露头');
+    expect(down).toBe('META · Z -0.036 · ↓ 向下露头');
+    expect(width(up)).toBeLessThanOrEqual(220);
+  });
 });
 
 describe('推送状态用行尾小图标', () => {

@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  ALERT_CATEGORY_LABELS, ALERT_FILTER_ORDER, beijingText, easternText, fetchAlertLog,
+  ALERT_CATEGORY_LABELS, beijingText, easternText, fetchAlertLog,
   loadHiddenAlertIds, loadLastOpenedAt, loadReadAlertIds, saveHiddenAlertIds, saveLastOpenedAt,
-  saveReadAlertIds, type AlertCategory, type AlertLogEntry,
+  saveReadAlertIds, type AlertLogEntry,
 } from '../alertLog';
 import {
   alertAccent, alertHeadline, dayLabel, groupTimeline, isLogOnly, partitionAlerts, pushStateIcon,
@@ -25,16 +25,22 @@ import {
   getServerMaSlopeUrl, getServerQuoteProxyUrl,
 } from '../runtimeConfig';
 import { MarketStatusBar } from './MarketStatusBar';
+import { PeakDistanceStrip } from './PeakDistanceStrip';
+import { PanicDropLog } from './PanicDropLog';
+import { PositionGuardBar } from './PositionGuardBar';
+import { VolatilitySection } from './VolatilityPanel';
+import { capSignalsFrom, positionGuard as buildPositionGuard, type PositionGuard } from '../positionGuard';
+import type { PanicDrop } from '../panicDrop';
 import type { IndexFlash } from './IndexTripletCard';
 import {
   INDEX_STALE_MS, fetchIndexQuotes, indexDataState, type IndexQuotes,
 } from '../indexQuotes';
 import {
-  cnnFromAlerts, cnnScoreFrom, importantTodayCount, parseStatusQuotes, quoteTimeOf, statusCards,
-  type StatusCard, type StatusQuotes,
+  cnnFromAlerts, cnnScoreFrom, importantTodayCount, parseStatusQuotes, peakDistances, quoteTimeOf, statusCards,
+  type PeakDistance, type StatusCard, type StatusQuotes,
 } from '../marketStatusBar';
 import type { ClosePoint } from '../twr';
-import type { DisplayCurrency, ExchangeRates, QuantAnalysisSnapshot } from '../types';
+import type { DisplayCurrency, ExchangeRates, PortfolioMetrics, QuantAnalysisSnapshot } from '../types';
 
 // 状态条每 60 秒更新一次；超过这么久没拿到新数据就标「数据延迟」。
 const STATUS_REFRESH_MS = 60_000;
@@ -56,19 +62,16 @@ interface ViewProps {
   hiddenAlertIds: string[];
   onToggleHidden: () => void;
   showHidden: boolean;
-  categoryFilter: AlertCategory | 'all';
-  onCategoryFilterChange: (filter: AlertCategory | 'all') => void;
-  importantOnly?: boolean;
-  onImportantOnlyChange?: (value: boolean) => void;
   liveStatus?: 'live' | 'disconnected' | 'paused';
   secondsSinceUpdate?: number | null;
   highlightedIds?: string[];
-  showAllLevels?: boolean;
-  onShowAllLevelsChange?: (value: boolean) => void;
   readAlertIds?: readonly string[];
   onMarkAlertRead?: (id: string) => void;
   lastOpenedAt?: string | null;
   statusCards?: readonly StatusCard[];
+  peakDistances?: readonly PeakDistance[];
+  positionGuard?: PositionGuard | null;
+  panicDrop?: PanicDrop | null;
   statusDataTime?: string | null;
   statusStale?: boolean;
   indexQuotes?: IndexQuotes | null;
@@ -97,12 +100,12 @@ interface ViewProps {
 
 export function JournalPageView(props: ViewProps) {
   const {
-    tab, onTabChange, alerts, hiddenAlertIds, onToggleHidden, showHidden, categoryFilter,
-    onCategoryFilterChange, log, qqqSeries, sgovSeries, displayCurrency, rates, error, loading,
+    tab, onTabChange, alerts, hiddenAlertIds, onToggleHidden, showHidden,
+    log, qqqSeries, sgovSeries, displayCurrency, rates, error, loading,
     onHideAlert, onSaveNote, onAddTrade, onAddFlow, onRemoveFlow,
-    importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
-    highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
-    onMarkAlertRead, lastOpenedAt = null, statusCards: cards = [], statusDataTime = null,
+    liveStatus = 'live', secondsSinceUpdate = null,
+    highlightedIds = [], readAlertIds = [],
+    onMarkAlertRead, lastOpenedAt = null, statusCards: cards = [], peakDistances: peaks = [], positionGuard: guard = null, panicDrop = null, statusDataTime = null,
     statusStale = false, indexQuotes = null, indexStale = false, indexFlash = {},
     snapshot = null, outcomes = null, detailSymbol = null, onOpenDetail,
     onCloseDetail, onOrderDraft, draftNotice = '',
@@ -153,22 +156,21 @@ export function JournalPageView(props: ViewProps) {
           onOrderDraft={onOrderDraft}
           draftNotice={draftNotice}
           cards={cards}
+          peaks={peaks}
+          guard={guard}
+          panicDrop={panicDrop}
+          displayCurrency={displayCurrency}
+          rates={rates}
           statusDataTime={statusDataTime}
           statusStale={statusStale}
           alerts={alerts}
           hiddenAlertIds={hiddenAlertIds}
           showHidden={showHidden}
-          categoryFilter={categoryFilter}
-          onCategoryFilterChange={onCategoryFilterChange}
           onHideAlert={onHideAlert}
           loading={loading}
-          importantOnly={importantOnly}
-          onImportantOnlyChange={onImportantOnlyChange}
           liveStatus={liveStatus}
           secondsSinceUpdate={secondsSinceUpdate}
           highlightedIds={highlightedIds}
-          showAllLevels={showAllLevels}
-          onShowAllLevelsChange={onShowAllLevelsChange}
           readAlertIds={readAlertIds}
           onMarkAlertRead={onMarkAlertRead}
           lastOpenedAt={lastOpenedAt}
@@ -206,10 +208,10 @@ export function JournalPageView(props: ViewProps) {
 function AlertLogPanel({
   indexQuotes = null, indexStale = false, indexFlash = {},
   outcomes = null, onOpenDetail, onOrderDraft, draftNotice = '',
-  cards = [], statusDataTime = null, statusStale = false,
-  alerts, hiddenAlertIds, showHidden, categoryFilter, onCategoryFilterChange, onHideAlert, loading,
-  importantOnly = false, onImportantOnlyChange, liveStatus = 'live', secondsSinceUpdate = null,
-  highlightedIds = [], showAllLevels = false, onShowAllLevelsChange, readAlertIds = [],
+  cards = [], peaks = [], guard = null, panicDrop = null, displayCurrency, rates, statusDataTime = null, statusStale = false,
+  alerts, hiddenAlertIds, showHidden, onHideAlert, loading,
+  liveStatus = 'live', secondsSinceUpdate = null,
+  highlightedIds = [], readAlertIds = [],
   onMarkAlertRead, lastOpenedAt = null,
 }: {
   indexQuotes?: IndexQuotes | null;
@@ -220,22 +222,21 @@ function AlertLogPanel({
   onOrderDraft?: (entry: AlertLogEntry) => void;
   draftNotice?: string;
   cards?: readonly StatusCard[];
+  peaks?: readonly PeakDistance[];
+  guard?: PositionGuard | null;
+  panicDrop?: PanicDrop | null;
+  displayCurrency: DisplayCurrency;
+  rates: ExchangeRates;
   statusDataTime?: string | null;
   statusStale?: boolean;
   alerts: AlertLogEntry[];
   hiddenAlertIds: string[];
   showHidden: boolean;
-  categoryFilter: AlertCategory | 'all';
-  onCategoryFilterChange: (filter: AlertCategory | 'all') => void;
   onHideAlert?: (id: string) => void;
   loading?: boolean;
-  importantOnly?: boolean;
-  onImportantOnlyChange?: (value: boolean) => void;
   liveStatus?: 'live' | 'disconnected' | 'paused';
   secondsSinceUpdate?: number | null;
   highlightedIds?: string[];
-  showAllLevels?: boolean;
-  onShowAllLevelsChange?: (value: boolean) => void;
   readAlertIds?: readonly string[];
   onMarkAlertRead?: (id: string) => void;
   lastOpenedAt?: string | null;
@@ -244,18 +245,14 @@ function AlertLogPanel({
   const highlighted = useMemo(() => new Set(highlightedIds), [highlightedIds]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const rows = useMemo(() => [...alerts]
-    .filter((item) => categoryFilter === 'all' || item.category === categoryFilter)
-    .filter((item) => !importantOnly || item.indicators?.level === 1)
     .filter((item) => showHidden || !hidden.has(item.id))
-    // 「仅记录」级别和已作废的默认都收起来，打开「显示全部」才出现
-    .filter((item) => showAllLevels || (!isLogOnly(item) && item.voided !== true)), [alerts, categoryFilter, hidden, importantOnly, showAllLevels, showHidden]);
+    // 「仅记录」级别和已作废的不显示
+    .filter((item) => !isLogOnly(item) && item.voided !== true), [alerts, hidden, showHidden]);
   const view = useMemo(
     () => partitionAlerts(rows, { readIds: readAlertIds, lastOpenedAt }),
     [rows, readAlertIds, lastOpenedAt],
   );
   const timeline = useMemo(() => groupTimeline(view.timeline), [view.timeline]);
-  const logOnlyCount = useMemo(() => alerts.filter(isLogOnly).length, [alerts]);
-  const voidedCount = useMemo(() => alerts.filter((item) => item.voided === true).length, [alerts]);
 
   const open = (entry: AlertLogEntry) => {
     setExpandedId((current) => (current === entry.id ? null : entry.id));
@@ -288,27 +285,12 @@ function AlertLogPanel({
           indexFlash={indexFlash}
         />
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
-          <button
-            type="button"
-            aria-pressed={importantOnly}
-            onClick={() => onImportantOnlyChange?.(!importantOnly)}
-            className={`min-h-8 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[11px] font-medium ${importantOnly ? 'bg-loss text-white' : 'bg-neutral/25 text-ink-secondary'}`}
-          >
-            只看重要
-          </button>
-          <button
-            type="button"
-            aria-pressed={showAllLevels}
-            onClick={() => onShowAllLevelsChange?.(!showAllLevels)}
-            className={`min-h-8 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[11px] font-medium ${showAllLevels ? 'bg-buy text-white' : 'bg-neutral/25 text-ink-secondary'}`}
-          >
-            显示全部{!showAllLevels && (logOnlyCount > 0 || voidedCount > 0)
-              ? `（仅记录 ${logOnlyCount} · 已作废 ${voidedCount}）`
-              : ''}
-          </button>
-        </div>
+      {peaks.some((item) => item.drawdownPct !== null) && <PeakDistanceStrip items={peaks} />}
+      {guard && <PositionGuardBar guard={guard} displayCurrency={displayCurrency} rates={rates} />}
+      {panicDrop && <PanicDropLog panic={panicDrop} />}
+      <VolatilitySection />
+      <div className="flex items-center justify-between gap-2">
+        <span className="shrink-0 rounded-full bg-buy px-2.5 py-1 text-[11px] font-medium text-white">全部</span>
         <span className="shrink-0 text-[10px] tabular-nums text-ink-muted" role="status">
           {liveStatus === 'disconnected'
             ? '● 已断开 · 正在重连'
@@ -316,21 +298,6 @@ function AlertLogPanel({
               ? '● 已暂停 · 回到页面后继续'
               : `● 实时 · 上次更新 ${secondsSinceUpdate === null ? '刚刚' : `${secondsSinceUpdate} 秒前`}`}
         </span>
-      </div>
-      <div data-alert-filters="true" className="flex gap-1.5 overflow-x-auto pb-0.5">
-        {ALERT_FILTER_ORDER.map((key) => (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={categoryFilter === key}
-            onClick={() => onCategoryFilterChange(key)}
-            className={`min-h-8 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[11px] font-medium ${
-              categoryFilter === key ? 'bg-buy text-white' : 'bg-neutral/25 text-ink-secondary'
-            }`}
-          >
-            {ALERT_CATEGORY_LABELS[key]}
-          </button>
-        ))}
       </div>
       {/* 这个面板不跟随浅色主题，始终深色，和参考截图一致 */}
       <div
@@ -627,10 +594,12 @@ function AlertRow({
   );
 }
 
-export function JournalPage({ displayCurrency, rates, snapshot = null }: {
+export function JournalPage({ displayCurrency, rates, snapshot = null, metrics = null, panicDrop = null }: {
   displayCurrency: DisplayCurrency;
   rates: ExchangeRates;
   snapshot?: QuantAnalysisSnapshot | null;
+  metrics?: PortfolioMetrics | null;
+  panicDrop?: PanicDrop | null;
 }) {
   const decisionEndpoint = getServerDecisionLogUrl() || '/api/portfolio/decision-log';
   const alertEndpoint = getServerAlertLogUrl() || '/api/portfolio/alert-log';
@@ -639,7 +608,6 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
   const [alerts, setAlerts] = useState<AlertLogEntry[]>([]);
   const [hiddenAlertIds, setHiddenAlertIds] = useState<string[]>(() => loadHiddenAlertIds());
   const [showHidden, setShowHidden] = useState(true);
-  const [showAllLevels, setShowAllLevels] = useState(false);
   const [readAlertIds, setReadAlertIds] = useState<string[]>(() => loadReadAlertIds());
   // 进页面那一刻先把上次打开时间读出来，再写上这一次：比它新的就是「新提醒」。
   const [lastOpenedAt] = useState<string | null>(() => loadLastOpenedAt());
@@ -653,14 +621,12 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
   const [quotes, setQuotes] = useState<StatusQuotes | null>(null);
   const [quotesAt, setQuotesAt] = useState<number | null>(null);
   const [statusNow, setStatusNow] = useState(() => Date.now());
-  const [categoryFilter, setCategoryFilter] = useState<AlertCategory | 'all'>('all');
-  const [importantOnly, setImportantOnly] = useState(false);
   const [liveStatus, setLiveStatus] = useState<'live' | 'disconnected' | 'paused'>('live');
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [secondsSinceUpdate, setSecondsSinceUpdate] = useState<number | null>(null);
   const [highlightedIds, setHighlightedIds] = useState<string[]>([]);
   const knownAlertIds = useRef<Set<string>>(new Set());
-  const [series, setSeries] = useState<{ qqq: ClosePoint[]; sgov: ClosePoint[] }>({ qqq: [], sgov: [] });
+  const [series, setSeries] = useState<{ qqq: ClosePoint[]; sgov: ClosePoint[]; spy: ClosePoint[]; dia: ClosePoint[] }>({ qqq: [], sgov: [], spy: [], dia: [] });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const revision = useRef(0);
@@ -684,12 +650,14 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
     void Promise.all([
       fetchMaSlopeDashboard(slope, 'QQQ', { range: '5y', slopeWindow: 8, signal: controller.signal }).catch(() => null),
       fetchMaSlopeDashboard(slope, 'SGOV', { range: '5y', slopeWindow: 8, signal: controller.signal }).catch(() => null),
-    ]).then(([qqq, sgov]) => {
+      fetchMaSlopeDashboard(slope, 'SPY', { range: '5y', slopeWindow: 8, signal: controller.signal }).catch(() => null),
+      fetchMaSlopeDashboard(slope, 'DIA', { range: '5y', slopeWindow: 8, signal: controller.signal }).catch(() => null),
+    ]).then(([qqq, sgov, spy, dia]) => {
       if (controller.signal.aborted) return;
       const closes = (result: typeof qqq) => (result?.dashboard.series ?? [])
         .filter((point) => !point.is_partial && typeof point.close === 'number')
         .map((point) => ({ date: point.date, close: point.close }));
-      setSeries({ qqq: closes(qqq), sgov: closes(sgov) });
+      setSeries({ qqq: closes(qqq), sgov: closes(sgov), spy: closes(spy), dia: closes(dia) });
     });
     return () => controller.abort();
   }, [decisionEndpoint, alertEndpoint]);
@@ -807,7 +775,7 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
     };
   }, []);
 
-  // 顶部状态条：每 60 秒拉一次 QQQ / VIX 和服务器判定的时段。
+  // 顶部状态条：每 60 秒拉一次 QQQ / SPY / DIA / VIX 和服务器判定的时段。
   useEffect(() => {
     const endpoint = getServerQuoteProxyUrl() || '/api/quotes';
     const controller = new AbortController();
@@ -815,7 +783,7 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
     const pull = async () => {
       if (stopped || document.visibilityState === 'hidden') return;
       try {
-        const response = await fetch(`${endpoint}?symbols=QQQ,%5EVIX`, { cache: 'no-store', signal: controller.signal });
+        const response = await fetch(`${endpoint}?symbols=QQQ,SPY,DIA,%5EVIX`, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const next = parseStatusQuotes(await response.json());
         if (stopped) return;
@@ -855,6 +823,16 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
     session: quotes?.session ?? null,
   }), [alerts, cnnSnapshot.at, cnnSnapshot.score, quotes, series.qqq, statusNow]);
   const statusStale = quotesAt === null || statusNow - quotesAt > STATUS_STALE_MS;
+  const peaks = useMemo(() => peakDistances({
+    session: quotes?.session ?? null,
+    quotes: { SPY: quotes?.spy ?? null, DIA: quotes?.dia ?? null, QQQ: quotes?.qqq ?? null },
+    series: { SPY: series.spy, DIA: series.dia, QQQ: series.qqq },
+  }), [quotes, series.spy, series.dia, series.qqq]);
+  const spyDrawdown = peaks.find((item) => item.key === 'SPY')?.drawdownPct ?? null;
+  const guard = useMemo(
+    () => buildPositionGuard(metrics, spyDrawdown, capSignalsFrom(snapshot, panicDrop)),
+    [metrics, spyDrawdown, snapshot, panicDrop],
+  );
 
   // 「我据此下单了」：在决策日志里占一行草稿，关联这条提醒，数量价格留给用户补。
   function orderDraft(entry: AlertLogEntry) {
@@ -918,16 +896,13 @@ export function JournalPage({ displayCurrency, rates, snapshot = null }: {
       hiddenAlertIds={hiddenAlertIds}
       onToggleHidden={() => setShowHidden((value) => !value)}
       showHidden={showHidden}
-      categoryFilter={categoryFilter}
-      onCategoryFilterChange={setCategoryFilter}
-      importantOnly={importantOnly}
-      onImportantOnlyChange={setImportantOnly}
       liveStatus={liveStatus}
       secondsSinceUpdate={secondsSinceUpdate}
       highlightedIds={highlightedIds}
-      showAllLevels={showAllLevels}
-      onShowAllLevelsChange={setShowAllLevels}
       statusCards={cards}
+      peakDistances={peaks}
+      positionGuard={guard}
+      panicDrop={panicDrop}
       statusDataTime={quoteTimeOf(quotes)}
       statusStale={statusStale}
       indexQuotes={indexQuotes}

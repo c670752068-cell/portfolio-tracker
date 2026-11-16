@@ -71,10 +71,6 @@ export const ALERT_CATEGORY_LABELS: Readonly<Record<AlertCategory | 'all', strin
   other: '其他',
 };
 
-export const ALERT_FILTER_ORDER: ReadonlyArray<AlertCategory | 'all'> = [
-  'all', 'drawdown', 'sentiment', 'valuation', 'zscore', 'sell_line', 'position', 'system',
-];
-
 const HIDDEN_STORAGE_KEY = 'portfolio-tracker:alert-log:hidden';
 const READ_STORAGE_KEY = 'portfolio-tracker:alert-log:read';
 const OPENED_STORAGE_KEY = 'portfolio-tracker:alert-log:opened';

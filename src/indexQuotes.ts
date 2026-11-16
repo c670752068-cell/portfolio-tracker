@@ -19,6 +19,8 @@ export interface IndexQuotes {
   refreshMs: number;
   source: string;
   items: IndexItem[];
+  /** 黄金期货（GC=F），单独一张卡片；没有就是 null。 */
+  gold?: IndexItem | null;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -33,6 +35,20 @@ function finite(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+function parseItem(raw: unknown): IndexItem {
+  const item = record(raw);
+  return {
+    key: String(item.key || ''),
+    name: String(item.name || ''),
+    symbol: String(item.symbol || ''),
+    futures: item.futures === true,
+    price: finite(item.price),
+    changePercent: finite(item.change_percent),
+    quoteTime: typeof item.quote_time === 'string' ? item.quote_time : null,
+    delayMinutes: finite(item.delay_minutes),
+  };
+}
+
 export function parseIndexQuotes(body: unknown): IndexQuotes {
   const store = record(record(body).indexes);
   const rows = Array.isArray(store.items) ? store.items : [];
@@ -41,19 +57,8 @@ export function parseIndexQuotes(body: unknown): IndexQuotes {
     time: typeof store.time === 'string' ? store.time : null,
     refreshMs: finite(store.refresh_ms) ?? DEFAULT_REFRESH_MS,
     source: typeof store.source === 'string' ? store.source : '',
-    items: rows.map((raw) => {
-      const item = record(raw);
-      return {
-        key: String(item.key || ''),
-        name: String(item.name || ''),
-        symbol: String(item.symbol || ''),
-        futures: item.futures === true,
-        price: finite(item.price),
-        changePercent: finite(item.change_percent),
-        quoteTime: typeof item.quote_time === 'string' ? item.quote_time : null,
-        delayMinutes: finite(item.delay_minutes),
-      };
-    }),
+    items: rows.map(parseItem),
+    gold: typeof store.gold === 'object' && store.gold !== null ? parseItem(store.gold) : null,
   };
 }
 

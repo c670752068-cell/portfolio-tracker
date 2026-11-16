@@ -172,7 +172,8 @@ describe('第三阶段实测问题的网关接线', () => {
   it('盘中 Z 用决策页「盘中预览」的读数，范围不再砍到 8 个', async () => {
     const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
 
-    expect(gateway).toContain('intradayZPreview(');
+    // 常规时段 sessionZReading 用的就是 intradayZPreview（见 realtime-monitor.test.ts）
+    expect(gateway).toContain('sessionZReading(session, dashboard, quotes[symbol], now)');
     expect(gateway).not.toContain('intradayZFromDashboard');
     expect(gateway).not.toContain("['QQQ', ...held].slice(0, 8)");
   });
@@ -317,6 +318,30 @@ describe('券商同步提醒上线所需', () => {
 
     const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
     expect(gateway).toContain('brokerHealthReadings(snapshot)');
+  });
+});
+
+describe('恐慌性下跌上线所需', () => {
+  it('模块要上传、语法检查，并接上只读路由', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/panic-drop.mjs "${SERVER}:${REMOTE_RELEASE_APP}/panic-drop.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/panic-drop.mjs'");
+
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('createPanicCache(');
+    expect(gateway).toContain('await handlePanicRoute(url, req, res)');
+  });
+});
+
+describe('恐慌指数上线所需', () => {
+  it('模块要上传、语法检查，并接上只读路由', async () => {
+    const script = await readFile('deploy/deploy-us-vps.sh', 'utf8');
+    expect(script).toContain('deploy/volatility-index.mjs "${SERVER}:${REMOTE_RELEASE_APP}/volatility-index.mjs"');
+    expect(script).toContain("node --check '${REMOTE_RELEASE_APP}/volatility-index.mjs'");
+
+    const gateway = await readFile('deploy/aliyun-gateway.mjs', 'utf8');
+    expect(gateway).toContain('createVolatilityCache(');
+    expect(gateway).toContain('await handleVolatilityRoute(url, req, res)');
   });
 });
 

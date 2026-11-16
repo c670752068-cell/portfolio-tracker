@@ -1,5 +1,5 @@
 import type { DecisionAction } from '../decisionAction';
-import { OBSERVATION_LABELS, zObservationSignal } from '../decisionSignals';
+import { OBSERVATION_LABELS, OBSERVATION_RANGES, zObservationSignal, type ExtendedSession } from '../decisionSignals';
 
 export interface DecisionQuote {
   date: string | null;
@@ -7,7 +7,11 @@ export interface DecisionQuote {
   z: number | null;
   annualSlope: number | null;
   slopeDate: string | null;
+  /** 夜盘、盘前、盘后按现价估算的预览，标明时段。 */
+  session?: ExtendedSession;
 }
+
+const SESSION_NAMES: Record<ExtendedSession, string> = { pre: '盘前', post: '盘后', overnight: '夜盘' };
 
 interface Props {
   symbol: string;
@@ -25,6 +29,7 @@ interface Props {
 export function DecisionAnswerPanel({ symbol, name, held, action, mode, onModeChange, onReturnToList, closed, preview }: Props) {
   const quote = mode === 'preview' ? preview : closed;
   const state = zObservationSignal(quote?.z);
+  const sessionName = mode === 'preview' && quote?.session ? SESSION_NAMES[quote.session] : null;
   return <aside className="decision-detail decision-answer-panel" aria-label="当前股票判断详情">
     <div className="decision-detail-identity">
       <button className="decision-return-list" onClick={onReturnToList}>← 返回列表</button>
@@ -40,10 +45,10 @@ export function DecisionAnswerPanel({ symbol, name, held, action, mode, onModeCh
     </div>
     <section className="decision-quote" aria-label={mode === 'preview' ? '盘中行情' : '收盘行情'}>
       {quote ? <>
-        <div className="decision-quote-stamp"><time>{quote.date ?? '日期待更新'}</time><span className={mode === 'preview' ? 'is-preview' : ''}>{mode === 'preview' ? '未收盘确认' : '完整收盘'}</span></div>
-        <div className="decision-quote-price"><span>{mode === 'preview' ? '盘中价' : '收盘价'}</span><strong>{number(quote.close, '$')}</strong></div>
+        <div className="decision-quote-stamp"><time>{quote.date ?? '日期待更新'}</time><span className={mode === 'preview' ? 'is-preview' : ''}>{sessionName ? `${sessionName}估算` : mode === 'preview' ? '未收盘确认' : '完整收盘'}</span></div>
+        <div className="decision-quote-price"><span>{sessionName ? `${sessionName}价` : mode === 'preview' ? '盘中价' : '收盘价'}</span><strong>{number(quote.close, '$')}</strong></div>
         <dl className="decision-quote-metrics">
-          <div><dt>Z-Score</dt><dd className={`quote-z signal-${state}`}>{number(quote.z, '', true)}</dd><span className={`signal-badge signal-${state}`}>{OBSERVATION_LABELS[state]}</span></div>
+          <div><dt>Z-Score</dt><dd className={`quote-z signal-${state}`}>{number(quote.z, '', true)}</dd><span className={`signal-badge signal-${state}`} title={OBSERVATION_RANGES[state]}>{OBSERVATION_LABELS[state]}</span></div>
           <div><dt>200DMA 年化斜率</dt><dd className={quote.annualSlope != null && quote.annualSlope < 0 ? 'is-negative' : ''}>{number(quote.annualSlope, '', true, '%')}</dd><small>{quote.slopeDate && quote.slopeDate !== quote.date ? quote.slopeDate : '20日回看'}</small></div>
         </dl>
       </> : <p className="decision-quote-empty" role="status">暂无盘中数据</p>}

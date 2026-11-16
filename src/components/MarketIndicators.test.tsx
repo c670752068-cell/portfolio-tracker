@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { PeHistoryPayload } from '../peData';
 import type { QuantAnalysisSnapshot } from '../types';
-import { MarketIndicators } from './ValuationPanel';
+import type { VolatilityItem } from '../volatilityIndex';
+import { MarketIndicators, VxsmhCard } from './ValuationPanel';
 
 function snapshot(): QuantAnalysisSnapshot {
   return {
@@ -19,89 +19,99 @@ function snapshot(): QuantAnalysisSnapshot {
   };
 }
 
-function spxCard(value: QuantAnalysisSnapshot) {
-  const html = renderToStaticMarkup(<MarketIndicators snapshot={value} />);
-  return html.match(/<section[^>]*aria-label="标普500 估值"[\s\S]*?<\/section>/)?.[0] ?? '';
-}
+describe('标普 500 估值的位置换成 VXSMH', () => {
+  const item = (overrides: Partial<VolatilityItem> = {}): VolatilityItem => ({
+    key: 'VXSMH', name: '半导体', symbol: '^VXSMH', price: 65.89, changePercent: 43.8,
+    quoteTime: '2026-11-05T21:02:02.000Z', series: [], ...overrides,
+  });
 
-describe('market indicator SP500 card', () => {
-  it('places SP500 between Nasdaq and VIX in both overview and decision shared indicators', () => {
+  it('不再有标普 500 估值，VXSMH 排在纳指估值和 VIX 中间，还是四张卡片', () => {
     const value = snapshot();
     const original = structuredClone(value);
     const html = renderToStaticMarkup(<MarketIndicators snapshot={value} />);
-    expect(html.indexOf('纳指100 估值')).toBeLessThan(html.indexOf('标普500 估值'));
-    expect(html.indexOf('标普500 估值')).toBeLessThan(html.indexOf('VIX 波动率'));
+
+    expect(html).not.toContain('标普500 估值');
+    expect(html).not.toContain('dj-valuation-table-detail/SP500');
+    expect(html.indexOf('纳指100 估值')).toBeLessThan(html.indexOf('VXSMH 半导体波动率'));
+    expect(html.indexOf('VXSMH 半导体波动率')).toBeLessThan(html.indexOf('VIX 波动率'));
     expect(html).toContain('xl:grid-cols-4');
     expect(html.match(/col-span-2 xl:col-span-1/g)).toHaveLength(2);
     expect(html.match(/<section /g)).toHaveLength(4);
-    expect(html).toContain('href="https://danjuanfunds.com/dj-valuation-table-detail/SP500"');
-    expect(html).toContain('双击查看雪球标普500估值，按回车也可打开');
     expect(value).toEqual(original);
   });
 
-  it('uses SPX TTM PE and the existing five-year rank, not Nasdaq or the provider default rank', () => {
-    const card = spxCard(snapshot());
-    expect(card).toContain('PE 25.14');
-    expect(card).toContain('5年分位 39.77%');
-    expect(card).toContain('历史中位 PE 25.57');
-    expect(card).toContain('历史偏低');
-    expect(card).toContain('历史 · 2026-09-29');
-    expect(card).not.toContain('2026-10-07');
-    expect(card).not.toContain('30.95');
-    expect(card).not.toContain('警戒线 PE');
-    expect(card).not.toContain('可开仓');
+  it('显示当前值、所在区间、较昨收和数据日期，并写明 40 和 55 两条线', () => {
+    const html = renderToStaticMarkup(<VxsmhCard item={item()} />);
+
+    expect(html).toContain('VXSMH 65.89');
+    expect(html).toContain('高波动 · 较昨收 +43.80%');
+    expect(html).toContain('平稳 &lt; 40 · 高波动 ≥ 55');
+    expect(html).toContain('数据 11-05');
+    expect(html).toContain('Yahoo · 2026-11-05');
+    expect(html).not.toContain('PE');
   });
 
-  it.each([[20, '历史低位', 'normal'], [50, '历史中区', 'neutral'], [80, '历史偏高', 'warning'], [95, '历史高位', 'danger']] as const)(
-    'uses the same historical classification as decisions at percentile %s', (percentile, label, state) => {
-      const value = snapshot();
-      value.pe_history!.symbols.SPX.percentile = percentile;
-      const card = spxCard(value);
-      expect(card).toContain(label);
-      expect(card).toContain(`data-alert-state="${state}"`);
-      expect(card).not.toContain('可开仓');
-    },
-  );
+  it.each([
+    [39.99, '平稳', 'normal', 'bg-gain text-white'],
+    [40, '平常', 'neutral', 'bg-neutral/40 text-ink-muted'],
+    [54.99, '平常', 'neutral', 'bg-neutral/40 text-ink-muted'],
+    [55, '高波动', 'ready', 'bg-loss text-white'],
+  ] as const)('%s 是%s', (price, label, state, badge) => {
+    const html = renderToStaticMarkup(<VxsmhCard item={item({ price })} />);
 
-  it('does not turn missing or forward-only data into an SP500 valuation', () => {
-    for (const history of [undefined, { ...snapshot().pe_history!, metric: 'forward_pe' as const }]) {
-      const card = spxCard({ ...snapshot(), pe_history: history });
-      expect(card).toContain('暂无可靠 PE');
-      expect(card).toContain('5年分位 暂无');
-      expect(card).not.toContain('PE 30.95');
-      expect(card).not.toContain('PE 0.00');
-      expect(card).not.toContain('数据过期');
+    expect(html).toContain(`data-alert-state="${state}"`);
+    expect(html).toContain(`${badge}">${label} · 较昨收`);
+  });
+
+  it('颜色看区间，不看当天涨跌：高波动当天回落也标红', () => {
+    const html = renderToStaticMarkup(<VxsmhCard item={item({ price: 60, changePercent: -2.5 })} />);
+
+    expect(html).toContain('bg-loss text-white">高波动 · 较昨收 -2.50%');
+  });
+
+  it('拿不到数据写暂无，不编数', () => {
+    const html = renderToStaticMarkup(<VxsmhCard item={null} />);
+
+    expect(html).toContain('暂无');
+    expect(html).toContain('较昨收 暂无');
+    expect(html).not.toContain('平稳 ·');
+    expect(html).not.toContain('平常 ·');
+    expect(html).not.toContain('高波动 ·');
+    expect(html).toContain('数据 --');
+    expect(html).not.toContain('数据过期');
+  });
+});
+
+describe('CNN 和 VIX 卡片的徽章：当前仓位、上限、超没超', () => {
+  const value = (): QuantAnalysisSnapshot => {
+    const next = snapshot();
+    next.valuation_tab!.cnn.current_score = 19.85;
+    next.context = { vix: { available: true, value: 28.18, as_of: '2026-11-05' } };
+    return next;
+  };
+  const card = (html: string, title: string) => html.split('<section').find((part) => part.includes(`aria-label="${title}"`)) ?? '';
+
+  it('超了：两张卡片都写当前仓位和上限，标红', () => {
+    const html = renderToStaticMarkup(<MarketIndicators snapshot={value()} positionBadge={{ text: '仓位 55.3% · 上限 50% · 超了', over: true }} />);
+
+    for (const title of ['市场情绪 · CNN 恐慌贪婪指数', 'VIX 波动率']) {
+      expect(card(html, title)).toContain('仓位 55.3% · 上限 50% · 超了');
+      expect(card(html, title)).toMatch(/bg-loss text-white[^>]*>(<[^>]*>)*仓位 55\.3%/);
     }
+    expect(html).not.toContain('可开仓');
+    expect(html).not.toContain('波动警戒');
   });
 
-  it('does not invent a historical position or date from the overall snapshot', () => {
-    const value = snapshot();
-    const entry = value.pe_history!.symbols.SPX;
-    entry.percentile = null;
-    entry.series_end = undefined;
-    entry.series = [];
-    const card = spxCard(value);
-    expect(card).toContain('PE 25.14');
-    expect(card).toContain('历史位置未知');
-    expect(card).toContain('历史 · 日期暂无');
-    expect(card).not.toContain('2026-10-07');
-    expect(card).not.toContain('历史中位 PE 0.00');
+  it('没超标绿', () => {
+    const html = renderToStaticMarkup(<MarketIndicators snapshot={value()} positionBadge={{ text: '仓位 28.0% · 上限 30% · 没超', over: false }} />);
+
+    expect(card(html, 'VIX 波动率')).toMatch(/bg-gain text-white[^>]*>(<[^>]*>)*仓位 28\.0%/);
   });
 
-  it('keeps the history window and last observation date honest', () => {
-    const value = snapshot();
-    value.pe_history!.lookback_years = 3;
-    value.pe_history!.symbols.SPX.series_end = undefined;
-    const card = spxCard(value);
-    expect(card).toContain('3年分位 39.77%');
-    expect(card).toContain('历史 · 2026-09-29');
-  });
+  it('写明门槛：CNN 20 以内才能超 30%，VIX 25 以上才能到 50%', () => {
+    const html = renderToStaticMarkup(<MarketIndicators snapshot={value()} />);
 
-  it.each([NaN, Infinity, 0, -1])('does not display invalid PE %s as usable', current => {
-    const value = snapshot();
-    (value.pe_history as PeHistoryPayload).symbols.SPX.current = current;
-    const card = spxCard(value);
-    expect(card).toContain('暂无可靠 PE');
-    expect(card).not.toMatch(/NaN|Infinity|PE 0\.00|PE -1\.00/);
+    expect(card(html, '市场情绪 · CNN 恐慌贪婪指数')).toContain('CNN ≤ 20 才能超 30%');
+    expect(card(html, 'VIX 波动率')).toContain('VIX ≥ 25 才能到 50%');
   });
 });

@@ -40,4 +40,33 @@ describe('日志页顶部实时状态条', () => {
 
     expect(html).toContain('数据时间 暂无');
   });
+
+  it('黄金卡片：国际金价（美元/盎司）、涨跌幅和延迟', () => {
+    const html = renderToStaticMarkup(
+      <MarketStatusBar
+        cards={cards}
+        dataTime={null}
+        stale={false}
+        indexQuotes={{
+          session: 'overnight', time: null, refreshMs: 30_000, source: 'Yahoo Finance', items: [],
+          gold: {
+            key: 'gold', name: '黄金期货', symbol: 'GC=F', futures: true,
+            price: 3968.1, changePercent: 0.703, quoteTime: null, delayMinutes: 10,
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-gold-card="true"');
+    expect(html).toContain('黄金 美元/盎司');
+    expect(html).toContain('3968.1');
+    expect(html).toContain('+0.70%');
+    expect(html).toContain('延迟 10 分钟');
+  });
+
+  it('没有黄金数据就不显示黄金卡片', () => {
+    const html = renderToStaticMarkup(<MarketStatusBar cards={cards} dataTime={null} stale={false} />);
+
+    expect(html).not.toContain('data-gold-card');
+  });
 });

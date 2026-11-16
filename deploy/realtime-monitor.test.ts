@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { emptyAlertLog } from './alert-log.mjs';
 import { realtimeDefaults } from './realtime-push.mjs';
-import { estimatedZFromPrice, feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick } from './realtime-monitor.mjs';
+import { estimatedZFromPrice, feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick, sessionZReading } from './realtime-monitor.mjs';
 
 const base = {
   now: new Date('2026-10-17T01:30:00.000Z'), // 美东 21:30 → 夜盘
@@ -81,6 +81,22 @@ describe('实时监控的一次轮询', () => {
     });
 
     expect(result.alerts.some((item) => item.text.includes('TSLA') && item.text.includes('跌得更深'))).toBe(true);
+  });
+
+  it('现金类 ETF（SGOV）稳步上涨不报盘中 Z，其他标的照常', async () => {
+    const result = await runRealtimeTick({
+      ...base,
+      session: 'regular',
+      intradayZ: {
+        SGOV: { previousZ: 1.4, currentZ: 1.5, price: 100.67 },
+        TSLA: { previousZ: -0.75, currentZ: -1.01, price: 353.14 },
+      },
+      store: emptyAlertLog(),
+      dispatch: vi.fn(),
+    });
+
+    expect(result.alerts.filter((item) => item.symbol === 'SGOV')).toEqual([]);
+    expect(result.alerts.some((item) => item.symbol === 'TSLA' && item.category === 'zscore')).toBe(true);
   });
 
   it('实时价格到卖出线写一行重要提醒', async () => {
@@ -186,7 +202,18 @@ describe('盘中 Z 用决策页「盘中预览」同一口径', () => {
       { date: '2026-10-15', close: 362.44, zscore200: -0.749115, is_partial: false },
       { date: '2026-10-16', close: 353.14, zscore200: -1.0122, is_partial: true },
     ]));
-    expect(reading).toEqual({ previousZ: -0.749115, currentZ: -1.0122, price: 353.14, date: '2026-10-16' });
+    expect(reading).toEqual({ previousZ: -0.749115, currentZ: -1.0122, price: 353.14, date: '2026-10-16', lowerBand: null });
+  });
+
+  it('带上通道下沿：优先用 band200，没有就用 ma200 − 1.5σ', () => {
+    expect(intradayZPreview(dashboard([
+      { date: '2026-10-15', close: 362.44, zscore200: -0.7, is_partial: false },
+      { date: '2026-10-16', close: 353.14, zscore200: -1.0, band200: [320.5, 420.5], is_partial: true },
+    ]))?.lowerBand).toBe(320.5);
+    expect(intradayZPreview(dashboard([
+      { date: '2026-10-15', close: 362.44, zscore200: -0.7, is_partial: false },
+      { date: '2026-10-16', close: 353.14, zscore200: -1.0, ma200: 370, std200: 20, is_partial: true },
+    ]))?.lowerBand).toBe(340);
   });
 
   it('没有盘中日线时返回 null，不拿收盘价当盘中价', () => {
@@ -380,7 +407,7 @@ describe('同标的同类提醒的冷却时间', () => {
     qqqPeakDate: null,
   };
 
-  it('60 分钟内同一标的同一类只写一条，重要的不受限制', async () => {
+  it('Z 穿档每一档都记，不受 60 分钟冷却限制（每档一天最多一次）', async () => {
     const first = await runRealtimeTick({
       ...quiet, store: emptyAlertLog(), dispatch: vi.fn(), cooldownMs: 3_600_000,
       intradayZ: { UDOW: { previousZ: 0.38, currentZ: 0.52, price: 67.41 } },
@@ -389,16 +416,48 @@ describe('同标的同类提醒的冷却时间', () => {
 
     const second = await runRealtimeTick({
       ...quiet, now: new Date('2026-10-20T17:30:00.000Z'), store: first.store, dispatch: vi.fn(),
-      cooldownMs: 3_600_000, intradayZ: { UDOW: { previousZ: 0.52, currentZ: 1.04, price: 68.9 } },
+      cooldownMs: 3_600_000, intradayZ: { UDOW: { previousZ: 0.52, currentZ: 1.25, price: 68.9 } },
     });
-    expect(second.store.alerts).toHaveLength(1);
+    expect(second.store.alerts.map((item) => item.text)).toEqual([
+      expect.stringContaining('Z 0.38 → 0.52'),
+      expect.stringContaining('Z 0.52 → 1.25'),
+      expect.stringContaining('Z 0.52 → 1.25'),
+    ]);
+  });
 
-    const important = await runRealtimeTick({
-      ...quiet, now: new Date('2026-10-20T17:40:00.000Z'), store: second.store, dispatch: vi.fn(),
-      cooldownMs: 3_600_000, intradayZ: { UDOW: { previousZ: 1.04, currentZ: 1.63, price: 70.2 } },
+  it('60 分钟内同一标的同一类的其他提醒仍只写一条', async () => {
+    const first = await runRealtimeTick({
+      ...quiet, store: emptyAlertLog(), dispatch: vi.fn(), cooldownMs: 3_600_000,
+      intradayZ: { UDOW: { previousZ: 0.38, currentZ: 0.52, price: 67.41 } },
     });
-    expect(important.store.alerts).toHaveLength(2);
-    expect(important.store.alerts.at(-1)!.text).toContain('已进入卖出区'.replace('已', ''));
+    const near = await runRealtimeTick({
+      ...quiet, now: new Date('2026-10-20T17:30:00.000Z'), store: first.store, dispatch: vi.fn(),
+      cooldownMs: 3_600_000, nearBreakout: { UDOW: { streak: 20, previousZ: -0.3, currentZ: -0.05, price: 67 } },
+    });
+    expect(near.alerts.map((item) => item.kind)).toEqual(['near_breakout']);
+    expect(near.store.alerts).toHaveLength(1);
+  });
+
+  it('+1.2 / +1.3 / -0.5 只进日志：日志默认就显示，开了盘中 Z 推送也不推手机', async () => {
+    const dispatch = vi.fn(async () => ({ status: 'sent' }));
+    const result = await runRealtimeTick({
+      ...quiet, store: emptyAlertLog(), dispatch,
+      settings: { ...realtimeDefaults(), enabled: true, intradayZ: true },
+      intradayZ: {
+        NVDA: { previousZ: 0.95, currentZ: 1.35, price: 220 },
+        GDX: { previousZ: -0.45, currentZ: -0.53, price: 85.66 },
+      },
+    });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls[0][0].body).toContain('Z 0.95 → 1.35');
+    const rows = result.store.alerts.map((item) => [item.text.slice(0, 30), item.push_state, item.indicators?.level]);
+    expect(rows).toEqual([
+      [expect.stringContaining('NVDA'), 'sent', 2],
+      [expect.stringContaining('NVDA'), 'log_only', 2],
+      [expect.stringContaining('NVDA'), 'log_only', 2],
+      [expect.stringContaining('GDX'), 'log_only', 2],
+    ]);
   });
 
   it('过了冷却时间照常记', async () => {
@@ -442,14 +501,16 @@ describe('盘中 Z 只在常规时段判定', () => {
     expect(result.alerts.filter((item) => item.category === 'zscore')).toHaveLength(2);
   });
 
-  it.each(['pre', 'post'] as const)('%s 不判定盘中 Z（缓存里是上一个交易日的）', async (session) => {
+  it.each([['pre', '[盘前]'], ['post', '[盘后]']] as const)('%s 也判定 Z（读数由网关按现价估算）', async (session, label) => {
     const result = await runRealtimeTick({
       ...base, session, now: new Date('2026-10-20T11:00:00.000Z'),
       store: emptyAlertLog(), dispatch: vi.fn(), quotes: {}, cnnScore: null, previousCnnScore: null,
       qqqPreviousHigh: null, qqqPeakDate: null, intradayZ: reading,
     });
 
-    expect(result.alerts.filter((item) => item.category === 'zscore')).toEqual([]);
+    const zscore = result.alerts.filter((item) => item.category === 'zscore');
+    expect(zscore).toHaveLength(2);
+    expect(zscore.every((item) => item.text.startsWith(label))).toBe(true);
   });
 });
 
@@ -519,6 +580,38 @@ describe('接近露头接进实时监控', () => {
       nearBreakout: { WMT: { streak: 20, currentZ: -0.62, previousZ: -0.05, price: 100 } },
     });
     expect(reset.store.states['near-breakout:WMT']).toBeUndefined();
+  });
+});
+
+describe('各时段的 Z 读数（网关喂给监控）', () => {
+  const series = [
+    { date: '2026-10-16', close: 253.5, ma200: 250, std200: 10, zscore200: 0.35, is_partial: false },
+    // 缓存是 10-19 盘中取的，收盘后没刷新，这根还标着「未收盘」
+    { date: '2026-10-19', close: 260.4, ma200: 251, std200: 10, zscore200: 0.94, is_partial: true },
+  ];
+  const dashboard = { dashboard: { series } };
+  const live = { price: 260.4, stale: false };
+
+  it('盘前：基准用上一个交易日那根，缓存里还标着未收盘也不再把昨天的涨跌重放一遍', () => {
+    // 2026-10-20 08:00 美东，盘前
+    const reading = sessionZReading('pre', dashboard, live, new Date('2026-10-20T12:00:00.000Z'));
+    expect(reading).toMatchObject({ previousZ: 0.94, basis_date: '2026-10-19', estimated: true });
+    expect(reading!.currentZ).toBeCloseTo(0.94, 2);
+  });
+
+  it('盘后：当天 16:00 以后，当天那根就是基准', () => {
+    // 2026-10-19 17:00 美东，盘后
+    const reading = sessionZReading('post', dashboard, { price: 265.4 }, new Date('2026-10-19T21:00:00.000Z'));
+    expect(reading).toMatchObject({ previousZ: 0.94, basis_date: '2026-10-19' });
+    expect(reading!.currentZ).toBeCloseTo(1.44, 2);
+  });
+
+  it('常规时段用盘中预览那根未收盘日线；报价过期或休市不给读数', () => {
+    expect(sessionZReading('regular', dashboard, live, new Date('2026-10-19T17:00:00.000Z')))
+      .toMatchObject({ previousZ: 0.35, currentZ: 0.94 });
+    expect(sessionZReading('pre', dashboard, { price: 260.4, stale: true }, new Date('2026-10-20T12:00:00.000Z'))).toBeNull();
+    expect(sessionZReading('post', dashboard, undefined, new Date('2026-10-19T21:00:00.000Z'))).toBeNull();
+    expect(sessionZReading('closed', dashboard, live, new Date('2026-10-18T12:00:00.000Z'))).toBeNull();
   });
 });
 

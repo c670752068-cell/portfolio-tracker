@@ -35,17 +35,20 @@ describe('DecisionWorkspace', () => {
     expect(row).toContain('已持仓');
     expect(row).toContain('-6.30%');
     expect(row).toContain('+0.98');
-    expect(row).toContain('卖出观察');
-    expect(row).toContain('signal-sell_near');
+    expect(row).toContain('通道中间');
+    expect(row).toContain('signal-neutral');
     expect(html).toContain('标准差动能筛选');
     expect(html).toContain('SMA 短线 / 趋势');
     expect(html).toContain('PE 历史位置');
     expect(html).toContain('20DMA');
     expect(html).toContain('8日回看');
     expect(html).toContain('NVDA · TTM PE 历史暂不可用');
-    expect(html).toContain('买入观察区');
-    expect(html).toContain('卖出观察区');
-    expect(html).toContain('负值归入买入观察');
+    expect(html).toContain('接近/击穿下沿');
+    expect(html).toContain('接近/突破上沿');
+    expect(html).toContain('才算买点');
+    expect(html).toContain('才算卖点');
+    expect(html).not.toContain('买入观察');
+    expect(html).not.toContain('卖出观察');
     const aside = html.match(/<aside[\s\S]*?<\/aside>/)?.[0] ?? '';
     expect(aside).toContain('盘中预览');
     expect(aside).toContain('+0.98');
@@ -84,5 +87,26 @@ describe('DecisionWorkspace', () => {
       expect(aside).not.toContain(removed);
     }
     expect(html).not.toContain('trend-risk-warning');
+  });
+
+  it('lets the Z-Score header be clicked to sort, starting in the default order', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    const html = renderToStaticMarkup(<DecisionWorkspace snapshot={snapshot} />);
+    const head = html.match(/<div class="decision-table-head"[\s\S]*?<\/div>/)?.[0] ?? '';
+    expect(head).not.toContain('aria-hidden');
+    expect(head).toMatch(/<button[^>]*class="decision-z-sort"[^>]*>Z-Score/);
+    expect(head).toContain('点击排序');
+  });
+
+  it('gives phones a Z-Score sort dropdown next to the other filters, starting at the default order', () => {
+    const snapshot = structuredClone(quantAnalysisFixture) as unknown as QuantAnalysisSnapshot;
+    const html = renderToStaticMarkup(<DecisionWorkspace snapshot={snapshot} />);
+    const sort = html.match(/<label class="decision-z-filter decision-z-sort-mobile">[\s\S]*?<\/label>/)?.[0] ?? '';
+    expect(html.indexOf(sort)).toBeGreaterThan(html.indexOf('标准差动能筛选'));
+    expect(html.indexOf(sort)).toBeLessThan(html.indexOf('decision-data-line'));
+    expect(sort).toContain('aria-label="Z-Score 排序"');
+    expect(sort).toContain('<option value="none" selected="">排序 · 默认</option>');
+    expect(sort).toContain('<option value="desc">Z 从高到低</option>');
+    expect(sort).toContain('<option value="asc">Z 从低到高</option>');
   });
 });

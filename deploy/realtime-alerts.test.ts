@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  FUTURES_DROP_TIERS, NEAR_BREAKOUT_LEVEL, NEAR_BREAKOUT_MIN_SESSIONS, NEAR_BREAKOUT_RESET, QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT, bigMoveAlert, bigMoveLimitFor, cnnAlerts, cnnFloorText, cnnTierStates, futuresDropAlerts, intradayZAlerts, nearBreakoutAlerts, nearBreakoutStateKey, nearBreakoutStates, negativeStreak, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
+  FUTURES_DROP_TIERS, NEAR_BREAKOUT_LEVEL, NEAR_BREAKOUT_MIN_SESSIONS, NEAR_BREAKOUT_RESET, QQQ_BIG_MOVE_PCT, RESONANCE_HISTORY_NOTE, SESSION_CADENCE_MS, STOCK_BIG_MOVE_PCT, bigMoveAlert, bigMoveLimitFor, cnnAlerts, cnnFloorText, cnnTierStates, futuresDropAlerts, intradayZAlerts, nearBreakoutAlerts, nearBreakoutStateKey, nearBreakoutStates, negativeStreak, negativeStretch, channelVerdict, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
 
 describe('实时监控的节奏与时段', () => {
@@ -168,13 +168,77 @@ describe('盘中 Z-Score 穿档', () => {
       symbol: 'TSLA', price: 353.14, previousZ: -0.95, currentZ: -1.22,
       session: 'regular', firedKeys: new Set(), day: '2026-10-20',
     });
-    expect(nearBuy.text).toContain('接近买入区 -1.5');
+    expect(nearBuy.text).toContain('接近下沿 -1.5');
+    expect(nearBuy.text).toContain('未击穿通道下沿 · 不是买点');
 
     const [inZone] = intradayZAlerts({
       symbol: 'MU', price: 911, previousZ: -1.41, currentZ: -1.63,
       session: 'regular', firedKeys: new Set(), day: '2026-10-20',
     });
-    expect(inZone.text).toContain('已进入买入区');
+    expect(inZone.text).toContain('进入买入区');
+    expect(inZone.text).toContain('已击穿通道下沿 · 到买点');
+  });
+
+  it('向下穿档写明有没有击穿通道下沿、离下沿还差多少；没击穿一律「不是买点」', () => {
+    const [far] = intradayZAlerts({
+      symbol: 'AVGO', price: 340, previousZ: -0.45, currentZ: -0.55, lowerBand: 300,
+      session: 'regular', firedKeys: new Set(), day: '2026-11-13',
+    });
+    expect(far.text).toBe('[盘中] AVGO $340.00 · Z -0.45 → -0.55 · 跌得更深，偏弱 · 未击穿通道下沿 $300.00（还差 13.3%）· 不是买点');
+    expect(far.text).not.toMatch(/到买点|是否买入/u);
+
+    const [broken] = intradayZAlerts({
+      symbol: 'AVGO', price: 294, previousZ: -1.4, currentZ: -1.6, lowerBand: 300,
+      session: 'regular', firedKeys: new Set(), day: '2026-11-13',
+    });
+    expect(broken).toMatchObject({ level: 'important' });
+    expect(broken.text).toContain('已击穿通道下沿 $300.00（低于下沿 2.0%）· 到买点');
+
+    const [up] = intradayZAlerts({
+      symbol: 'AVGO', price: 400, previousZ: 0.4, currentZ: 0.6, lowerBand: 300,
+      session: 'regular', firedKeys: new Set(), day: '2026-11-13',
+    });
+    expect(up.text).not.toContain('通道下沿');
+  });
+
+  it('channelVerdict：价格优先，Z ≤ -1.5 才算到买点', () => {
+    expect(channelVerdict({ price: 100, lowerBand: 90, z: -0.8 })).toBe('未击穿通道下沿 $90.00（还差 11.1%）· 不是买点');
+    expect(channelVerdict({ price: 89, lowerBand: 90, z: -1.55 })).toBe('已击穿通道下沿 $90.00（低于下沿 1.1%）· 到买点');
+    expect(channelVerdict({ price: null, lowerBand: null, z: -1.2 })).toBe('未击穿通道下沿 · 不是买点');
+    expect(channelVerdict({ price: 100, lowerBand: 90, z: null })).toBe('');
+  });
+
+  it('向上新增 +1.2 / +1.3 两档：日志里直接显示，但不推手机；+1 照旧', () => {
+    const alerts = intradayZAlerts({
+      symbol: 'NVDA', price: 220, previousZ: 0.95, currentZ: 1.35,
+      session: 'regular', firedKeys: new Set(), day: '2026-10-27',
+    });
+
+    expect(alerts.map((item) => item.tier)).toEqual([1, 1.2, 1.3]);
+    expect(alerts[0]).toMatchObject({ level: 'normal' });
+    expect(alerts[0].push).toBeUndefined();
+    expect(alerts[1]).toMatchObject({ level: 'normal', push: false, dedupe_key: 'z-cross:NVDA:1.2:up:2026-10-27' });
+    expect(alerts[2]).toMatchObject({ level: 'normal', push: false, dedupe_key: 'z-cross:NVDA:1.3:up:2026-10-27' });
+  });
+
+  it('向下 -0.5 改成日志直接显示、不推手机；+0.5 仍只记录；下跌没有 -1.2 / -1.3 档', () => {
+    const [down] = intradayZAlerts({
+      symbol: 'GDX', price: 85.66, previousZ: -0.45, currentZ: -0.53,
+      session: 'regular', firedKeys: new Set(), day: '2026-10-27',
+    });
+    expect(down).toMatchObject({ tier: -0.5, level: 'normal', push: false });
+
+    const [up] = intradayZAlerts({
+      symbol: 'UDOW', price: 67.41, previousZ: 0.38, currentZ: 0.52,
+      session: 'regular', firedKeys: new Set(), day: '2026-10-27',
+    });
+    expect(up).toMatchObject({ tier: 0.5, level: 'log_only' });
+
+    const deeper = intradayZAlerts({
+      symbol: 'TSLA', price: 353.14, previousZ: -0.95, currentZ: -1.35,
+      session: 'regular', firedKeys: new Set(), day: '2026-10-27',
+    });
+    expect(deeper.map((item) => item.tier)).toEqual([-1]);
   });
 
   it('同一档同一方向一天只记一次，没穿档不记', () => {
@@ -348,7 +412,29 @@ describe('接近露头（买入方向）', () => {
       kind: 'near_breakout', category: 'zscore', symbol: 'GOOG', icon: '📈', level: 'normal',
       dedupe_key: 'near-breakout:GOOG:2026-10-21',
     });
-    expect(alerts[0].text).toBe('[盘中] GOOG $335.20 · Z -0.12 → -0.09 · 接近向上露头（之前 35 天在 0 以下）· 可以去看看是否买入');
+    expect(alerts[0].text).toBe('[盘中] GOOG $335.20 · Z -0.12 → -0.09 · 接近向上露头（之前 35 天在 0 以下）· 回到均线附近 · 未击穿通道下沿 · 不是买点');
+  });
+
+  it('露头不再写「可以去看看是否买入」：写清这一轮有没有击穿过下沿、现在离下沿多远', () => {
+    const [notBroken] = nearBreakoutAlerts({
+      symbol: 'AVGO', price: 364.36, previousZ: -0.57, currentZ: -0.08, streak: 25,
+      session: 'post', states: {}, day: '2026-11-13', confirmation: true, lowerBand: 310, streakLow: -0.92,
+    });
+    expect(notBroken.text).toBe('[收盘确认] AVGO $364.36 · Z -0.57 → -0.08 · 接近向上露头（之前 25 天在 0 以下，最低 Z -0.92，没击穿过下沿）· 回到均线附近 · 未击穿通道下沿 $310.00（还差 17.5%）· 不是买点');
+    expect(notBroken.text).not.toContain('是否买入');
+
+    const [wasBroken] = nearBreakoutAlerts({
+      symbol: 'AVGO', price: 364.36, previousZ: -0.57, currentZ: -0.08, streak: 25,
+      session: 'regular', states: {}, day: '2026-11-13', lowerBand: 310, streakLow: -1.83,
+    });
+    expect(wasBroken.text).toContain('期间曾击穿下沿，最低 Z -1.83');
+    expect(wasBroken.text).toContain('不是买点');
+  });
+
+  it('negativeStretch 同时给出连续天数和这一段最低的 Z', () => {
+    const rows = [0.3, -0.4, -1.7, -0.9, -0.2].map((z, index) => ({ date: `2026-09-0${index + 1}`, zscore200: z }));
+    expect(negativeStretch(rows)).toEqual({ streak: 4, lowest: -1.7 });
+    expect(negativeStretch([])).toEqual({ streak: 0, lowest: null });
   });
 
   it('收盘再确认一次，标 [收盘确认]', () => {

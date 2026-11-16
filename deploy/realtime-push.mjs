@@ -56,7 +56,8 @@ export function mergeRealtimeSettings(settings) {
 
 export function pushPlanFor(alert, realtime, { quiet = false } = {}) {
   const settings = realtime && typeof realtime === 'object' ? realtime : realtimeDefaults();
-  if (alert?.level === 'log_only') return { push: false, repeat: 0, reason: 'log_only', queueSummary: false };
+  // push: false 是「日志里显示但不推手机」的那几档（如 Z +1.2 / +1.3 / -0.5）
+  if (alert?.level === 'log_only' || alert?.push === false) return { push: false, repeat: 0, reason: 'log_only', queueSummary: false };
   if (!settings.enabled) return { push: false, repeat: 0, reason: 'realtime_disabled', queueSummary: false };
   const flag = REALTIME_FLAG_BY_KIND[alert?.kind];
   if (!flag || settings[flag] !== true) return { push: false, repeat: 0, reason: 'category_disabled', queueSummary: false };

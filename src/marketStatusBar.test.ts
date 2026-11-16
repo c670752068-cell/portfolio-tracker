@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AlertLogEntry } from './alertLog';
 import {
-  SESSION_LABELS, cnnFromAlerts, cnnScoreFrom, drawdownGapText, importantTodayCount, nextDrawdownTier, parseStatusQuotes, qqqDrawdownPct, quoteTimeOf, statusCards, vixChangePct,
+  LEVERAGE_TIERS, SESSION_LABELS, cnnFromAlerts, cnnScoreFrom, drawdownGapText, importantTodayCount, nextDrawdownTier, parseStatusQuotes, peakDistances, qqqDrawdownPct, quoteTimeOf, statusCards, vixChangePct,
 } from './marketStatusBar';
 
 function alert(partial: Partial<AlertLogEntry>): AlertLogEntry {
@@ -130,9 +130,9 @@ describe('状态条的数据来源', () => {
   });
 
   it('返回缺字段或格式不对时一律给空值', () => {
-    expect(parseStatusQuotes(null)).toEqual({ qqq: null, vix: null, session: null, time: null });
+    expect(parseStatusQuotes(null)).toEqual({ qqq: null, spy: null, dia: null, vix: null, session: null, time: null });
     expect(parseStatusQuotes({ quotes: [{ symbol: 'QQQ' }], session: '乱写', time: '不是时间' }))
-      .toMatchObject({ qqq: { price: null, previousClose: null }, vix: null, session: null, time: null });
+      .toMatchObject({ qqq: { price: null, previousClose: null }, spy: null, dia: null, vix: null, session: null, time: null });
   });
 
   it('从量化快照读 CNN，取不到就是空', () => {
@@ -182,14 +182,64 @@ describe('状态条的数据时间用价格本身的时间', () => {
   it('行情里带价格时间就用它，不用拉取时间', () => {
     expect(quoteTimeOf({
       qqq: { price: 1, previousClose: 1, priceTime: '2026-10-22T07:01:41.000Z' },
-      vix: null, session: 'overnight', time: '2026-10-22T07:05:00.000Z',
+      spy: null, dia: null, vix: null, session: 'overnight', time: '2026-10-22T07:05:00.000Z',
     })).toBe('2026-10-22T07:01:41.000Z');
   });
 
   it('没有价格时间就退回服务器给的时间', () => {
-    expect(quoteTimeOf({ qqq: { price: 1, previousClose: 1 }, vix: null, session: 'regular', time: '2026-10-22T16:00:00.000Z' }))
+    expect(quoteTimeOf({ qqq: { price: 1, previousClose: 1 }, spy: null, dia: null, vix: null, session: 'regular', time: '2026-10-22T16:00:00.000Z' }))
       .toBe('2026-10-22T16:00:00.000Z');
     expect(quoteTimeOf(null)).toBeNull();
   });
 });
 
+describe('距前高变色（加杠杆参考）', () => {
+  const peakOf = (close: number) => [{ date: '2026-10-06', close }, { date: '2026-11-02', close: close * 0.9 }];
+
+  it('档位：标普 5/8/10/12/14，道指 8/10/12，QQQ 10/12/15/18/20', () => {
+    expect(LEVERAGE_TIERS).toEqual({ SPY: [5, 8, 10, 12, 14], DIA: [8, 10, 12], QQQ: [10, 12, 15, 18, 20] });
+  });
+
+  it('没到第一档不变色，写还差多少；过了几档颜色就深几级', () => {
+    const [spy, dia, qqq] = peakDistances({
+      quotes: { SPY: { price: 752.1, previousClose: null }, DIA: { price: 475, previousClose: null }, QQQ: { price: 681.09, previousClose: null } },
+      series: { SPY: peakOf(779.09), DIA: peakOf(542.81), QQQ: peakOf(759.66) },
+    });
+
+    expect(spy).toMatchObject({ key: 'SPY', label: '标普 SPY', level: 0, nextTier: 5 });
+    expect(spy.drawdownPct).toBeCloseTo(-3.46, 2);
+    expect(spy.gapPct).toBeCloseTo(1.54, 2);
+    // DIA -12.49%：三档全过，最深一级，没有下一档
+    expect(dia).toMatchObject({ key: 'DIA', label: '道指 DIA', level: 3, nextTier: null, gapPct: null });
+    // QQQ -10.34%：过了 -10%，下一档 -12%
+    expect(qqq).toMatchObject({ key: 'QQQ', label: 'QQQ', level: 1, nextTier: 12 });
+    expect(qqq.gapPct).toBeCloseTo(1.66, 2);
+  });
+
+  it('带上用来算的那个价和时段：夜盘价有成交时间才标「夜盘」，没有时间的不冒充', () => {
+    const [spy, dia, qqq] = peakDistances({
+      session: 'overnight',
+      quotes: {
+        SPY: { price: 740.5, previousClose: 752.1, priceTime: '2026-11-04T02:36:00.000Z' },
+        DIA: { price: 517.06, previousClose: 519.34, priceTime: null },
+        QQQ: { price: 670, previousClose: 681.09, priceTime: '2026-11-04T02:36:09.944Z' },
+      },
+      series: { SPY: peakOf(779.09), DIA: peakOf(542.81), QQQ: peakOf(759.66) },
+    });
+
+    expect(spy).toMatchObject({ price: 740.5, priceLabel: '夜盘' });
+    expect(spy.drawdownPct).toBeCloseTo((740.5 / 779.09 - 1) * 100, 6);
+    expect(dia).toMatchObject({ price: 517.06, priceLabel: null });
+    expect(qqq).toMatchObject({ price: 670, priceLabel: '夜盘', level: 1 });
+  });
+
+  it('正好 -5.00% 算到档；缺价格或缺日线就算不出，不编数', () => {
+    const [spy, dia, qqq] = peakDistances({
+      quotes: { SPY: { price: 95, previousClose: null }, DIA: null, QQQ: { price: 90, previousClose: null } },
+      series: { SPY: [{ close: 100 }], DIA: [{ close: 100 }], QQQ: [] },
+    });
+    expect(spy.level).toBe(1);
+    expect(dia).toMatchObject({ drawdownPct: null, level: 0, nextTier: null, gapPct: null });
+    expect(qqq.drawdownPct).toBeNull();
+  });
+});

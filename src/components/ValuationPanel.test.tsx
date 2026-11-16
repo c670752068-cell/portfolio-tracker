@@ -324,7 +324,7 @@ describe('ValuationPanel', () => {
     expect(html).toContain('数据 08-11');
     expect(html).toContain('警戒线 PE ≥ 35');
     expect(html).not.toContain('估值过高');
-    expect(html).toContain('警戒线 VIX &gt; 23');
+    expect(html).toContain('VIX ≥ 25 才能到 50%');
   });
 
   it('turns NDX red only at PE 35 and links to Danjuan on a double activation', () => {
@@ -349,14 +349,16 @@ describe('ValuationPanel', () => {
     expect(html.match(/data-panic-state="normal"/g)).toHaveLength(3);
 
     const fearSnapshot: QuantAnalysisSnapshot = structuredClone(snapshot);
-    fearSnapshot.valuation_tab!.cnn.current_score = 29.99;
+    fearSnapshot.valuation_tab!.cnn.current_score = 19.99;
     fearSnapshot.valuation_tab!.ndx.current_pe = 29.99;
     (fearSnapshot.context.vix as { value: number }).value = 30.01;
     const fearHtml = renderToStaticMarkup(
       <ValuationPanel snapshot={fearSnapshot} onDirtyChange={() => undefined} />,
     );
     expect(fearHtml.match(/data-panic-state="ready"/g)).toHaveLength(3);
-    expect(fearHtml.match(/恐慌 · 可开仓/g)).toHaveLength(3);
+    expect(fearHtml).not.toContain('可开仓');
+    expect(fearHtml).toContain('估值偏低');
+    expect(fearHtml).toContain('CNN ≤ 20 才能超 30%');
   });
 
   it('calculates stale age from the valuation date and shows the warning only once', () => {

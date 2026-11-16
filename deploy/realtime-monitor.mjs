@@ -1,11 +1,12 @@
 import { appendAlerts } from './alert-log.mjs';
 import { withinCooldown } from './alert-noise.mjs';
+import { EXCLUDED_SYMBOLS } from './channel-review.mjs';
 import {
   bigMoveAlert, cnnAlerts, cnnTierStates, futuresDropAlerts, intradayZAlerts, nearBreakoutAlerts,
-  nearBreakoutStates, negativeStreak, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
+  nearBreakoutStates, negativeStretch, qqqRealtimeAlerts, resonanceAlert, sessionLabel, vixAlerts,
 } from './realtime-alerts.mjs';
 import { portfolioLossAlerts } from './portfolio-loss.mjs';
-import { tradingDate } from './market-session.mjs';
+import { etParts, tradingDate } from './market-session.mjs';
 import { pushPlanFor, realtimeDefaults } from './realtime-push.mjs';
 import { isSaneSellPrice } from './sell-price-sanity.mjs';
 
@@ -84,14 +85,14 @@ export async function runRealtimeTick({
       floorReported: cnnFloorReported, tierStates,
     }));
   }
-  // 盘中 Z：常规时段用未收盘那根；夜盘日线不更新，用现价估算（网关那边给读数）。
-  // 盘前/盘后仍然不判定——那两个时段缓存里的「未收盘那根」是上一个交易日的，
-  // 会把昨天的穿越重放一遍。
-  const zSessions = session === 'regular' || session === 'overnight';
-  for (const [symbol, reading] of (zSessions ? Object.entries(intradayZ) : [])) {
+  // 盘中 Z：常规时段用未收盘那根；夜盘、盘前、盘后日线不更新，用现价估算
+  // （读数见 sessionZReading，由网关喂进来）。
+  for (const [symbol, reading] of (hasTradingSession ? Object.entries(intradayZ) : [])) {
+    // 现金类 ETF（SGOV 等）只会稳步上涨，Z 穿档没有买卖含义
+    if (EXCLUDED_SYMBOLS.has(symbol)) continue;
     alerts.push(...intradayZAlerts({
       symbol, price: reading?.price, previousZ: reading?.previousZ, currentZ: reading?.currentZ,
-      session, firedKeys, day,
+      session, firedKeys, day, lowerBand: reading?.lowerBand ?? null,
     }));
   }
   // 接近露头：和盘中 Z 一样，只在日线缓存靠得住的时段判定（常规时段看未收盘那根，
@@ -102,6 +103,7 @@ export async function runRealtimeTick({
       symbol, price: reading?.price, previousZ: reading?.previousZ, currentZ: reading?.currentZ,
       streak: Number(reading?.streak) || 0, session, states: breakoutStates, day,
       confirmation: session === 'post',
+      lowerBand: reading?.lowerBand ?? null, streakLow: reading?.streakLow ?? null,
     });
     alerts.push(...found);
     breakoutStates = nearBreakoutStates(breakoutStates, {
@@ -197,7 +199,8 @@ export async function runRealtimeTick({
       occurred_at: now.toISOString(),
     };
     // 冷却期内的同类提醒不再写一行；重要的、以及真的推送出去的照写。
-    const blocked = alert.level !== 'important' && pushState !== 'sent' && withinCooldown(cooldownView, {
+    // Z 穿档每一档都要记（每档一天最多一次），不受冷却限制。
+    const blocked = alert.kind !== 'z_cross' && alert.level !== 'important' && pushState !== 'sent' && withinCooldown(cooldownView, {
       symbol: alert.symbol, category: alert.category, now, cooldownMs,
     });
     if (blocked) continue;
@@ -223,6 +226,17 @@ export async function runRealtimeTick({
  * 起点取最后一根完整收盘的 zscore200，口径和页面完全一致，不另算一遍。
  * 没有盘中日线（盘前、盘后、夜盘、休市）时返回 null，不拿收盘价充当盘中价。
  */
+// 趋势图的 ±1.5σ 通道；下沿就是 band200 的第一个数。
+const CHANNEL_SIGMA = 1.5;
+
+function lowerBandOf(point) {
+  const band = Array.isArray(point?.band200) ? finite(point.band200[0]) : null;
+  if (band !== null) return band;
+  const mean = finite(point?.ma200);
+  const deviation = finite(point?.std200);
+  return mean === null || deviation === null || deviation <= 0 ? null : mean - CHANNEL_SIGMA * deviation;
+}
+
 export function intradayZPreview(dashboard) {
   const series = dashboard?.dashboard?.series;
   if (!Array.isArray(series) || series.length === 0) return null;
@@ -234,18 +248,26 @@ export function intradayZPreview(dashboard) {
   if (currentZ === null || previousZ === null) return null;
   return {
     previousZ, currentZ, price: finite(partial?.close), date: partial?.date ?? null,
+    lowerBand: lowerBandOf(partial),
   };
 }
 
+// 美股常规时段 16:00 收盘，过了这个点当天那根日线就算走完了。
+const REGULAR_CLOSE_MINUTES = 16 * 60;
+
 /**
- * 夜盘的 Z 预估：日线在夜盘不更新，没有「未收盘那根」可用，
+ * 夜盘、盘前、盘后的 Z 预估：日线不更新，没有「未收盘那根」可用，
  * 所以拿现价和最后一根完整收盘的 200 日均值/标准差估一个 Z。
+ * 「完整收盘」按时间判：日期早于今天，或者是今天且已过 16:00。缓存里那根
+ * 如果是盘中取的、还标着未收盘，也照样当基准，免得退回前一天把昨天的涨跌重放一遍。
  * 缺均值或标准差就返回 null，不瞎估。
  */
-export function estimatedZFromPrice(dashboard, price) {
+export function estimatedZFromPrice(dashboard, price, now = new Date()) {
   const series = dashboard?.dashboard?.series;
   if (!Array.isArray(series)) return null;
-  const closed = series.filter((point) => point && point.is_partial !== true);
+  const today = etParts(now);
+  const closed = series.filter((point) => point && (point.date < today.date
+    || (point.date === today.date && today.minutes >= REGULAR_CLOSE_MINUTES)));
   const last = closed.at(-1);
   const current = finite(price);
   const mean = finite(last?.ma200);
@@ -255,9 +277,18 @@ export function estimatedZFromPrice(dashboard, price) {
     previousZ: finite(last?.zscore200),
     currentZ: (current - mean) / deviation,
     price: current,
+    // 通道下沿 = 200 日均线 − 1.5σ，和趋势图上那条线一致
+    lowerBand: mean - CHANNEL_SIGMA * deviation,
     basis_date: last?.date ?? null,
     estimated: true,
   };
+}
+
+/** 网关每轮给监控的 Z 读数：常规时段看盘中预览那根，其他交易时段按新鲜报价估算。 */
+export function sessionZReading(session, dashboard, live, now = new Date()) {
+  if (session === 'regular') return intradayZPreview(dashboard);
+  if (session !== 'overnight' && session !== 'pre' && session !== 'post') return null;
+  return live && live.stale !== true ? estimatedZFromPrice(dashboard, live.price, now) : null;
 }
 
 /**
@@ -273,21 +304,27 @@ export function nearBreakoutReading(dashboard, { confirmation = false } = {}) {
     const currentZ = finite(latest?.zscore200);
     if (currentZ === null) return null;
     const earlier = closed.slice(0, -1);
+    const stretch = negativeStretch(earlier);
     return {
-      streak: negativeStreak(earlier),
+      streak: stretch.streak,
+      streakLow: stretch.lowest,
       currentZ,
       previousZ: finite(earlier.at(-1)?.zscore200),
       price: finite(latest?.close),
+      lowerBand: lowerBandOf(latest),
     };
   }
   const partial = [...series].reverse().find((point) => point && point.is_partial === true);
   const currentZ = finite(partial?.zscore200);
   if (currentZ === null) return null;
+  const stretch = negativeStretch(closed);
   return {
-    streak: negativeStreak(closed),
+    streak: stretch.streak,
+    streakLow: stretch.lowest,
     currentZ,
     previousZ: finite(closed.at(-1)?.zscore200),
     price: finite(partial?.close),
+    lowerBand: lowerBandOf(partial),
   };
 }
 

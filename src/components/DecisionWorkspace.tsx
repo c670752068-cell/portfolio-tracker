@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Holding, QuantAnalysisSnapshot, QuantChannelReviewSnapshot } from '../types';
 import type { OneTapRefreshState } from '../oneTapRefresh';
 import { fetchChannelReview, fetchMaSlopeDashboard, type MaSlopeDashboardResult } from '../maSlopeQuery';
-import { getServerChannelAlertsUrl, getServerMaSlopeUrl } from '../runtimeConfig';
+import { getServerChannelAlertsUrl, getServerMaSlopeUrl, getServerQuoteProxyUrl } from '../runtimeConfig';
 import { heldTechnicalSymbols, technicalPresetSymbols, technicalSymbolName } from '../technicalSymbols';
-import { decisionSignalRow, OBSERVATION_LABELS, annualSlope } from '../decisionSignals';
+import { decisionSignalRow, OBSERVATION_LABELS, OBSERVATION_RANGES, midChannel, nearLowerBand, nearUpperBand, annualSlope, compareZ, estimatedPreview, previewQuoteFrom, type PreviewQuote } from '../decisionSignals';
 import { quantAnalysisFreshnessText } from '../quantAnalysis';
 import { StockForwardValuationExplorer } from './StockForwardValuationExplorer';
 import { MaSlopeExplorer } from './MaSlopeExplorer';
@@ -33,7 +33,7 @@ const EMPTY_HOLDINGS: readonly Holding[] = [];
 const FAVORITES = [ ['指数 / ETF', ['QQQ', 'DIA', 'VOO', 'TQQQ', 'XLK', 'MAGS']], ['个股', ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOG', 'META', 'TSLA', 'AVGO']] ] as const;
 const DECISION_FILTERS = [
   { value: 'all', label: '全部' }, { value: 'held', label: '已持仓' },
-  { value: 'buy_observe', label: '买入观察区' }, { value: 'sell_observe', label: '卖出观察区' },
+  { value: 'buy_observe', label: '接近/击穿下沿' }, { value: 'sell_observe', label: '接近/突破上沿' },
 ] as const;
 type DecisionFilter = typeof DECISION_FILTERS[number]['value'];
 
@@ -44,6 +44,7 @@ export function DecisionWorkspace({ snapshot, holdings = EMPTY_HOLDINGS, loading
   const [filter, setFilter] = useState<DecisionFilter>('all');
   const [zFilter, setZFilter] = useState('all');
   const [breakoutFilter, setBreakoutFilter] = useState('off');
+  const [zSort, setZSort] = useState<'desc' | 'asc' | null>(null);
   const [notice, setNotice] = useState('');
   const [highlighted, setHighlighted] = useState<string[]>([selected]);
   const { inbox, batch, ingest, markRead } = useSignalInbox();
@@ -55,6 +56,7 @@ export function DecisionWorkspace({ snapshot, holdings = EMPTY_HOLDINGS, loading
   const [supplementalSlopes, setSupplementalSlopes] = useState<Record<string, { value: number; asOf: string; source: string }>>({});
   const [review, setReview] = useState<QuantChannelReviewSnapshot>(() => ({ review_time: '16:20', timezone: 'America/New_York', review_date: null, updated_at: null, symbols: Object.fromEntries(Object.entries(snapshot.symbols).flatMap(([symbol, item]) => item.ma_slope?.dashboard?.channel_alert ? [[symbol, item.ma_slope.dashboard.channel_alert]] : [])) }));
   const [reviewError, setReviewError] = useState('');
+  const [liveQuote, setLiveQuote] = useState<{ symbol: string; quote: PreviewQuote | null } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
     const refreshReview = () => { if (document.visibilityState === 'visible') { setRefreshKey(value => value + 1); setNow(Date.now()); } };
@@ -92,6 +94,15 @@ export function DecisionWorkspace({ snapshot, holdings = EMPTY_HOLDINGS, loading
       .catch(() => { if (!controller.signal.aborted) setReviewError('收盘审查暂不可用，已展示的数据可能较旧。'); });
     return () => controller.abort();
   }, [snapshot.generated_at, refreshKey, ingest]);
+  // 夜盘、盘前、盘后没有未收盘那根日线，盘中预览按选中股票的现价估算；跟着每分钟的刷新一起拉
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(`${getServerQuoteProxyUrl() || '/api/quotes'}?symbols=${encodeURIComponent(selected)}`, { cache: 'no-store', signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => { if (!controller.signal.aborted) setLiveQuote({ symbol: selected, quote: previewQuoteFrom(body, selected) }); })
+      .catch(() => { /* 拿不到现价就显示暂无盘中数据 */ });
+    return () => controller.abort();
+  }, [selected, refreshKey]);
   const receiveDashboard = useCallback((result: MaSlopeDashboardResult) => {
     setDashboard(result);
     storeSlope(result);
@@ -106,20 +117,20 @@ export function DecisionWorkspace({ snapshot, holdings = EMPTY_HOLDINGS, loading
   };
   const rows = symbols.map(getRow);
   const matches = (row: typeof rows[number], value: DecisionFilter) => value === 'all'
-    || (value === 'held' ? held.has(row.symbol) : value === 'buy_observe' ? row.z != null && row.z < 0 : row.z != null && row.z > 0);
+    || (value === 'held' ? held.has(row.symbol) : value === 'buy_observe' ? nearLowerBand(row.z) : nearUpperBand(row.z));
   const unreadFor = (value: DecisionFilter) => inbox.unread.filter((entry) => value === 'buy_observe'
     ? entry.category.startsWith('buy') : value === 'sell_observe' ? entry.category.startsWith('sell') : false);
   const matchesZFilter = (item: typeof rows[number]) => zFilter === 'all'
-    || (zFilter === 'buy_observe' ? item.z != null && item.z < 0 : zFilter === 'sell_observe' ? item.z != null && item.z > 0 : item.z === 0);
+    || (zFilter === 'buy_observe' ? nearLowerBand(item.z) : zFilter === 'sell_observe' ? nearUpperBand(item.z) : midChannel(item.z));
   const visible = rows.filter((row) => matches(row, filter)
     && matchesZFilter(row)
     && (breakoutFilter === 'off' || (currentBreakout(review, row.symbol) && (breakoutFilter === 'all' || currentBreakout(review, row.symbol)?.direction === breakoutFilter)))
     && `${row.symbol} ${name(row.symbol)}`.toLowerCase().includes(search.trim().toLowerCase()))
-    .sort((a, b) => Number(highlighted.includes(b.symbol)) - Number(highlighted.includes(a.symbol)));
+    .sort(zSort ? compareZ(zSort) : (a, b) => Number(highlighted.includes(b.symbol)) - Number(highlighted.includes(a.symbol)));
   const selectFavorite = (symbol: string) => {
     const hidden = !visible.some(item => item.symbol === symbol);
     if (hidden) { setFilter('all'); setZFilter('all'); setBreakoutFilter('off'); setSearch(''); }
-    setSelected(symbol); setMode('closed'); setHighlighted([symbol]);
+    setSelected(symbol); setMode('closed'); setHighlighted([symbol]); setZSort(null);
     setNotice(`${hidden ? '已切回“全部”，' : ''}已定位 ${symbol}；详情、斜率曲线与 PE 估值同步。`);
   };
   const selectFilter = (value: DecisionFilter) => {
@@ -127,7 +138,7 @@ export function DecisionWorkspace({ snapshot, holdings = EMPTY_HOLDINGS, loading
     setFilter(value); setExpanded(false); setHighlighted(unread.map(e => e.symbol));
     if (unread.length) {
       setExpanded(unread.length > 6);
-      setSearch(''); setZFilter('all'); setBreakoutFilter('off'); setSelected(unread[0].symbol); setMode('closed');
+      setSearch(''); setZFilter('all'); setBreakoutFilter('off'); setZSort(null); setSelected(unread[0].symbol); setMode('closed');
       setNotice(`新增：${unread.map(e => `${e.symbol} ${name(e.symbol)}`).join('、')}。已定位并标记为已读。`);
       markRead(unread.map(e => e.id));
     } else setNotice('');
@@ -167,20 +178,21 @@ export function DecisionWorkspace({ snapshot, holdings = EMPTY_HOLDINGS, loading
       <div className="decision-filters" aria-label="通道提醒筛选">
         {DECISION_FILTERS.map((option) => { const unread = unreadFor(option.value); const animation = unread.filter(e => batch.includes(e.id)).map(e => e.id).join('|'); return <button key={option.value} aria-pressed={filter === option.value} onClick={() => selectFilter(option.value)} data-signal-filter={option.value}>{option.label} <span>{rows.filter((item) => matches(item, option.value)).length}</span>{unread.length > 0 && <em key={animation || 'static'} className={`signal-unread ${option.value.startsWith('buy') ? 'is-buy' : 'is-sell'} ${animation ? 'animate-entry' : ''}`} aria-label={`${unread.length} 个未读新增`}>+{unread.length}</em>}</button>; })}
         <label className="decision-z-filter"><span className="sr-only">露头筛选</span><select aria-label="露头筛选" value={breakoutFilter} onChange={e => { setBreakoutFilter(e.target.value); setFilter('all'); setZFilter('all'); setSearch(''); setExpanded(false); setNotice(''); }}><option value="off">露头 · 不限</option><option value="all">全部露头</option><option value="up">↑ 向上露头</option><option value="down">↓ 向下露头</option></select></label><BreakoutRules />
-        <label className="decision-z-filter"><span className="sr-only">标准差动能筛选</span><select aria-label="标准差动能筛选" value={zFilter} onChange={(event) => { setZFilter(event.target.value); setExpanded(false); }}><option value="all">标准差动能 · 全部</option><option value="buy_observe">买入观察：Z &lt; 0</option><option value="sell_observe">卖出观察：Z &gt; 0</option><option value="neutral">中性：Z = 0</option></select></label>
+        <label className="decision-z-filter"><span className="sr-only">标准差动能筛选</span><select aria-label="标准差动能筛选" value={zFilter} onChange={(event) => { setZFilter(event.target.value); setExpanded(false); }}><option value="all">标准差动能 · 全部</option><option value="buy_observe">接近/击穿下沿：Z ≤ −1.25</option><option value="sell_observe">接近/突破上沿：Z ≥ +1.25</option><option value="neutral">通道中间：−1.25 &lt; Z &lt; +1.25</option></select></label>
+        <label className="decision-z-filter decision-z-sort-mobile"><span className="sr-only">Z-Score 排序</span><select aria-label="Z-Score 排序" value={zSort ?? 'none'} onChange={(event) => setZSort(event.target.value === 'desc' || event.target.value === 'asc' ? event.target.value : null)}><option value="none">排序 · 默认</option><option value="desc">Z 从高到低</option><option value="asc">Z 从低到高</option></select></label>
       </div>
       {notice && <p className="decision-new-notice" role="status">{notice}</p>}
       {!notice && inbox.unread.length > 0 && <p className="decision-new-notice" role="status">新增：{inbox.unread.map(e => `${e.symbol} ${name(e.symbol)}`).join('、')}。点击对应分类查看。</p>}
-      <div className="decision-data-line"><span>{quantAnalysisFreshnessText(snapshot.generated_at)}</span><details className="decision-data-help"><summary>口径与更新时间</summary><div><p>观察分区按完整收盘 Z-Score：负值归入买入观察，正值归入卖出观察，Z = 0 保留中性。±1.5 仍是极值与推送阈值，不因观察分区改变。</p><p>当前行动整理现有买入、卖出裁决；缺失、过期或矛盾时显示待核查。继续持有仅表示当前规则未触发卖出，不是收益保证。只提示，不自动下单。</p><p>完整收盘审查 {review.review_date ?? '读取中'} · 每天美东 {review.review_time}；露头审查 {review.breakout_date ?? '读取中'}。+N 为未读新入，非分类总数。</p></div></details></div>
+      <div className="decision-data-line"><span>{quantAnalysisFreshnessText(snapshot.generated_at)}</span><details className="decision-data-help"><summary>口径与更新时间</summary><div><p>观察分区按完整收盘 Z-Score，只看顶部和底部，价格优先：Z ≤ −1.5 即价格击穿 200 日均线 −1.5σ 通道下沿，才算买点；Z ≥ +1.5 即突破 +1.5σ 上沿，才算卖点；±1.25 ~ ±1.5 为接近下沿 / 上沿；−1.25 ~ +1.25 在通道中间，不操作。±1.5 仍是极值与推送阈值，不因观察分区改变。</p><p>当前行动整理现有买入、卖出裁决；缺失、过期或矛盾时显示待核查。继续持有仅表示当前规则未触发卖出，不是收益保证。只提示，不自动下单。</p><p>完整收盘审查 {review.review_date ?? '读取中'}{review.confirmed_date && review.confirmed_date === review.review_date ? '（已按最终价复核）' : ''} · 每天美东 {review.review_time}，{review.confirm_time ?? '18:00'} 再用最终收盘价复核；露头审查 {review.breakout_date ?? '读取中'}。+N 为未读新入，非分类总数。</p></div></details></div>
       {(error || reviewError || refreshState?.message) && <p role="status" className="decision-note">{error || reviewError || refreshState?.message}</p>}
       {!!review.failed_symbols?.length && <p className="decision-note" role="status">部分日线审查暂缺：{review.failed_symbols.join('、')}；服务器自动重试，不用缺失数据生成露头提醒。</p>}
-      {!!snapshot.growth_watchlist?.unresolved?.length && <p className="decision-note">待判断标的：{snapshot.growth_watchlist.unresolved.map((item) => item.symbol).join('、')}；不把未知数据标记为买入观察。</p>}
+      {!!snapshot.growth_watchlist?.unresolved?.length && <p className="decision-note">待判断标的：{snapshot.growth_watchlist.unresolved.map((item) => item.symbol).join('、')}；不把未知数据标记为接近或击穿下沿。</p>}
         <div className="min-w-0">
-          <div className="decision-table-head" aria-hidden="true"><span>股票</span><span>观察信号</span><span>回撤深度<small>负值 · 快照评估</small></span><span>200DMA 年化斜率<small>20日回看 · 年化</small></span><span>SMA 短线 / 趋势<small>8日回看 · %/天</small></span><span>PE 历史位置<small>TTM · 近5年低 → 高</small></span><span>Z-Score</span></div>
+          <div className="decision-table-head"><span>股票</span><span>观察信号</span><span>回撤深度<small>负值 · 快照评估</small></span><span>200DMA 年化斜率<small>20日回看 · 年化</small></span><span>SMA 短线 / 趋势<small>8日回看 · %/天</small></span><span>PE 历史位置<small>TTM · 近5年低 → 高</small></span><span><button type="button" className="decision-z-sort" title="点击排序：从高到低 → 从低到高 → 恢复默认" onClick={() => setZSort(current => current === null ? 'desc' : current === 'desc' ? 'asc' : null)}>Z-Score {zSort === 'desc' ? '↓' : zSort === 'asc' ? '↑' : '↕'}</button></span></div>
           <div className="decision-rows" aria-label="股票决策列表">
             {displayedRows.map((item) => <button key={item.symbol} className={`decision-row ${item.symbol === selected ? 'is-selected' : ''} ${highlighted.includes(item.symbol) ? 'is-new-entry' : ''}`} aria-pressed={item.symbol === selected} onClick={() => { setSelected(item.symbol); setMode('closed'); markRead(inbox.unread.filter(e => e.symbol === item.symbol).map(e => e.id)); revealMobileDetail(); }} data-symbol={item.symbol} data-channel-state={item.state} data-action={actions[item.symbol].kind}>
               <span className="decision-stock"><strong>{item.symbol}</strong><small>{name(item.symbol)}</small>{held.has(item.symbol) && <em className="held-tag">已持仓</em>}</span>
-              <span className={`signal-badge signal-${item.state}`}>{OBSERVATION_LABELS[item.state]}{inbox.unread.some(e => e.symbol === item.symbol) && <small className="signal-new-label">新入</small>}</span>
+              <span className={`signal-badge signal-${item.state}`} title={OBSERVATION_RANGES[item.state]}>{OBSERVATION_LABELS[item.state]}{inbox.unread.some(e => e.symbol === item.symbol) && <small className="signal-new-label">新入</small>}</span>
               <span className="decision-depth"><small className="mobile-metric-label">回撤</small><DrawdownValue value={item.decision.currentDrawdownPct} />{item.decision.priceLabel !== item.symbol && <small>依据 {item.decision.priceLabel}</small>}</span>
               <span className={`decision-slope ${item.slope != null && item.slope < 0 ? 'is-negative' : ''}`}><small className="mobile-metric-label">年化斜率</small><strong>{pct(item.slope, true)}</strong><small>{item.slopeAsOf ?? '待更新'}</small></span>
               <span className="decision-sma-cell"><small className="mobile-metric-label">SMA · 8日回看</small><SmaPositionView compact value={indicators[item.symbol].sma} error={technicals[item.symbol]?.error} /></span>
@@ -190,14 +202,14 @@ export function DecisionWorkspace({ snapshot, holdings = EMPTY_HOLDINGS, loading
             </button>)}
           </div>
           {!visible.length && <p className="decision-empty" role="status">没有符合当前筛选的标的。可清空搜索或切换“全部”。</p>}
-          <footer className="decision-list-footer"><span>已显示 {expanded ? visible.length : Math.min(8, visible.length)} / {visible.length}</span>{visible.length > 8 && <button onClick={() => setExpanded(!expanded)}>{expanded ? '收起列表 ⌃' : '展开全部 ⌄'}</button>}<span>绿色买入观察 · 红色卖出观察 · 不等于买卖指令</span></footer>
+          <footer className="decision-list-footer"><span>已显示 {expanded ? visible.length : Math.min(8, visible.length)} / {visible.length}</span>{visible.length > 8 && <button onClick={() => setExpanded(!expanded)}>{expanded ? '收起列表 ⌃' : '展开全部 ⌄'}</button>}<span>绿色＝接近或击穿通道下沿 · 红色＝接近或突破通道上沿 · 灰色＝通道中间 · 不等于买卖指令</span></footer>
         </div>
       </div>
       <DecisionAnswerPanel key={selected} symbol={selected} name={name(selected)} held={held.has(selected)} action={selectedAction}
         mode={mode} onModeChange={setMode}
         onReturnToList={() => document.querySelector(`.decision-row[data-symbol="${selected}"]`)?.scrollIntoView({ block: 'center' })}
         closed={{ date: row.asOf, close: review.symbols[selected]?.close ?? null, z: row.z, annualSlope: row.slope ?? fallbackSlope, slopeDate: row.slope != null ? row.slopeAsOf : closedPoint?.date ?? null }}
-        preview={partial ? { date: partial.date, close: partial.close, z: partial.zscore200 ?? null, annualSlope: annualSlope(points, partial.date), slopeDate: partial.date } : null}
+        preview={partial ? { date: partial.date, close: partial.close, z: partial.zscore200 ?? null, annualSlope: annualSlope(points, partial.date), slopeDate: partial.date } : estimatedPreview(points, liveQuote?.symbol === selected ? liveQuote.quote : null)}
       />
     </section>
     <MaSlopeExplorer snapshot={snapshot} holdings={holdings} selectedSymbol={selected} onSelectedSymbolChange={setSelected} onDashboard={receiveDashboard} displayMode={mode} onDisplayModeChange={setMode} breakoutEvents={review.breakout_history} compact />

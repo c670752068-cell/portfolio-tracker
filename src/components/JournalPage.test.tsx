@@ -37,8 +37,6 @@ const render = (props: Partial<Parameters<typeof JournalPageView>[0]> = {}) => r
     hiddenAlertIds={[]}
     onToggleHidden={() => {}}
     showHidden
-    categoryFilter="all"
-    onCategoryFilterChange={() => {}}
     log={log}
     qqqSeries={[]}
     sgovSeries={[]}
@@ -96,11 +94,12 @@ describe('日志页框架', () => {
     expect(html).not.toContain('已推送');
   });
 
-  it('筛选按钮齐全', () => {
+  it('筛选只留一个「全部」，只看重要、显示全部和分类按钮都去掉', () => {
     const html = render();
 
-    for (const label of ['全部', '回撤', '情绪', '估值', 'Z-Score', '卖出线', '仓位', '系统']) {
-      expect(html).toContain(label);
+    expect(html).toContain('>全部<');
+    for (const label of ['只看重要', '显示全部（', '>回撤<', '>情绪', '>估值<', '>Z-Score<', '>卖出线<', '>仓位<', '>系统<']) {
+      expect(html).not.toContain(label);
     }
   });
 
@@ -161,20 +160,6 @@ describe('日志页自动刷新', () => {
 
     expect(row).toContain('alert-row-new');
   });
-
-  it('「只看重要」只留下重要提醒', () => {
-    const html = render({
-      alerts: [
-        alert({ id: 'i1', text: '重要的一条', indicators: { level: 1 } }),
-        alert({ id: 'n1', text: '普通的一条', indicators: { level: 2 } }),
-      ],
-      importantOnly: true,
-    });
-
-    expect(html).toContain('重要的一条');
-    expect(html).not.toContain('普通的一条');
-    expect(html).toContain('只看重要');
-  });
 });
 
 describe('推送状态和作废标记', () => {
@@ -195,42 +180,6 @@ describe('推送状态和作废标记', () => {
     const html = render({ alerts: [alert({ pushed: false, push_state: 'category_disabled' })] });
     expect(html).toContain('🔕');
     expect(html).toContain('推送状态：未推送 · 类别开关未开');
-  });
-
-  it('已作废的那条带「[已作废 · 原因]」并划掉，但还在列表里', () => {
-    const html = render({
-      alerts: [alert({ symbol: 'TSLA', text: 'TSLA $353.18 ≥ 卖出线 $31.41', voided: true, voided_reason: '卖出线未过合理性校验' })],
-      showAllLevels: true,
-    });
-    expect(html).toContain('[已作废 · 卖出线未过合理性校验]');
-    expect(html).toContain('line-through');
-    expect(html).toContain('TSLA $353.18 ≥ 卖出线 $31.41');
-  });
-
-  it('作废原因很长时也不撑破一行：标记本身可以压缩并省略，全文在提示里', () => {
-    const reason = '卖出线未过合理性校验（$31.41 远低于现价 $353.18，疑似估值口径错误）';
-    const html = render({
-      alerts: [alert({ symbol: 'TSLA', text: 'TSLA $353.18 ≥ 卖出线 $31.41', voided: true, voided_reason: reason })],
-      showAllLevels: true,
-    });
-    const markEnd = html.indexOf('[已作废');
-    const mark = html.slice(html.lastIndexOf('<span', markEnd), markEnd);
-
-    expect(mark).toContain('truncate');
-    expect(mark).not.toContain('shrink-0');
-    expect(html).toContain(`title="已作废 · ${reason}"`);
-  });
-
-  it('零碎持仓那几条标「已作废 · 零碎持仓」', () => {
-    const html = render({
-      alerts: [alert({
-        category: 'position', symbol: 'NVDA', icon: '🧾',
-        text: 'FUTU · 买入 NVDA 0.005 @ $216.00 · 已同步到决策日志，待补充理由',
-        voided: true, voided_reason: '零碎持仓',
-      })],
-      showAllLevels: true,
-    });
-    expect(html).toContain('[已作废 · 零碎持仓]');
   });
 });
 
@@ -377,29 +326,24 @@ describe('手机上的提醒列表', () => {
     expect(html).not.toContain('以下是新提醒');
   });
 
-  it('「仅记录」级别默认折叠，打开「显示全部」才出现', () => {
+  it('「仅记录」级别不显示', () => {
     const alerts = [
       alert({ id: 'l1', occurred_at: '2026-10-16T08:05:12.000Z', text: '只记录的一条', indicators: { level: 3 } }),
       alert({ id: 'n1', occurred_at: '2026-10-16T09:07:12.000Z', text: '普通的一条', indicators: { level: 2 } }),
     ];
 
-    const folded = render({ alerts });
-    expect(folded).not.toContain('只记录的一条');
-    expect(folded).toContain('普通的一条');
-    expect(folded).toContain('显示全部（仅记录 1 · 已作废 0）');
-
-    const all = render({ alerts, showAllLevels: true });
-    expect(all).toContain('只记录的一条');
+    const html = render({ alerts });
+    expect(html).not.toContain('只记录的一条');
+    expect(html).toContain('普通的一条');
   });
 
   it('汇总行默认只显示「N 个标的」，明细点开才看', () => {
     const html = render({
       alerts: [alert({
         id: 's1', category: 'valuation', symbol: null, icon: '📋',
-        text: '[盘前] 估值汇总 · 5 个标的', indicators: { level: 3 },
+        text: '[盘前] 估值汇总 · 5 个标的', indicators: { level: 2 },
         summary_items: [{ symbol: 'AVGO', text: '🟢 AVGO · 低估值 · $333.88' }],
       })],
-      showAllLevels: true,
     });
 
     expect(html).toContain('估值汇总 · 5 个标的');
@@ -583,18 +527,15 @@ describe('日期、合并与作废折叠', () => {
     expect(html).not.toContain('$333.88');
   });
 
-  it('已作废的默认不显示，开关上写明有几条', () => {
+  it('已作废的不显示', () => {
     const alerts = [
       alert({ id: 'v1', occurred_at: '2026-10-16T08:05:12.000Z', text: '作废的一条', voided: true, voided_reason: '参考价错误' }),
       alert({ id: 'n1', occurred_at: '2026-10-16T09:07:12.000Z', text: '正常的一条' }),
     ];
 
-    const folded = render({ alerts });
-    expect(folded).not.toContain('作废的一条');
-    expect(folded).toContain('正常的一条');
-    expect(folded).toContain('已作废 1');
-
-    expect(render({ alerts, showAllLevels: true })).toContain('作废的一条');
+    const html = render({ alerts });
+    expect(html).not.toContain('作废的一条');
+    expect(html).toContain('正常的一条');
   });
 
   it('更正过的条目标「已更正」', () => {
@@ -654,3 +595,138 @@ describe('QQQ 卡片下面的档位行', () => {
   });
 });
 
+describe('标普、道指、QQQ 距前高三格', () => {
+  const items = [
+    { key: 'SPY' as const, label: '标普 SPY', price: 752.1, priceLabel: '夜盘', drawdownPct: -3.46, level: 0, tiers: [5, 8, 10, 12, 14], nextTier: 5, gapPct: 1.54 },
+    { key: 'DIA' as const, label: '道指 DIA', price: 475, priceLabel: null, drawdownPct: -12.49, level: 3, tiers: [8, 10, 12], nextTier: null, gapPct: null },
+    { key: 'QQQ' as const, label: 'QQQ', price: 681.09, priceLabel: '夜盘', drawdownPct: -10.34, level: 1, tiers: [10, 12, 15, 18, 20], nextTier: 12, gapPct: 1.66 },
+  ];
+
+  it('排在提醒面板上方，三格都有数；没到档不变色、过档变绿（--color-gain），越深越绿', () => {
+    const html = render({ peakDistances: items });
+    const strip = html.match(/<div[^>]*data-peak-distance="true"[\s\S]*?data-alert-log-panel/)?.[0] ?? '';
+
+    expect(html.indexOf('data-peak-distance')).toBeLessThan(html.indexOf('data-alert-log-panel'));
+    expect(strip).toContain('SPY 夜盘 752.10');
+    expect(strip).toContain('DIA 475.00');
+    expect(strip).toContain('QQQ 夜盘 681.09');
+    expect(strip).toContain('距前高');
+    expect(strip).toContain('-3.5%');
+    expect(strip).toContain('差 1.5% 到 -5%');
+    expect(strip).toMatch(/data-peak-symbol="SPY" data-level="0"(?![^>]*color-mix)/);
+    expect(strip).toContain('-12.5%');
+    expect(strip).toContain('已过 -12% 档');
+    expect(strip).toMatch(/data-peak-symbol="DIA" data-level="3"[^>]*color-mix\(in srgb, var\(--color-gain\) 90%/);
+    expect(strip).toContain('已过 -10% 档');
+    expect(strip).toMatch(/data-peak-symbol="QQQ" data-level="1"[^>]*color-mix\(in srgb, var\(--color-gain\) 30%/);
+  });
+
+  it('没有数据时不渲染这一排', () => {
+    expect(render()).not.toContain('data-peak-distance');
+  });
+});
+
+describe('距前高下面的仓位标注', () => {
+  const line = (value: number, cap: number, nav = 180_000) => ({
+    value, weight: value / nav, cap, limitValue: nav * cap,
+    remainingValue: Math.max(0, nav * cap - value), overByValue: Math.max(0, value - nav * cap), overLimit: value > nav * cap,
+  });
+  const guard = {
+    positionPct: 54.44, capPct: 50, overPct: 4.44, overValue: 8_000,
+    signals: { panicOpen: true, cnn: 19.85, vix: 28.18 },
+    tqqqBlocked: true, tqqqShares: 15_523.75, tqqqOptions: 717.93,
+    options: { total: line(717.93, 0.05), tqqq: line(717.93, 0.03) },
+  };
+
+  it('紧跟在距前高三格下面：当前仓位、上限、超出多少和 TQQQ 提示', () => {
+    const html = render({ positionGuard: guard });
+    const block = html.match(/<div[^>]*data-position-guard="true"[\s\S]*?data-alert-log-panel/)?.[0] ?? '';
+
+    expect(html.indexOf('data-position-guard')).toBeLessThan(html.indexOf('data-alert-log-panel'));
+    expect(block).toContain('当前仓位');
+    expect(block).toContain('54.4%');
+    expect(block).toContain('上限 50%');
+    expect(block).toContain('超了 4.4%，约 $8,000.00');
+    expect(block).toContain('未到 SPY -5% 不允许持有 TQQQ');
+    expect(block).toContain('$15,523.75');
+    expect(block).toContain('$717.93');
+  });
+
+  it('三个条件：恐慌性下跌、CNN、VIX 的当前值和达标没有', () => {
+    const block = render({ positionGuard: guard });
+
+    expect(block).toMatch(/data-cap-gate="panic"[^>]*data-met="true"/);
+    expect(block).toMatch(/data-cap-gate="cnn"[^>]*data-met="true"/);
+    expect(block).toMatch(/data-cap-gate="vix"[^>]*data-met="true"/);
+    expect(block).toContain('CNN ≤ 20');
+    expect(block).toContain('19.9');
+    expect(block).toContain('VIX ≥ 25');
+    expect(block).toContain('28.18');
+  });
+
+  it('没达标的条件标出来；拿不到写暂无', () => {
+    const missed = render({ positionGuard: { ...guard, signals: { panicOpen: false, cnn: 47, vix: null } } });
+
+    expect(missed).toMatch(/data-cap-gate="panic"[^>]*data-met="false"/);
+    expect(missed).toMatch(/data-cap-gate="cnn"[^>]*data-met="false"/);
+    expect(missed).toMatch(/data-cap-gate="vix"[^>]*data-met="false"/);
+    expect(missed).toContain('暂无');
+  });
+
+  it('买多了要提醒：反弹先减仓，等恐慌性下跌再加', () => {
+    expect(render({ positionGuard: guard })).toContain('买多了：别再买，反弹先减仓，下次恐慌性下跌再加');
+  });
+
+  it('没买多、也没有恐慌性下跌：提醒不加仓', () => {
+    const html = render({ positionGuard: { ...guard, capPct: 30, overPct: null, overValue: null, signals: { panicOpen: false, cnn: 47, vix: 18 }, tqqqBlocked: false } });
+
+    expect(html).toContain('没有恐慌性下跌，不加仓');
+    expect(html).not.toContain('买多了');
+  });
+
+  it('期权额度：已用多少、上限、没超就写还剩多少美金', () => {
+    const block = render({ positionGuard: guard });
+    expect(block).toContain('期权 $717.93（0.4%）· 上限 5% · 还剩 $8,282.07');
+    expect(block).toContain('TQQQ 期权 $717.93 · 上限 3% · 还剩 $4,682.07');
+  });
+
+  it('期权超了写超出多少', () => {
+    const block = render({ positionGuard: { ...guard, options: { total: line(10_717.93, 0.05), tqqq: line(717.93, 0.03) } } });
+    expect(block).toContain('期权 $10,717.93（6.0%）· 上限 5% · 超出 $1,717.93');
+  });
+
+  it('没超上限、也没有 TQQQ 问题时不提示', () => {
+    const html = render({ positionGuard: { ...guard, overPct: null, overValue: null, tqqqBlocked: false } });
+    expect(html).toContain('上限 50%');
+    expect(html).not.toContain('超了');
+    expect(html).not.toContain('不允许持有 TQQQ');
+  });
+
+  it('没有持仓数据时不渲染', () => {
+    expect(render()).not.toContain('data-position-guard');
+  });
+});
+
+describe('提醒日志里的恐慌指数', () => {
+  it('日志页有恐慌指数这一块', () => {
+    expect(render()).toContain('data-volatility-panel="true"');
+  });
+});
+
+describe('提醒日志里的每日收盘记录', () => {
+  const panicDrop = {
+    asOf: '2026-11-05', windowOpen: true, anchorClose: 6900.5, recoveredOn: null, lastPanic: null,
+    days: [{ date: '2026-11-05', sp500: -4.36, dow: -3.44, nasdaq: -5.52, panic: true }],
+  };
+
+  it('拿到数据就显示，在日志列表上面', () => {
+    const html = render({ panicDrop });
+
+    expect(html).toContain('data-panic-log="true"');
+    expect(html.indexOf('data-panic-log')).toBeLessThan(html.indexOf('data-alert-log-panel'));
+  });
+
+  it('还没拿到不显示', () => {
+    expect(render()).not.toContain('data-panic-log');
+  });
+});

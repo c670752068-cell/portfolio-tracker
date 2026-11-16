@@ -71,6 +71,14 @@ export function getServerIndexQuotesUrl(): string {
   return apiUrl('/api/portfolio/index-quotes');
 }
 
+export function getServerPanicDropUrl(): string {
+  return apiUrl('/api/portfolio/panic-drop');
+}
+
+export function getServerVolatilityUrl(): string {
+  return apiUrl('/api/portfolio/volatility');
+}
+
 export function getServerDecisionLogUrl(): string {
   return apiUrl('/api/portfolio/decision-log');
 }

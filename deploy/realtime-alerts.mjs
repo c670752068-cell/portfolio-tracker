@@ -18,10 +18,32 @@ export const CNN_TIERS = [30, 25, 20, 15];
 export const CNN_OPEN_FLOOR = 30;
 export const CNN_STEP = 5;
 export const Z_TIERS = [0.5, 1, 1.5, 2, 2.5];
+// 只进日志的档位：上涨 +1.2 / +1.3、下跌 -0.5，日志里直接显示，但不推手机。
+export const Z_LOG_TIERS = { up: [1.2, 1.3], down: [0.5] };
 // Z 措辞分档：|Z| ≥ 1.5 才算进了买卖区，≥ 1.2 才说「接近」，其余只说偏强偏弱。
 // 这只影响提醒怎么写，不改 ±1.5 的判定阈值。
 export const Z_IN_ZONE = 1.5;
 export const Z_NEAR_ZONE = 1.2;
+
+/**
+ * 通道下沿 = 200 日均线 − 1.5σ（和「股价与移动均线 + ±1.5σ 通道」那张图同一条线）。
+ * 价格优先：只有价格跌破下沿（Z ≤ −1.5）才算到买点；露头、转负、接近下沿都只是位置变化，
+ * 不写买入。有下沿价格就同时写出离下沿还差多少，一眼看出是「刚好擦边」还是「离得还远」。
+ */
+export function channelVerdict({ price, lowerBand, z }) {
+  const current = finite(z);
+  if (current === null) return '';
+  const value = finite(price);
+  const lower = finite(lowerBand);
+  const band = lower !== null && lower > 0 ? ` $${lower.toFixed(2)}` : '';
+  const gap = value !== null && lower !== null && lower > 0 ? (value / lower - 1) * 100 : null;
+  // 全角括号后面直接接「·」，和其他提醒的写法一致
+  const tail = (note, verdict) => (gap === null ? ` · ${verdict}` : `（${note}）· ${verdict}`);
+  if (current <= -Z_IN_ZONE) {
+    return `已击穿通道下沿${band}${tail(`低于下沿 ${Math.abs(gap ?? 0).toFixed(1)}%`, '到买点')}`;
+  }
+  return `未击穿通道下沿${band}${tail(`还差 ${Math.max(gap ?? 0, 0).toFixed(1)}%`, '不是买点')}`;
+}
 export const STOCK_BIG_MOVE_PCT = 5;
 export const QQQ_BIG_MOVE_PCT = 2;
 // 杠杆 ETF 天生波动更大，阈值按倍数放大，否则天天都在报。
@@ -205,13 +227,14 @@ export function cnnAlerts({
 }
 
 /** 盘中 Z-Score 穿档：向下穿 = 跌得更深，向上穿 = 涨得更多。 */
-export function intradayZAlerts({ symbol, price, previousZ, currentZ, session, firedKeys, day }) {
+export function intradayZAlerts({ symbol, price, previousZ, currentZ, session, firedKeys, day, lowerBand = null }) {
   const from = finite(previousZ);
   const to = finite(currentZ);
   if (from === null || to === null || !symbol) return [];
   const alerts = [];
-  for (const tier of Z_TIERS) {
-    for (const sign of [-1, 1]) {
+  const upTiers = [...Z_TIERS, ...Z_LOG_TIERS.up].sort((left, right) => left - right);
+  for (const [sign, tiers] of [[-1, Z_TIERS], [1, upTiers]]) {
+    for (const tier of tiers) {
       const level = tier * sign;
       const down = sign < 0 ? from > level && to <= level : false;
       const up = sign > 0 ? from < level && to >= level : false;
@@ -220,12 +243,15 @@ export function intradayZAlerts({ symbol, price, previousZ, currentZ, session, f
       const key = `z-cross:${symbol}:${level}:${direction}:${day}`;
       if (firedKeys.has(key)) continue;
       const important = tier === 1.5 || tier >= 2;
+      const logTier = Z_LOG_TIERS[direction].includes(tier);
       alerts.push({
         kind: 'z_cross', tier: level, direction, dedupe_key: key, category: 'zscore', symbol,
         icon: down ? '🟢' : '🔴',
-        level: important ? 'important' : tier === 1 ? 'normal' : 'log_only',
+        level: important ? 'important' : tier === 1 || logTier ? 'normal' : 'log_only',
+        ...(logTier ? { push: false } : {}),
         value: to, threshold: level, session,
-        text: `${tag(session)} ${symbol}${finite(price) === null ? '' : ` $${Number(price).toFixed(2)}`} · Z ${from.toFixed(2)} → ${to.toFixed(2)} · ${zWording(to, down)}`,
+        text: `${tag(session)} ${symbol}${finite(price) === null ? '' : ` $${Number(price).toFixed(2)}`} · Z ${from.toFixed(2)} → ${to.toFixed(2)} · ${zWording(to, down)}${
+          down ? ` · ${channelVerdict({ price, lowerBand, z: to })}` : ''}`,
       });
     }
   }
@@ -285,14 +311,21 @@ export const NEAR_BREAKOUT_RESET = -0.5;
 
 /** 最后一段连续在 0 以下的完整收盘交易日有几天；缺数据就断。 */
 export function negativeStreak(series) {
+  return negativeStretch(series).streak;
+}
+
+/** 同一段连续 0 以下：天数和这段里最低的 Z（看这一轮有没有真的击穿过下沿）。 */
+export function negativeStretch(series) {
   const closed = (Array.isArray(series) ? series : []).filter((point) => point && point.is_partial !== true);
   let streak = 0;
+  let lowest = null;
   for (let index = closed.length - 1; index >= 0; index -= 1) {
     const z = finite(closed[index]?.zscore200);
     if (z === null || z >= 0) break;
     streak += 1;
+    lowest = lowest === null ? z : Math.min(lowest, z);
   }
-  return streak;
+  return { streak, lowest };
 }
 
 export function nearBreakoutStateKey(symbol) {
@@ -314,6 +347,7 @@ export function nearBreakoutStates(states, { symbol, currentZ, fired = false }) 
 
 export function nearBreakoutAlerts({
   symbol, price, previousZ, currentZ, streak, session, states = {}, day, confirmation = false,
+  lowerBand = null, streakLow = null,
 }) {
   const to = finite(currentZ);
   const from = finite(previousZ);
@@ -323,6 +357,10 @@ export function nearBreakoutAlerts({
   if (states[nearBreakoutStateKey(symbol)] === 'fired') return [];
   const money = finite(price) === null ? '' : ` $${Number(price).toFixed(2)}`;
   const moved = from === null ? `Z ${to.toFixed(2)}` : `Z ${from.toFixed(2)} → ${to.toFixed(2)}`;
+  // 回到 0 附近 = 回到 200 日均线附近，是通道中间，不是底部，所以不写买入。
+  const low = finite(streakLow);
+  const lowNote = low === null ? ''
+    : low <= -Z_IN_ZONE ? `，期间曾击穿下沿，最低 Z ${low.toFixed(2)}` : `，最低 Z ${low.toFixed(2)}，没击穿过下沿`;
   return [{
     kind: 'near_breakout',
     dedupe_key: `near-breakout${confirmation ? '-confirm' : ''}:${symbol}:${day}`,
@@ -333,7 +371,7 @@ export function nearBreakoutAlerts({
     value: to,
     threshold: NEAR_BREAKOUT_LEVEL,
     session: confirmation ? 'closed' : session,
-    text: `${tag(session, confirmation)} ${symbol}${money} · ${moved} · 接近向上露头（之前 ${streak} 天在 0 以下）· 可以去看看是否买入`,
+    text: `${tag(session, confirmation)} ${symbol}${money} · ${moved} · 接近向上露头（之前 ${streak} 天在 0 以下${lowNote}）· 回到均线附近 · ${channelVerdict({ price, lowerBand, z: to })}`,
   }];
 }
 
@@ -350,8 +388,9 @@ export function cnnFloorText(score, session) {
 function zWording(current, down) {
   const magnitude = Math.abs(current);
   if (down) {
-    if (magnitude >= Z_IN_ZONE) return '跌得更深，已进入买入区';
-    return magnitude >= Z_NEAR_ZONE ? '跌得更深，接近买入区 -1.5' : '跌得更深，偏弱';
+    // 是不是买点交给 channelVerdict 写（击穿下沿才算），这里只描述位置。
+    if (magnitude >= Z_IN_ZONE) return '跌得更深，进入买入区';
+    return magnitude >= Z_NEAR_ZONE ? '跌得更深，接近下沿 -1.5' : '跌得更深，偏弱';
   }
   if (magnitude >= Z_IN_ZONE) return '涨得更多，进入卖出区';
   return magnitude >= Z_NEAR_ZONE ? '涨得更多，接近卖出区 +1.5' : '涨得更多，偏强';

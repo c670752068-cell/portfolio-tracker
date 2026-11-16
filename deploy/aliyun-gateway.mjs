@@ -64,9 +64,13 @@ import { applyReferencePriceFixes } from './fix-reference-price-alerts.mjs';
 import { brokerHealthReadings } from './broker-health.mjs';
 import { saneSellPricePlan, sellPriceReference } from './sell-price-sanity.mjs';
 import { SESSION_CADENCE_MS, cnnFloorText, sessionLabel } from './realtime-alerts.mjs';
-import { estimatedZFromPrice, feedStateReading, intradayZPreview, monitorSymbols, nearBreakoutReading, runRealtimeTick } from './realtime-monitor.mjs';
+import { feedStateReading, monitorSymbols, nearBreakoutReading, runRealtimeTick, sessionZReading } from './realtime-monitor.mjs';
 import { quietSummaryEvent, realtimeDefaults } from './realtime-push.mjs';
 import { createIndexQuotesCache, createIndexQuotesRoute, parseIndexQuote } from './index-quotes.mjs';
+import {
+  cboeHistoryUrl, channelFromDashboard, createVolatilityCache, createVolatilityRoute, parseCboeHistory,
+} from './volatility-index.mjs';
+import { createPanicCache, createPanicRoute, panicDailyUrl, parseDailyCloses } from './panic-drop.mjs';
 import { createOvernightQuoteStore, createOvernightQuotesRoute } from './overnight-quotes.mjs';
 import { feedOutageReading, markQuoteFreshness, pickOvernightQuote } from './quote-freshness.mjs';
 import { portfolioDayLoss } from './portfolio-loss.mjs';
@@ -899,6 +903,35 @@ const handleIndexQuotesRoute = createIndexQuotesRoute({
   sessionOf: () => classifyMarketSession(new Date(), { hasMinuteSeries: true }),
   sendJson,
 });
+// 恐慌指数（VXSMH / VXN / VIX）：现价走 Yahoo，日线走 Cboe 公开数据，同样服务器统一取数并缓存。
+const handleVolatilityRoute = createVolatilityRoute({
+  cache: createVolatilityCache({
+    fetchQuote: async (symbol) => parseIndexQuote(await getJsonOverIpv4(
+      buildYahooChartUrl(symbol),
+      { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      8_000,
+    )),
+    fetchHistory: async (item) => parseCboeHistory(await getJsonOverIpv4(
+      cboeHistoryUrl(item),
+      { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      15_000,
+    )),
+    // 对应 ETF（SMH / QQQ / SPY）的 ±1.5σ 通道：和趋势图共用同一份日线缓存
+    fetchChannel: async (symbol) => channelFromDashboard(await loadDashboard(symbol)),
+  }),
+  sendJson,
+});
+// 恐慌性下跌：标普、道指、纳指的完整收盘，服务器统一取数并缓存。
+const handlePanicRoute = createPanicRoute({
+  cache: createPanicCache({
+    fetchCloses: async (symbol) => parseDailyCloses(await getJsonOverIpv4(
+      panicDailyUrl(symbol),
+      { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      15_000,
+    )),
+  }),
+  sendJson,
+});
 const handleDecisionLogRoute = createDecisionLogRoute({
   root: PORTFOLIO_ALERTS_ROOT,
   sendJson,
@@ -1346,6 +1379,8 @@ const server = createServer(async (req, res) => {
   if (await handleAlertLogRoute(url, req, res)) return;
   if (await handleAlertOutcomesRoute(url, req, res)) return;
   if (await handleIndexQuotesRoute(url, req, res)) return;
+  if (await handleVolatilityRoute(url, req, res)) return;
+  if (await handlePanicRoute(url, req, res)) return;
   if (await handleOvernightQuotesRoute(url, req, res)) return;
   if (await handleDataSourcesRoute(url, req, res)) return;
   try {
@@ -1477,10 +1512,10 @@ async function runRealtimeMonitorCycle() {
     const qqqSeries = await closedDailySeries('QQQ');
     const peak = qqqSeries.reduce((best, point) => (!best || point.close > best.close ? point : best), null);
 
-    // 盘中 Z 用决策页「盘中预览」那一根未收盘日线，只有常规时段才有；
+    // 盘中 Z 常规时段用决策页「盘中预览」那一根未收盘日线，夜盘、盘前、盘后按现价估算；
     // 每轮按游标刷几个标的的日线缓存，整个监控范围都能轮到，不再只看前 8 个。
     const zSymbols = symbols.filter((symbol) => symbol !== 'VIX');
-    if ((session === 'regular' || session === 'post' || session === 'overnight') && zSymbols.length > 0) {
+    if ((session === 'regular' || session === 'pre' || session === 'post' || session === 'overnight') && zSymbols.length > 0) {
       for (let step = 0; step < REALTIME_DASHBOARD_PER_TICK; step += 1) {
         await loadDashboard(zSymbols[(REALTIME_STATE.dashboardCursor + step) % zSymbols.length]);
       }
@@ -1490,11 +1525,8 @@ async function runRealtimeMonitorCycle() {
     const nearBreakout = {};
     for (const symbol of zSymbols) {
       const dashboard = maSlopeCache.lastGood(`dashboard:${symbol}:5y:8`);
-      // 夜盘日线不更新：用新鲜的夜盘价和最后一根完整收盘的均值/标准差估一个 Z
-      const live = quotes[symbol];
-      const reading = session === 'overnight'
-        ? (live && live.stale !== true ? estimatedZFromPrice(dashboard, live.price) : null)
-        : intradayZPreview(dashboard);
+      // 夜盘、盘前、盘后日线不更新：用新鲜报价和最后一根完整收盘的均值/标准差估一个 Z
+      const reading = sessionZReading(session, dashboard, quotes[symbol], now);
       if (reading) intradayZ[symbol] = reading;
       // 接近露头：常规时段看未收盘那根，盘后用刚收盘那根确认一次
       if (session === 'regular' || session === 'post') {
@@ -1503,7 +1535,11 @@ async function runRealtimeMonitorCycle() {
       } else if (session === 'overnight' && reading) {
         // 夜盘用估算出来的 Z 判断接近露头，连续天数仍按完整收盘数
         const near = nearBreakoutReading(dashboard, { confirmation: false });
-        if (near) nearBreakout[symbol] = { ...near, currentZ: reading.currentZ, price: reading.price };
+        if (near) {
+          nearBreakout[symbol] = {
+            ...near, currentZ: reading.currentZ, price: reading.price, lowerBand: reading.lowerBand ?? near.lowerBand,
+          };
+        }
       }
     }
 

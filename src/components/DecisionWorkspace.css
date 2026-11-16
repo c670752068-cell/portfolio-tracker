@@ -16,6 +16,8 @@
 .decision-table-head,.decision-row { display:grid; grid-template-columns:1.45fr 1fr 1.15fr .8fr .9fr; gap:10px; align-items:center; width:100%; }
 .decision-table-head { background:var(--color-surface-overlay); padding:10px 12px; border-radius:8px 8px 0 0; font-size:11px; color:var(--color-ink-muted); }
 .decision-table-head small { display:block; font-size:10px; font-weight:400; }
+.decision-z-sort { cursor:pointer; white-space:nowrap; color:inherit; font:inherit; }.decision-z-sort:hover,.decision-z-sort:focus-visible { color:var(--color-ink-primary); text-decoration:underline; }
+@media(min-width:801px) { .decision-z-sort-mobile { display:none; } }
 .decision-row { padding:11px 12px; text-align:left; border:1px solid transparent; border-bottom-color:color-mix(in srgb,var(--color-neutral) 25%,transparent); min-height:65px; font-size:13px; border-radius:6px; }
 .decision-row:hover { background:color-mix(in srgb,var(--color-buy) 3%,var(--color-surface-raised)); }
 .decision-row.is-selected { border-color:var(--color-buy); box-shadow:inset 2px 0 var(--color-buy); }
@@ -280,10 +282,10 @@
 .decision-quote-metrics { display:grid; grid-template-columns:1fr 1fr; gap:12px; border-top:1px solid var(--color-neutral); padding-top:16px; }
 .decision-quote-metrics>div { min-width:0; }
 .decision-quote-metrics dd { font-size:23px; font-weight:800; line-height:1.4; margin:5px 0; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
-.decision-quote-metrics dd.signal-sell_near,.decision-quote-metrics dd.is-negative { color:#c1263d; }
-.decision-quote-metrics dd.signal-buy_near { color:#047a52; }
-.dark .decision-quote-metrics dd.signal-sell_near,.dark .decision-quote-metrics dd.is-negative { color:#ffb2b8; }
-.dark .decision-quote-metrics dd.signal-buy_near { color:#6ee7b7; }
+.decision-quote-metrics dd.signal-sell,.decision-quote-metrics dd.signal-sell_near,.decision-quote-metrics dd.is-negative { color:#c1263d; }
+.decision-quote-metrics dd.signal-buy,.decision-quote-metrics dd.signal-buy_near { color:#047a52; }
+.dark .decision-quote-metrics dd.signal-sell,.dark .decision-quote-metrics dd.signal-sell_near,.dark .decision-quote-metrics dd.is-negative { color:#ffb2b8; }
+.dark .decision-quote-metrics dd.signal-buy,.dark .decision-quote-metrics dd.signal-buy_near { color:#6ee7b7; }
 .decision-quote-metrics .signal-badge { font-size:10px; }
 .decision-quote-metrics small { font-size:11px; color:var(--color-ink-muted); }
 .decision-quote-empty { padding:28px 8px; text-align:center; color:var(--color-ink-muted); font-size:13px; }

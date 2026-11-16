@@ -1,6 +1,7 @@
 // 日志页每一行怎么显示：手机上默认只占一行，点开才看全文。
 // 这里全是纯函数，和 React 无关，方便单测。
 import { pushStateLabel, type AlertLogEntry } from './alertLog';
+import { breakoutLabel } from './breakoutSignals';
 
 const SESSION_TAG = /^\s*\[[^\]]*\]\s*/u;
 const PUSH_ICONS: Readonly<Record<string, string>> = {
@@ -21,8 +22,20 @@ function withoutParentheses(part: string): string {
   return chunk || head;
 }
 
+/** 露头推送原文的标的写在后半句、还带连续天数，手机一行只放标的、现在的 Z 和方向。 */
+function breakoutHeadline(text: string, symbol: string): string | null {
+  const direction = /Z-Score 向(上|下)露头/u.exec(text);
+  if (!direction || !symbol) return null;
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const current = new RegExp(`${escaped}：[^\\n]*?→\\s*([+-]?[\\d.]+)`, 'u').exec(text);
+  if (!current) return null;
+  return `${symbol} · Z ${current[1]} · ${breakoutLabel(direction[1] === '上' ? 'up' : 'down')}`;
+}
+
 /** 时间轴上那一行的正文：标的 + 关键数字，长段落压短。 */
 export function alertHeadline(entry: Pick<AlertLogEntry, 'text' | 'symbol'>): string {
+  const breakout = breakoutHeadline(String(entry.text || ''), String(entry.symbol || ''));
+  if (breakout) return breakout;
   const firstLine = String(entry.text || '').split('\n')[0].replace(SESSION_TAG, '');
   const parts = firstLine
     .split('·')

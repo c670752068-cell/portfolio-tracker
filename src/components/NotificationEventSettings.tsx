@@ -51,7 +51,7 @@ const REALTIME_ITEMS: ReadonlyArray<{ key: keyof RealtimeNotificationSettingsVal
   { key: 'qqqDrawdown', name: 'QQQ 回撤', description: '任何时段跌破 -5% / -10% / -15% / -20% / -25% / -30%，收盘后再确认一条。' },
   { key: 'vix', name: 'VIX', description: '较昨收涨 15% / 25% / 35%，升破 20 / 23 / 30，以及从当日高点回落。' },
   { key: 'cnn', name: '恐慌指数', description: 'CNN 恐惧贪婪跌破 30 / 25 / 20 / 15、恐慌加剧或缓解。' },
-  { key: 'intradayZ', name: '盘中 Z-Score', description: '盘中 Z 穿过 ±0.5 / ±1.0 / ±1.5 / ±2.0 / ±2.5。' },
+  { key: 'intradayZ', name: '盘中 Z-Score', description: '盘中、夜盘、盘前、盘后 Z 穿过 ±1.0 / ±1.5 / ±2.0 / ±2.5 时推送；+1.2 / +1.3 / −0.5 只记日志不推送。' },
   { key: 'nearBreakout', name: '接近露头', description: 'Z 在 0 以下连续 15 个交易日以上之后回升到 -0.1，盘中先提醒一次，收盘再确认一次。' },
   { key: 'futuresDrop', name: '期货大跌', description: '纳指/标普/道指期货较上一结算价跌到 -1%（仅记录）、-1.5%、-2.5%，回到 -0.5% 以内写一条回稳。' },
   { key: 'portfolioLoss', name: '持仓整体浮亏', description: '用最新价格（含夜盘）估算全部持仓今日盈亏，占总资产达到 -2% / -4% 时提醒。' },
