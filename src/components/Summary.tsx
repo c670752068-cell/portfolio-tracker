@@ -5,6 +5,7 @@ import { convertFromUsd } from '../displayCurrency';
 import { Line, LineChart, ResponsiveContainer } from 'recharts';
 import type { ValuePoint } from '../valueHistory';
 import type { OneTapRefreshState } from '../oneTapRefresh';
+import { CountUpText } from './CountUpText';
 
 interface SummaryProps {
   metrics: PortfolioMetrics;
@@ -342,7 +343,7 @@ function Card({ label, value, sub, valueClass, subClass, variant = 'standard', a
   return (
     <div className={`min-w-0 ${isHero ? `elev-2 rounded-xl border border-neutral/60 border-l-2 p-2.5 md:col-span-2 md:rounded-2xl md:border-l-4 md:p-6 ${accentClass}` : 'elev-2 rounded-xl border border-neutral/40 p-2.5 md:rounded-2xl md:p-4'} bg-surface-raised`}>
       <div className={`${isHero ? 'text-[10px] font-medium md:text-sm' : 'text-[10px] md:text-xs'} text-ink-secondary`}>{label}</div>
-      <div className={`text-display mt-1 break-words font-semibold leading-none tabular-nums md:mt-2 ${isHero ? 'text-xl md:text-4xl' : 'text-[1.05rem] md:text-xl'} ${valueClass ?? ''}`}>{value}</div>
+      <div className={`text-display mt-1 break-words font-semibold leading-none tabular-nums md:mt-2 ${isHero ? 'text-xl md:text-4xl' : 'text-[1.05rem] md:text-xl'} ${valueClass ?? ''}`}><CountUpText text={value} /></div>
       {sub && <div className={`mt-1 tabular-nums md:mt-2 ${isHero ? 'text-[10px] md:text-sm' : 'text-[10px] leading-snug md:text-xs'} ${subClass ?? 'text-ink-secondary'}`}>{sub}</div>}
       {children}
     </div>
